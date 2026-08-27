@@ -10,7 +10,7 @@ This is off unless `setup` is given `parquet = true`, since claiming every
 `*.parquet` in the editor is a decision its user has to make.
 ]]
 
-local query = require("db-query.query")
+local client = require("db-query.client")
 
 local M = {}
 
@@ -46,7 +46,7 @@ local function define(path)
     identifier(name),
     literal(path)
   )
-  if query.run(URL, sql) == nil then
+  if client.run(URL, sql) == nil then
     return nil
   end
   return name

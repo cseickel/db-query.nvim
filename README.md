@@ -4,7 +4,11 @@ A SQL runner for Neovim, built on the command line clients you already have.
 
 Queries run through `psql`, `duckdb`, `sqlite3` or `mysql`. Long scripts stream into the results window as they run. `<C-c>` cancels.
 
+[ARCHITECTURE.md](ARCHITECTURE.md) describes how it works inside, and how to add a database.
+
 ## Requirements
+
+Neovim 0.11 or newer.
 
 The client for your database, on your `PATH`. `stdbuf` from coreutils is used when it is there, and without it a long script arrives in chunks instead of line by line.
 
@@ -101,12 +105,26 @@ end, { desc = "run the selection" })
 
 `execute` takes `visual`, `range` and `format`.
 
+## While a query runs
+
+The lines that ran are highlighted, and a spinner, a clock and the cancel key are drawn under them.
+
+Those scroll away with the query. `status` puts the same spinner somewhere that does not, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not:
+
+```lua
+local text = require("db-query").status(vim.api.nvim_get_current_buf())
+if text ~= "" then
+  return "%#StatusLineInfo# " .. text .. " %*"
+end
+```
+
 ## Highlights
 
-The indicator beside a running query uses these groups:
+These groups are used while a query runs:
 
 | Group               | Links to         | Used for                     |
 | ------------------- | ---------------- | ---------------------------- |
+| `DbQueryRunning`    | `CursorLine`     | The lines that ran            |
 | `DbQuerySpinner`    | `DiagnosticInfo` | The spinner                  |
 | `DbQueryElapsed`    | `Comment`        | The seconds it has been running |
 | `DbQueryCancelHint` | `NonText`        | The reminder of the cancel key |
