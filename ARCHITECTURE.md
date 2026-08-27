@@ -27,12 +27,12 @@ Everything else follows from that one decision: the file needs a name, the windo
    │ status · job      │  │ rereads while   │  │ ticks while     │
    │                   │  │ status=running  │  │ status=running  │
    │ :cancel()         │  └────────┬────────┘  └────────┬────────┘
-   │ :onFinish(fn)  ◄───────────────┴───────────────────┘
-   └─────────┬─────────┘      both subscribe; run knows neither
+   │ :onFinish(fn)  ◄──────────────┴────────────────────┘
+   └─────────┬─────────┘      both subscribe to run:onFinish()
              │ uses
              ▼
    ┌──────────────────────────────────────────────────────────────┐
-   │ no state, no windows                                         │
+   │ stateless functions                                          │
    │                                                              │
    │  client  → argv · env · stdin · extension · cancel(pid)      │
    │  url     → scheme · file path · password                     │
@@ -71,9 +71,9 @@ Every arrow points down. A run holds a process and a file, and publishes one eve
                                                             ▼
                                        sh -c 'psql …' > path   (detached)
                                                             │
-                    run:cancel() ◄───────────────────────────┤
-              pg_cancel_backend(pid) or SIGINT               │
-                                                             ▼
+                    run:cancel() ◄──────────────────────────┤
+              pg_cancel_backend(pid) or SIGINT              │
+                                                            ▼
                                           status · onFinish · subscribers
 ```
 
