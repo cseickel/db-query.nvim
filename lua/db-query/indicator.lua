@@ -133,20 +133,27 @@ function Indicator:status()
   return string.format("%s %.1fs", FRAMES[self.frame], self.run:elapsed())
 end
 
---- Turns the spinner one frame and redraws everything showing it, since nvim
---- has no way to know that a spinner turning in lua changed the winbar.
+--- Turns the spinner one frame and redraws every winbar and statusline, since
+--- nvim has no way to know that a spinner turning in lua changed one. The
+--- window showing this query's output asks for the same spinner, so the redraw
+--- cannot be narrowed to the windows showing this buffer.
 ---
 --- A tick is queued on the main loop rather than run where the timer fires, so
 --- one can still be waiting when the query ends, and drawing it then would put
---- the spinner back for good. `:bdelete` unloads a buffer without wiping it,
---- so a query can also outlive the lines it was drawn on.
+--- the spinner back for good.
+---
+--- `:bdelete` unloads a buffer without wiping it, so a query can outlive the
+--- lines it was drawn on and still be one the window showing its output is
+--- waiting for. Only the drawing needs those lines.
 function Indicator:tick()
-  if not self.timer or not vim.api.nvim_buf_is_loaded(self.buf) then
+  if not self.timer then
     return
   end
   self.frame = self.frame % #FRAMES + 1
-  self:drawSpinner()
-  vim.api.nvim__redraw({ buf = self.buf, statusline = true, winbar = true })
+  if vim.api.nvim_buf_is_loaded(self.buf) then
+    self:drawSpinner()
+  end
+  vim.api.nvim__redraw({ statusline = true, winbar = true })
 end
 
 --- Takes the bar, the spinner and the key away. Called for itself when the
@@ -162,8 +169,8 @@ function Indicator:stop()
   if vim.api.nvim_buf_is_loaded(self.buf) then
     pcall(vim.keymap.del, MODES, self.key, { buffer = self.buf })
     vim.api.nvim_buf_clear_namespace(self.buf, NAMESPACE, 0, -1)
-    vim.api.nvim__redraw({ buf = self.buf, statusline = true, winbar = true })
   end
+  vim.api.nvim__redraw({ statusline = true, winbar = true })
 end
 
 ---@class dbquery.IndicatorSpec

@@ -26,7 +26,7 @@ With lazy.nvim:
 
 ## Connections
 
-The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database.
+The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database. Completion follows the change: vim-dadbod-completion reads the connection once per buffer and keeps what it found, so `:DBConnect` tells it to fetch again.
 
 The list comes from vim-dadbod-ui's `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
 
@@ -86,11 +86,18 @@ require("db-query").setup({
 | `:'<,'>DBQuery`      | Run the selection                  |
 | `:1,20DBQuery`       | Run lines 1 to 20                  |
 | `:DBQuery -f csv`    | Output CSV instead                 |
+| `:DBQuery -o report` | Name the output file yourself      |
 | `:DBConnect`         | Pick the database for this buffer  |
 
 `:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
 `-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim).
+
+`-o` writes the output where you say, and `<Tab>` completes the path. Give it the name without an extension, because the extension is the client's to choose: `csv` or `tsv` for an export, `log` for anything else. `-o report` with `-f csv` writes `report.csv`, and a name that already ends in the right extension is used as it is. A relative path starts from the working directory, and a path ending in `/`, or naming a directory, puts a file named after the sql buffer inside it.
+
+A file you named is yours: `:w` saves it, a session restores it, and closing its window does not delete it. A path that already exists asks before being overwritten, and answering Cancel runs nothing. The one place `-o` cannot point is the plugin's own cache directory, which is cleared on startup.
+
+`-o` with no path asks for one, prefilled with the last path this buffer wrote, so rerunning an export is a matter of pressing enter.
 
 ## Keys
 
@@ -106,11 +113,11 @@ vim.keymap.set("x", "<M-x>", function()
 end, { desc = "run the selection" })
 ```
 
-`execute` takes `visual`, `range`, `statement`, and `format`.
+`execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the output file or `true` to be asked for one.
 
 ## While a query runs
 
-A bar marks the lines that ran, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The bar scrolls with the query. `status` puts the same spinner somewhere that does not, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not:
+A bar marks the lines that ran, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The bar scrolls with the query, and the window showing the last run's output is greyed until the new output replaces it. `status` puts the same spinner somewhere that does not scroll, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not. Asked about a results buffer, it answers for the query filling it in:
 
 ```lua
 local text = require("db-query").status(vim.api.nvim_get_current_buf())

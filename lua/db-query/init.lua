@@ -9,6 +9,7 @@ This module is the way in: it reads the sql, finds the connection, and hands
 both to the buffer's source. ARCHITECTURE.md draws what happens after that.
 ]]
 
+local command = require("db-query.command")
 local config = require("db-query.config")
 local connections = require("db-query.connections")
 local output = require("db-query.output")
@@ -22,6 +23,11 @@ local M = {}
 ---@field visual boolean|nil The visual selection, live or the one just ended.
 ---@field range [integer, integer]|nil First and last line, as a command's range gives them.
 ---@field statement boolean|nil The statement the cursor is in, of however many the buffer holds.
+
+--- Which sql to run, and what becomes of what it prints.
+---@class dbquery.ExecuteOptions : dbquery.Selection
+---@field format dbquery.Format|nil What the client is asked for, defaulting to the configured format.
+---@field output string|true|nil A path to write the output to, true to be asked for one, and nil for the file this plugin names.
 
 --- The selection, and the lines it starts and ends on. Empty when nothing is
 --- selected.
@@ -104,6 +110,12 @@ function M.connect(chosen)
 
     vim.b[buf].db_name = choice.name
     vim.b[buf].db = choice.url
+
+    -- vim-dadbod-completion reads b:db once per buffer and keeps what it found,
+    -- so a buffer that has completed already goes on completing against the
+    -- database it was pointed at before this.
+    pcall(vim.fn["vim_dadbod_completion#fetch"], buf)
+
     if chosen then
       chosen(choice.url)
     end
@@ -146,13 +158,40 @@ local function resolve(url)
   return url
 end
 
---- Runs the sql `opts` names, asking for a connection first when the buffer has
---- none.
+--- Calls `use` with the path and base name the output is to be written to, and
+--- with nil for the one this plugin makes up.
 ---
---- The sql and the place it was run from are read before the chooser opens,
+--- `true` asks for one, offering what this buffer was last given, so running
+--- the same export again is a matter of accepting what is already in the
+--- prompt. A cancelled prompt runs nothing.
+---@param buf integer
+---@param wanted string|true|nil
+---@param use fun(outputPath: string|nil)
+local function chooseOutput(buf, wanted, use)
+  if wanted ~= true then
+    return use(wanted)
+  end
+
+  vim.ui.input({
+    prompt = "Output file",
+    default = vim.b[buf].db_last_output_path
+      or output.destination(vim.api.nvim_buf_get_name(buf)),
+    completion = "file",
+  }, function(value)
+    value = value and vim.trim(value) or ""
+    if value ~= "" then
+      use(value)
+    end
+  end)
+end
+
+--- Runs the sql `opts` names, asking where the output goes when `output` is
+--- true and for a connection when the buffer has none.
+---
+--- The sql and the place it was run from are read before either is asked for,
 --- because choosing ends visual mode and takes the selection with it, and gives
 --- the user time to move somewhere else before the query starts.
----@param opts dbquery.Selection|{ format: dbquery.Format|nil }|nil Defaults to the whole buffer as text.
+---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}
   local statement, span = sqlText(opts)
@@ -163,26 +202,43 @@ function M.execute(opts)
   local mode = modeFor(statement, opts.format or config.values.format)
   local buf = vim.api.nvim_get_current_buf()
 
-  ---@param url string|nil
-  ---@param resolved string
-  local function start(url, resolved)
-    Source.of(buf):execute({
-      url = url,
-      resolved = resolved,
-      sql = statement,
-      mode = mode,
-      span = span,
-    })
+  ---@param outputPath string|nil
+  local function run(outputPath)
+    -- The prompt gives the user time to close the buffer the sql came from.
+    if not vim.api.nvim_buf_is_loaded(buf) then
+      return
+    end
+    -- Remembered as the full path, so a working directory change does not move
+    -- what the prompt offers next time.
+    if outputPath then
+      outputPath = output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
+      vim.b[buf].db_last_output_path = outputPath
+    end
+
+    ---@param url string|nil
+    ---@param resolved string
+    local function start(url, resolved)
+      Source.of(buf):execute({
+        url = url,
+        resolved = resolved,
+        sql = statement,
+        mode = mode,
+        span = span,
+        outputPath = outputPath,
+      })
+    end
+
+    local resolved = resolve(vim.b[buf].db)
+    if resolved then
+      return start(vim.b[buf].db, resolved)
+    end
+
+    M.connect(function(url)
+      start(url, resolve(url))
+    end)
   end
 
-  local resolved = resolve(vim.b.db)
-  if resolved then
-    return start(vim.b.db, resolved)
-  end
-
-  M.connect(function(url)
-    start(url, resolve(url))
-  end)
+  chooseOutput(buf, opts.output, run)
 end
 
 --- The spinner and the clock for a winbar or a statusline, empty unless `buf`
@@ -195,42 +251,6 @@ end
 ---@return string
 function M.status(buf)
   return Source.status(buf or vim.api.nvim_get_current_buf())
-end
-
-local FORMATS = { "text", "csv" }
-
---- The format `args` asks for, defaulting to text. Nil for arguments that name
---- no format, already reported, so the caller runs nothing.
----@param args string[]
----@return dbquery.Format|nil
-local function parseFormat(args)
-  local format = "text"
-  local index = 1
-  while index <= #args do
-    if args[index] ~= "-f" then
-      vim.notify("db-query: unknown argument " .. args[index], vim.log.levels.ERROR)
-      return nil
-    end
-    format = args[index + 1]
-    if not vim.tbl_contains(FORMATS, format) then
-      vim.notify("db-query: -f wants " .. table.concat(FORMATS, " or "), vim.log.levels.ERROR)
-      return nil
-    end
-    index = index + 2
-  end
-  return format
-end
-
---- What completes the word being typed: a format after `-f`, and `-f` itself
---- anywhere else.
----@param lead string
----@param line string
----@return string[]
-local function completeArgs(lead, line)
-  local offered = line:match("%-f%s+%S*$") and FORMATS or { "-f" }
-  return vim.tbl_filter(function(word)
-    return vim.startswith(word, lead)
-  end, offered)
 end
 
 ---@param opts dbquery.Config|nil
@@ -253,35 +273,7 @@ function M.setup(opts)
     end,
   })
 
-  vim.api.nvim_create_user_command("DBQuery", function(command)
-    local format = parseFormat(command.fargs)
-    if not format then
-      return
-    end
-    local range = command.range > 0 and { command.line1, command.line2 } or nil
-    M.execute({ range = range, format = format })
-  end, {
-    range = true,
-    nargs = "*",
-    complete = completeArgs,
-    desc = "Run the selection, or the whole buffer",
-  })
-
-  vim.api.nvim_create_user_command("DBQueryStatement", function(command)
-    local format = parseFormat(command.fargs)
-    if not format then
-      return
-    end
-    M.execute({ statement = true, format = format })
-  end, {
-    nargs = "*",
-    complete = completeArgs,
-    desc = "Run the statement the cursor is in",
-  })
-
-  vim.api.nvim_create_user_command("DBConnect", function()
-    M.connect()
-  end, { desc = "Choose the database this buffer speaks to" })
+  command.setup()
 
   if config.values.parquet then
     require("db-query.parquet").setup(group)

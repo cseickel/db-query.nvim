@@ -50,13 +50,33 @@ function Source.of(buf)
   return self
 end
 
+--- The source whose pane is showing `buf`, which is how output answers for the
+--- query that is filling it in. Output left over from an earlier run is in no
+--- pane and answers for nothing.
+---@param buf integer
+---@return dbquery.Source|nil
+local function showing(buf)
+  for _, source in pairs(sources) do
+    if source.pane:shows(buf) then
+      return source
+    end
+  end
+  return nil
+end
+
 --- What `buf` shows in a winbar or a statusline while its query runs, and an
 --- empty string the rest of the time. A buffer that has never run one has no
 --- source, and is not given one for asking.
+---
+--- A winbar over the output says the same as the one over the sql it came from,
+--- which is what the greyed window it is drawn over is waiting for.
 ---@param buf integer
 ---@return string
 function Source.status(buf)
-  local self = sources[buf]
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return ""
+  end
+  local self = sources[buf] or showing(buf)
   if not (self and self.indicator) then
     return ""
   end
@@ -92,6 +112,7 @@ end
 ---@field sql string
 ---@field mode dbquery.Mode
 ---@field span [integer, integer] The first and last line the sql was taken from.
+---@field outputPath string|nil The path and base name the user asked the output to be written to.
 
 --- Runs `spec.sql`, taking the place of whatever this buffer was running.
 ---
@@ -112,6 +133,7 @@ function Source:execute(spec)
     sql = spec.sql,
     mode = spec.mode,
     srcName = vim.api.nvim_buf_get_name(self.buf),
+    outputPath = spec.outputPath,
   })
   if not run then
     return

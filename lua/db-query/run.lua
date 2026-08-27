@@ -158,8 +158,14 @@ local function finish(self, result)
       os.remove(self.sessionFile)
     end
 
+    -- Every subscriber is told, whatever the one before it did. They are
+    -- independent, and one of them putting the output on screen is what takes
+    -- away another's indication that a query is still running.
     for _, subscriber in ipairs(self.subscribers) do
-      subscriber(self)
+      local ok, err = pcall(subscriber, self)
+      if not ok then
+        vim.notify("db-query: " .. tostring(err), vim.log.levels.ERROR)
+      end
     end
   end)
 end
@@ -170,9 +176,10 @@ end
 ---@field sql string
 ---@field mode dbquery.Mode
 ---@field srcName string The name of the buffer the sql came from, which names the output file.
+---@field outputPath string|nil The path and base name the user asked the output to be written to.
 
 --- Starts the client and returns the run it is. Nil for a url no client is
---- known for, already reported.
+--- known for and for an output file the user turned down, so nothing runs.
 ---@param spec dbquery.RunSpec
 ---@return dbquery.Run|nil
 function Run.start(spec)
@@ -181,12 +188,17 @@ function Run.start(spec)
     return nil
   end
 
+  local path = output.path(spec.srcName, command.extension, spec.outputPath)
+  if not path then
+    return nil
+  end
+
   local self = setmetatable({
     url = spec.url,
     resolved = spec.resolved,
     sql = spec.sql,
     mode = spec.mode,
-    path = output.path(spec.srcName, command.extension),
+    path = path,
     status = "running",
     started = vim.uv.hrtime(),
     sessionFile = command.sessionFile,

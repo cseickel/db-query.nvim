@@ -11,10 +11,14 @@ placement rather than identity: it is remembered so a second query lands where
 the first did, and resolved again whenever that window has gone.
 ]]
 
+local output = require("db-query.output")
+
 ---@class dbquery.Pane
 ---@field srcBuf integer The buffer whose queries this pane shows.
 ---@field win integer|nil Where the last output opened, while that window lasts.
+---@field buf integer|nil What this pane put in that window, which is the output of the last run to reach it.
 ---@field run dbquery.Run|nil The query whose output this pane is for.
+---@field dimmed boolean|nil Whether this pane greyed its window, so that only what it greyed is put back.
 ---@field timer uv.uv_timer_t|nil Rereading a transcript while it is written.
 local Pane = {}
 Pane.__index = Pane
@@ -22,6 +26,10 @@ Pane.__index = Pane
 -- Slow enough that a client writing steadily does not reread on every write,
 -- fast enough to read as live.
 local REFRESH = 500
+
+-- Comment is the one group every colorscheme dims, which is what output from
+-- the run before this one has to look like.
+local STALE = "Normal:Comment,NormalNC:Comment"
 
 ---@param srcBuf integer
 ---@return dbquery.Pane
@@ -65,6 +73,10 @@ end
 
 --- Shows the file at `path`, opening a window below the query if the last one
 --- has been closed. The current window does not change.
+---
+--- A path the user named is one they can ask for again, and the buffer that
+--- read it the last time is still holding what it read, so it is reread here.
+--- The buffer this plugin names is new every run and has nothing to reread.
 ---@param path string
 ---@param db string|nil The connection the file came from, for the buffer to carry.
 ---@return integer buf
@@ -72,11 +84,21 @@ function Pane:show(path, db)
   -- Named and then shown by number, because a path put into an :edit command
   -- has to be escaped and a buffer number does not.
   local buf = vim.fn.bufadd(path)
+  local shownBefore = vim.api.nvim_buf_is_loaded(buf)
 
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_set_buf(self.win, buf)
   else
     self.win = vim.api.nvim_open_win(buf, false, { split = "below", win = parentOf(self.srcBuf) })
+  end
+
+  if shownBefore then
+    -- The buftype goes first, because a sealed buffer is no longer reading a
+    -- file and :edit would have nothing to read.
+    vim.bo[buf].buftype = ""
+    vim.api.nvim_buf_call(buf, function()
+      vim.cmd("silent! edit!")
+    end)
   end
 
   -- Opening at the bottom is what sets the file following itself.
@@ -88,22 +110,27 @@ function Pane:show(path, db)
   vim.wo[self.win].number = false
   vim.wo[self.win].relativenumber = false
 
-  -- autoread so a reload while the client is still writing needs no answer,
-  -- wipe so the output of one query goes when the next one takes the window.
+  -- autoread so a reload while the client is still writing needs no answer.
   vim.bo[buf].autoread = true
-  vim.bo[buf].bufhidden = "wipe"
-
   vim.b[buf].db = db
 
-  -- The file outlives nvim otherwise, and one query's output can be larger
-  -- than everything else in the cache directory put together.
-  vim.api.nvim_create_autocmd("BufWipeout", {
-    buffer = buf,
-    once = true,
-    callback = function()
-      os.remove(path)
-    end,
-  })
+  self.buf = buf
+  self:undim()
+
+  -- A file this plugin named is scratch: it goes when the next query takes the
+  -- window, it outlives nvim otherwise, and one query's output can be larger
+  -- than everything else in the cache directory put together. A file the user
+  -- asked for by name is an ordinary file and is left alone.
+  if output.owns(path) then
+    vim.bo[buf].bufhidden = "wipe"
+    vim.api.nvim_create_autocmd("BufWipeout", {
+      buffer = buf,
+      once = true,
+      callback = function()
+        os.remove(path)
+      end,
+    })
+  end
   return buf
 end
 
@@ -114,11 +141,46 @@ end
 ---
 --- Only once nothing is going to reread it, because checktime ignores every
 --- buffer that has a buftype at all, and a transcript would stop filling in.
+---
+--- A file the user named is theirs to save and to reopen, so it keeps the
+--- buftype that lets both work.
 ---@param buf integer|nil
 local function seal(buf)
-  if buf and vim.api.nvim_buf_is_valid(buf) then
+  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
+    return
+  end
+  if output.owns(vim.api.nvim_buf_get_name(buf)) then
     vim.bo[buf].buftype = "nofile"
   end
+end
+
+--- Whether `buf` is the output this pane put in its window.
+---@param buf integer
+---@return boolean
+function Pane:shows(buf)
+  return self.buf == buf
+end
+
+--- Greys the output of the run before this one, so that what is on screen while
+--- a query runs does not read as that query's result. Only what this pane put
+--- in the window, since the window can be given another buffer to show.
+function Pane:dim()
+  if
+    self.win
+    and vim.api.nvim_win_is_valid(self.win)
+    and self:shows(vim.api.nvim_win_get_buf(self.win))
+  then
+    vim.wo[self.win].winhighlight = STALE
+    self.dimmed = true
+  end
+end
+
+--- Puts back what `dim` greyed, and leaves a window it never greyed as it is.
+function Pane:undim()
+  if self.dimmed and self.win and vim.api.nvim_win_is_valid(self.win) then
+    vim.wo[self.win].winhighlight = ""
+  end
+  self.dimmed = false
 end
 
 --- Stops rereading, which is all a pane does of its own accord.
@@ -138,6 +200,7 @@ end
 --- back from the query that replaced it.
 function Pane:stop()
   self:unfollow()
+  self:undim()
   self.run = nil
 end
 
@@ -146,32 +209,35 @@ end
 --- that prints nothing opens nothing.
 ---@param run dbquery.Run
 function Pane:follow(run)
-  local buf
+  local shown
 
   local function refresh()
     if self.run ~= run then
       return
     end
-    if not buf then
+    if not shown then
       local stat = vim.uv.fs_stat(run.path)
       if stat and stat.size > 0 then
-        buf = self:show(run.path, run.url)
+        shown = self:show(run.path, run.url)
       end
       return
     end
-    if vim.api.nvim_buf_is_valid(buf) then
-      reread(buf)
+    if vim.api.nvim_buf_is_valid(shown) then
+      reread(shown)
     end
   end
 
   self.timer = vim.uv.new_timer()
   self.timer:start(REFRESH, REFRESH, vim.schedule_wrap(refresh))
+  -- Ungreyed first, since the query it says is running has ended, and since
+  -- what follows can throw.
   run:onFinish(function()
     if self.run == run then
       self:unfollow()
+      self:undim()
     end
     refresh()
-    seal(buf)
+    seal(shown)
   end)
 end
 
@@ -187,12 +253,19 @@ end
 function Pane:display(run)
   self:stop()
   self.run = run
+  -- What the window shows is the run before this one until this one replaces
+  -- it, which for an export is not until the end.
+  self:dim()
 
   if run.mode == "script" then
     return self:follow(run)
   end
   run:onFinish(function()
-    if self.run == run and run.status ~= "cancelled" then
+    if self.run ~= run then
+      return
+    end
+    self:undim()
+    if run.status ~= "cancelled" then
       seal(self:show(run.path, run.url))
     end
   end)
