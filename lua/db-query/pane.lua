@@ -92,6 +92,7 @@ function Pane:show(path, db)
   -- wipe so the output of one query goes when the next one takes the window.
   vim.bo[buf].autoread = true
   vim.bo[buf].bufhidden = "wipe"
+
   vim.b[buf].db = db
 
   -- The file outlives nvim otherwise, and one query's output can be larger
@@ -104,6 +105,20 @@ function Pane:show(path, db)
     end,
   })
   return buf
+end
+
+--- Cuts `buf` loose from the file it read, so that a saved session does not
+--- come back to a path that was deleted with the buffer. `:mksession` skips a
+--- window only when its buffer is `nofile`, and writes it as a blank one when
+--- `blank` is in `sessionoptions`.
+---
+--- Only once nothing is going to reread it, because checktime ignores every
+--- buffer that has a buftype at all, and a transcript would stop filling in.
+---@param buf integer|nil
+local function seal(buf)
+  if buf and vim.api.nvim_buf_is_valid(buf) then
+    vim.bo[buf].buftype = "nofile"
+  end
 end
 
 --- Stops rereading, which is all a pane does of its own accord.
@@ -156,6 +171,7 @@ function Pane:follow(run)
       self:unfollow()
     end
     refresh()
+    seal(buf)
   end)
 end
 
@@ -164,8 +180,9 @@ end
 --- A transcript is worth watching fill in, so the window follows the file as it
 --- is written. Rows are worth reading only once they are all there, and
 --- rendering a half written table every half second is expensive on exactly
---- the results large enough to need the wait. A query that failed or was
---- cancelled has no rows to show and said so where the reader is looking.
+--- the results large enough to need the wait. An export that failed shows the
+--- client's message in place of the rows, and one that was cancelled was
+--- stopped by the person who would be reading it.
 ---@param run dbquery.Run
 function Pane:display(run)
   self:stop()
@@ -175,8 +192,8 @@ function Pane:display(run)
     return self:follow(run)
   end
   run:onFinish(function()
-    if self.run == run and run.status == "ok" then
-      self:show(run.path, run.url)
+    if self.run == run and run.status ~= "cancelled" then
+      seal(self:show(run.path, run.url))
     end
   end)
 end

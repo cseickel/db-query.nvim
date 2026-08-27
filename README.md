@@ -2,7 +2,7 @@
 
 A SQL runner for Neovim, built on the command line clients you already have.
 
-Queries run through `psql`, `duckdb`, `sqlite3` or `mysql`. Long scripts stream into the results window as they run. `<C-c>` cancels.
+Queries run through `psql`, `duckdb`, `sqlite3`, or `mysql`. Long scripts stream into the results window as they run. `<C-c>` cancels.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) describes how it works inside, and how to add a database.
 
@@ -26,7 +26,7 @@ With lazy.nvim:
 
 ## Connections
 
-The first time you run a query, db-query asks which database to run it against. The list opens through `vim.ui.select`, so you get whatever picker you have configured. This will be stored on the buffer until you change it, and new `.sql` buffers will reuse the last connection by default. Use `:DBConnect` to point a buffer at a different database.
+The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database.
 
 The list comes from vim-dadbod-ui's `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
 
@@ -48,13 +48,13 @@ A URL can hold environment variables, so your connections file does not have to 
 ]
 ```
 
-This needs vim-dadbod installed, which is what expands them. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
+This needs vim-dadbod, which expands them. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
 
-A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. That is the variable vim-dadbod and `vim-dadbod-completion` read, so completion follows your choice, and anything else that sets `b:db` works without going through the chooser at all. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
+A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. That is the variable vim-dadbod and vim-dadbod-completion read, so completion follows your choice. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
 ## Options
 
-This shows the default options, which are all optional. Anything you do set will merge into and override these defaults.
+These are the defaults. Anything you set merges into them.
 
 ```lua
 require("db-query").setup({
@@ -79,13 +79,16 @@ require("db-query").setup({
 
 ## Commands
 
-| Command           |                                   |
-|-------------------|-----------------------------------|
-| `:DBQuery`        | Run the buffer                    |
-| `:'<,'>DBQuery`   | Run the selection                 |
-| `:1,20DBQuery`    | Run lines 1 to 20                 |
-| `:DBQuery -f csv` | Output CSV instead                |
-| `:DBConnect`      | Pick the database for this buffer |
+| Command              |                                    |
+|----------------------|------------------------------------|
+| `:DBQuery`           | Run the buffer                     |
+| `:DBQueryStatement`  | Run the statement the cursor is in |
+| `:'<,'>DBQuery`      | Run the selection                  |
+| `:1,20DBQuery`       | Run lines 1 to 20                  |
+| `:DBQuery -f csv`    | Output CSV instead                 |
+| `:DBConnect`         | Pick the database for this buffer  |
+
+`:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
 `-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim).
 
@@ -103,13 +106,11 @@ vim.keymap.set("x", "<M-x>", function()
 end, { desc = "run the selection" })
 ```
 
-`execute` takes `visual`, `range` and `format`.
+`execute` takes `visual`, `range`, `statement`, and `format`.
 
 ## While a query runs
 
-The lines that ran are highlighted, and a spinner, a clock and the cancel key are drawn under them.
-
-Those scroll away with the query. `status` puts the same spinner somewhere that does not, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not:
+A bar marks the lines that ran, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The bar scrolls with the query. `status` puts the same spinner somewhere that does not, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not:
 
 ```lua
 local text = require("db-query").status(vim.api.nvim_get_current_buf())
@@ -120,18 +121,15 @@ end
 
 ## Highlights
 
-These groups are used while a query runs:
+`DbQueryIndicator` colours the bar and everything drawn under it. It links to `DiagnosticInfo` unless you set it:
 
-| Group               | Links to         | Used for                     |
-| ------------------- | ---------------- | ---------------------------- |
-| `DbQueryRunning`    | `CursorLine`     | The lines that ran            |
-| `DbQuerySpinner`    | `DiagnosticInfo` | The spinner                  |
-| `DbQueryElapsed`    | `Comment`        | The seconds it has been running |
-| `DbQueryCancelHint` | `NonText`        | The reminder of the cancel key |
+```lua
+vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
+```
 
 ## Parquet
 
-If you enable `parquet = true`, opening a `.parquet` file will trigger a query through duckdb instead. The buffer will keep the original name with the extension changed to `.sql`. The duckdb instance used is a throwaway and loads the file as a view to the file on disk so that `vim-dadbod-completions` can pull the metadata. It does not actually import the data.
+With `parquet = true`, opening a `.parquet` file runs a query through duckdb instead. The buffer keeps the original name with the extension changed to `.sql`. The duckdb instance is ephemeral and loads the parquet file as a view so that vim-dadbod-completion can read the schema. It does not import the data.
 
 This won't work with lazy loading, because the plugin has to be enabled to intercept the file:
 

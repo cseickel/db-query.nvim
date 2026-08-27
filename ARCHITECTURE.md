@@ -9,7 +9,8 @@ Everything else follows from that one decision: the file needs a name, the windo
 ```
    ┌──────────────────────────────────────────────────────────────┐
    │ init                                                         │
-   │ :DBQuery · :DBConnect · execute() · connect()                │
+   │ :DBQuery · :DBQueryStatement · :DBConnect                    │
+   │ execute() · connect() · status()                             │
    └───────────────────────────┬──────────────────────────────────┘
                                │
    ┌───────────────────────────▼──────────────────────────────────┐
@@ -35,28 +36,28 @@ Everything else follows from that one decision: the file needs a name, the windo
    │                                                              │
    │  client  → argv · env · stdin · extension · cancel(pid)      │
    │  url     → scheme · file path · password                     │
-   │  sql     → mode(statement) · stripTerminator                 │
+   │  sql     → mode · statementAt · stripTerminator              │
    │  output  → path(source, extension) · sweep()                 │
    │  config  → what setup was given                              │
    │  connections → the list the chooser offers                   │
    └──────────────────────────────────────────────────────────────┘
 ```
 
-Every arrow points down. A run holds a process and a file and publishes one event, so a query with nothing watching it is an ordinary thing to start: `parquet` runs its `create view` through `client.run` and nothing is drawn at all.
+Every arrow points down. A run holds a process and a file, and publishes one event, so a query with nothing watching it is an ordinary thing to start: `parquet` runs its `create view` through `client.run` and nothing is drawn at all.
 
 ## What each one owns
 
-**init** is the way in. It reads the lines, asks `sql` what mode they can be run in, resolves the connection through vim-dadbod, and hands the result to the buffer's source. It holds no state beyond the commands it registers.
+**init** is the way in. It works out which lines to run, asks `sql` what mode they can be run in, resolves the connection through vim-dadbod, and hands the result to the buffer's source. It holds no state beyond the commands it registers.
 
 **source** is a buffer that runs queries, and it is the only place that knows a run, a pane, and an indicator belong to the same piece of work. Its whole job is the rule that a buffer runs one query at a time.
 
 **run** is a query in flight: the process, the file it is writing, and how it ended. `status` is `running`, `ok`, `failed`, or `cancelled`, and `onFinish` is how anything learns it changed. It knows nothing of buffers or windows.
 
-**pane** is a window showing a file. A transcript is worth watching fill in, so it rereads on a timer while the run is going. Rows are worth reading only once they are all there, so an export opens once, at the end, and a query that failed or was cancelled opens nothing.
+**pane** is a window showing a file. A script's transcript rereads on a timer while the run is active, so output appears as it is written. An export opens only at the end, because partial results are not useful to render. A failed export shows the client's error, written under its own name so that csv renderers do not try to parse it. A cancelled export shows nothing. After the run ends, the buffer keeps its text and gives up its path, so that a restored session does not reference a file that was deleted.
 
-**indicator** is what the source buffer shows while its query runs: the lines that were sent are highlighted with `DbQueryRunning`, the spinner and the clock are drawn on a virtual line under them, and the cancel key is bound. All of that scrolls with the query, so it also answers `status` for a winbar, which does not.
+**indicator** is what the source buffer shows while its query runs: a bar down the left edge of the lines that were sent, continuing onto a virtual line under them that holds the spinner, the clock, and the cancel key, all in `DbQueryIndicator`. All of that scrolls with the query, so it also answers `status` for a winbar, which does not.
 
-**client** is what each database's command line client needs to be told, keyed by url scheme. It answers two questions per client: how to be asked to run a statement, and how the server can be asked to stop. A client that is the database rather than a client of one, such as duckdb or sqlite3, has no server to ask, and cancelling interrupts the process instead.
+**client** holds what each database's command line tool needs, keyed by url scheme: how to run a statement, and how to stop one. An embedded database like duckdb or sqlite3 has no server, so cancelling interrupts the process.
 
 ## One query, start to finish
 
@@ -80,9 +81,9 @@ Every arrow points down. A run holds a process and a file and publishes one even
 
 ## Identity and lifetime
 
-A source is a buffer. A window shows a different buffer an hour later, and the cancel key and the spinner are buffer local and cannot be told apart per window, so the buffer is the only thing that can own a query. Wiping the buffer cancels its query.
+A source is a buffer. A window can show a different buffer later, and the cancel key and spinner are buffer-local, so only the buffer can own a query. Wiping the buffer cancels its query.
 
-A pane's window is placement rather than identity. It is remembered so a second query lands where the first did, and resolved again whenever that window has been closed.
+A pane's window is placement, not identity. It is remembered so the next query opens there, and found again when that window closes.
 
 Cancelling is a request, so a replaced query is still running and still ends in its own time. The pane holds the run it is for and ignores any other, or a query that was replaced could take the window back from the one that replaced it.
 

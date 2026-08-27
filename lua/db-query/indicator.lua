@@ -1,13 +1,13 @@
 --[[
 What a buffer shows while its query is running.
 
-The lines that were sent are highlighted, a spinner and a clock are drawn on a
-virtual line under them, and the cancel key is bound. All three are buffer
-local, which is why a buffer runs one query at a time: a second one would draw
-over the first and take its key.
+A bar runs down the left edge of the lines that were sent and continues onto
+the virtual line under them that holds the spinner, the clock and the cancel
+key. All of it is buffer local, which is why a buffer runs one query at a time:
+a second one would draw over the first and take its key.
 
-The highlight and the spinner scroll with the query they belong to, so a buffer
-long enough to scroll them out of sight has `status` for the winbar instead.
+The bar and the spinner scroll with the query they belong to, so a buffer long
+enough to scroll them out of sight has `status` for the winbar instead.
 ]]
 
 ---@class dbquery.Indicator
@@ -15,6 +15,7 @@ long enough to scroll them out of sight has `status` for the winbar instead.
 ---@field first integer The first line that was sent, zero based.
 ---@field last integer The last line that was sent, zero based.
 ---@field key string The key bound to stop the query.
+---@field width integer The display width of the last line that was sent.
 ---@field run dbquery.Run
 ---@field frame integer Which spinner frame is drawn.
 ---@field timer uv.uv_timer_t|nil Absent once the indicator has stopped.
@@ -27,19 +28,26 @@ local MODES = { "n", "x" }
 
 local FRAMES = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 
--- Both marks are named rather than left for nvim to name, so that redrawing
--- the spinner moves it rather than leaving one behind, and so that the two
--- cannot end up sharing a name.
+-- Half a cell, so the colour is the left edge of the column and the rest of it
+-- is the background the buffer already had.
+local BAR = "▌"
+
+-- Every mark is named rather than left for nvim to name, so that redrawing the
+-- spinner moves it rather than leaving one behind, and so that no two of them
+-- can end up sharing a name.
 local NAMESPACE = vim.api.nvim_create_namespace("db_query_indicator")
-local RANGE = 1
-local SPINNER = 2
+local SPINNER = 1
+local RANGE = 2
 local FRAME_TIME = 80
 
+-- The spinner line is underlined, which is an attribute rather than a colour,
+-- so it is a second group combined with the first rather than a second colour
+-- to set.
+local UNDERLINE = "DbQueryIndicatorUnderline"
+
 local function defineHighlights()
-  vim.api.nvim_set_hl(0, "DbQueryRunning", { link = "CursorLine", default = true })
-  vim.api.nvim_set_hl(0, "DbQuerySpinner", { link = "DiagnosticInfo", default = true })
-  vim.api.nvim_set_hl(0, "DbQueryElapsed", { link = "Comment", default = true })
-  vim.api.nvim_set_hl(0, "DbQueryCancelHint", { link = "NonText", default = true })
+  vim.api.nvim_set_hl(0, "DbQueryIndicator", { link = "DiagnosticInfo", default = true })
+  vim.api.nvim_set_hl(0, UNDERLINE, { underline = true })
 end
 
 defineHighlights()
@@ -50,38 +58,68 @@ vim.api.nvim_create_autocmd("ColorScheme", {
   callback = defineHighlights,
 })
 
---- Marks the lines that were sent, as one range, so that editing inside the
---- query keeps the highlight around it.
+--- The display width of the last line that was sent, which is the line the
+--- spinner is drawn under and so the width it is drawn out to.
+---@return integer
+function Indicator:textWidth()
+  local at = math.min(self.last, vim.api.nvim_buf_line_count(self.buf) - 1)
+  local line = vim.api.nvim_buf_get_lines(self.buf, at, at + 1, false)[1]
+  return vim.fn.strdisplaywidth(line or "")
+end
+
+--- Draws the bar beside the lines that were sent, in the sign column, which is
+--- the only column of a window that no other plugin draws in without being a
+--- sign itself. Column zero of the text is where indent guides go, and they
+--- are stamped onto the screen rather than inserted into the line, so a bar
+--- drawn there is painted over on every indented line.
 ---
 --- The lines are clamped, because the sql is read before the connection is
 --- chosen and the buffer can lose lines while that chooser is open.
-function Indicator:highlight()
+function Indicator:drawBar()
   local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
   vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, math.min(self.first, bottom), 0, {
     id = RANGE,
     end_row = math.min(self.last, bottom),
-    line_hl_group = "DbQueryRunning",
+    sign_text = BAR,
+    sign_hl_group = "DbQueryIndicator",
   })
+end
+
+--- How many columns a window puts before the text it shows, which is the sign
+--- column, the number column and the fold column together. The buffer can be
+--- in several windows and the spinner line is drawn once for all of them, so
+--- the first is the one it lines up with.
+---@param buf integer
+---@return integer
+local function textColumn(buf)
+  local win = vim.fn.win_findbuf(buf)[1]
+  local info = win and vim.fn.getwininfo(win)[1]
+  return info and info.textoff or 1
 end
 
 --- Redraws the spinner where it is now, which is under the last line that was
 --- sent until an edit moves it. Reloading the buffer drops the mark and can
 --- leave the line it was on past the end, so the fallback is clamped rather
 --- than trusted.
-function Indicator:draw()
+---
+--- The line starts with the bar so the sign column carries on into it, then
+--- reaches the column the query starts at and runs to the width of the line
+--- above it, so that what is underlined is the query rather than the spinner.
+function Indicator:drawSpinner()
   local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
   local placed = vim.api.nvim_buf_get_extmark_by_id(self.buf, NAMESPACE, SPINNER, {})
   local at = math.min(placed[1] or self.last, bottom)
 
+  local indent = textColumn(self.buf)
+  local text = BAR
+    .. string.rep(" ", indent - 1)
+    .. string.format("%s  %.1fs    %s to cancel", FRAMES[self.frame], self.run:elapsed(), self.key)
+  text = text .. string.rep(" ", indent + self.width - vim.fn.strdisplaywidth(text))
+
   vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, at, 0, {
     id = SPINNER,
-    virt_lines = {
-      {
-        { "  " .. FRAMES[self.frame] .. "  ", "DbQuerySpinner" },
-        { string.format("%.1fs", self.run:elapsed()), "DbQueryElapsed" },
-        { "    " .. self.key .. " to cancel", "DbQueryCancelHint" },
-      },
-    },
+    virt_lines = { { { text, { "DbQueryIndicator", UNDERLINE } } } },
+    virt_lines_leftcol = true,
   })
 end
 
@@ -98,19 +136,21 @@ end
 --- Turns the spinner one frame and redraws everything showing it, since nvim
 --- has no way to know that a spinner turning in lua changed the winbar.
 ---
---- `:bdelete` unloads a buffer without wiping it, so a query can outlive the
---- lines it was drawn on.
+--- A tick is queued on the main loop rather than run where the timer fires, so
+--- one can still be waiting when the query ends, and drawing it then would put
+--- the spinner back for good. `:bdelete` unloads a buffer without wiping it,
+--- so a query can also outlive the lines it was drawn on.
 function Indicator:tick()
-  if not vim.api.nvim_buf_is_loaded(self.buf) then
+  if not self.timer or not vim.api.nvim_buf_is_loaded(self.buf) then
     return
   end
   self.frame = self.frame % #FRAMES + 1
-  self:draw()
+  self:drawSpinner()
   vim.api.nvim__redraw({ buf = self.buf, statusline = true, winbar = true })
 end
 
---- Takes the highlight, the spinner and the key away. Called for itself when
---- the query ends, and by the source when a second query replaces the first.
+--- Takes the bar, the spinner and the key away. Called for itself when the
+--- query ends, and by the source when a second query replaces the first.
 function Indicator:stop()
   if not self.timer then
     return
@@ -132,8 +172,8 @@ end
 ---@field run dbquery.Run
 ---@field key string The key that stops the query.
 
---- Marks the lines `spec.run` is running, draws a spinner under them, and binds
---- `spec.key` to stop it, until the query ends.
+--- Draws the bar beside the lines `spec.run` is running, the spinner under
+--- them, and binds `spec.key` to stop it, until the query ends.
 ---@param spec dbquery.IndicatorSpec
 ---@return dbquery.Indicator
 function Indicator.attach(spec)
@@ -146,13 +186,14 @@ function Indicator.attach(spec)
     frame = 1,
     timer = vim.uv.new_timer(),
   }, Indicator)
+  self.width = self:textWidth()
 
   vim.keymap.set(MODES, self.key, function()
     self.run:cancel()
   end, { buffer = self.buf, desc = "cancel the running query" })
 
-  self:highlight()
-  self:draw()
+  self:drawBar()
+  self:drawSpinner()
   self.timer:start(
     FRAME_TIME,
     FRAME_TIME,

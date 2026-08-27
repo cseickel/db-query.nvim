@@ -21,6 +21,7 @@ local M = {}
 ---@class dbquery.Selection
 ---@field visual boolean|nil The visual selection, live or the one just ended.
 ---@field range [integer, integer]|nil First and last line, as a command's range gives them.
+---@field statement boolean|nil The statement the cursor is in, of however many the buffer holds.
 
 --- The selection, and the lines it starts and ends on. Empty when nothing is
 --- selected.
@@ -57,6 +58,11 @@ local function sqlText(opts)
     span = { opts.range[1] - 1, opts.range[2] - 1 }
   elseif opts.visual then
     lines, span = selection()
+  elseif opts.statement then
+    local buffer = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    local found = sql.statementAt(buffer, vim.api.nvim_win_get_cursor(0)[1] - 1)
+    span = found or { 0, 0 }
+    lines = found and vim.list_slice(buffer, found[1] + 1, found[2] + 1) or {}
   else
     lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
     span = { 0, #lines - 1 }
@@ -92,7 +98,7 @@ function M.connect(chosen)
       return
     end
     vim.g.db = choice.url
-    if not vim.api.nvim_buf_is_valid(buf) then
+    if not vim.api.nvim_buf_is_loaded(buf) then
       return
     end
 
@@ -259,6 +265,18 @@ function M.setup(opts)
     nargs = "*",
     complete = completeArgs,
     desc = "Run the selection, or the whole buffer",
+  })
+
+  vim.api.nvim_create_user_command("DBQueryStatement", function(command)
+    local format = parseFormat(command.fargs)
+    if not format then
+      return
+    end
+    M.execute({ statement = true, format = format })
+  end, {
+    nargs = "*",
+    complete = completeArgs,
+    desc = "Run the statement the cursor is in",
   })
 
   vim.api.nvim_create_user_command("DBConnect", function()

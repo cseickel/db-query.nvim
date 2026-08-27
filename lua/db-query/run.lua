@@ -116,22 +116,39 @@ local function outcome(self, code)
   return self.asked and "cancelled" or "failed"
 end
 
+---@param path string
+---@param text string
+---@param mode "a"|"w"
+local function writeTo(path, text, mode)
+  local file = io.open(path, mode)
+  if file then
+    file:write(text)
+    file:close()
+  end
+end
+
 --- Records how the client ended and tells everyone who asked.
 ---
 --- The footer is written before nvim hears about the exit, so the transcript is
 --- complete by the time anything rereads it.
+---
+--- An export that failed wrote no rows and printed why on a stream the rows
+--- file never sees, so what it has to show is a transcript of that message.
+--- Under its own name, because a csv reader would render an error as a table.
 ---@param self dbquery.Run
 ---@param result vim.SystemCompleted
 local function finish(self, result)
   local status = outcome(self, result.code)
+  local footer =
+    string.format("\n[%s in %.3fs]\n", status == "ok" and "finished" or status, self:elapsed())
 
   if self.mode == "script" then
-    local file = io.open(self.path, "a")
-    if file then
-      local ended = status == "ok" and "finished" or status
-      file:write(string.format("\n[%s in %.3fs]\n", ended, self:elapsed()))
-      file:close()
-    end
+    writeTo(self.path, footer, "a")
+  elseif status == "failed" then
+    local transcript = self.path:gsub("%.[^.]+$", ".log")
+    writeTo(transcript, vim.trim(result.stderr or "") .. footer, "w")
+    os.remove(self.path)
+    self.path = transcript
   end
 
   vim.schedule(function()
@@ -139,12 +156,6 @@ local function finish(self, result)
     forget(self)
     if self.sessionFile then
       os.remove(self.sessionFile)
-    end
-
-    -- A script reports its own failure in the transcript, which is on screen,
-    -- and a cancelled query was stopped by the person being told.
-    if self.status == "failed" and self.mode == "export" then
-      vim.notify(vim.trim(result.stderr or "query failed"), vim.log.levels.ERROR)
     end
 
     for _, subscriber in ipairs(self.subscribers) do

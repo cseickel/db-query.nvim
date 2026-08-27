@@ -31,6 +31,51 @@ local function uncommented(sql)
   end
 end
 
+---@param line string|nil
+---@return boolean
+local function blank(line)
+  return line == nil or line:match("^%s*$") ~= nil
+end
+
+--- The first and last line of the statement `row` is in, and nil where that is
+--- nothing but blank lines. Statements are separated by semicolons, and the
+--- blank lines between two of them belong to neither.
+---
+--- A semicolon inside a string literal ends a statement here as it does in
+--- `mode`, and two statements written on one line cannot be told apart,
+--- because the line is what this counts in.
+---@param lines string[] Every line of the buffer.
+---@param row integer The line the cursor is on, as nvim counts lines.
+---@return [integer, integer]|nil
+function M.statementAt(lines, row)
+  local first, last = 0, #lines - 1
+
+  for line = row - 1, 0, -1 do
+    if lines[line + 1]:find(";", 1, true) then
+      first = line + 1
+      break
+    end
+  end
+  for line = row, #lines - 1 do
+    if lines[line + 1]:find(";", 1, true) then
+      last = line
+      break
+    end
+  end
+
+  while first < last and blank(lines[first + 1]) do
+    first = first + 1
+  end
+  while last > first and blank(lines[last + 1]) do
+    last = last - 1
+  end
+
+  if blank(lines[first + 1]) then
+    return nil
+  end
+  return { first, last }
+end
+
 -- Statements whose result is the table the csv export carries.
 local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = true }
 
