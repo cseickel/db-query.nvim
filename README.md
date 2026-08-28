@@ -1,16 +1,14 @@
 # db-query.nvim
 
-A SQL runner for Neovim, built on the command line clients you already have.
+A SQL runner for Neovim, which utilizes command line clients to execute queries. This is just another take on the dadbod concept. The reason it exists is that I wanted more control over how the output was generated and managed.
 
 Queries run through `psql`, `duckdb`, `sqlite3`, or `mysql`. Long scripts stream into the results window as they run. `<C-c>` cancels.
-
-[ARCHITECTURE.md](ARCHITECTURE.md) describes how it works inside, and how to add a database.
 
 ## Requirements
 
 Neovim 0.11 or newer.
 
-The client for your database, on your `PATH`. `stdbuf` from coreutils is used when it is there, and without it a long script arrives in chunks instead of line by line.
+The client for your database, on your `PATH`. `stdbuf` from coreutils is used when it is there, which will enable postgres scripts to stream progress line by line instead of in large chunks.
 
 ## Install
 
@@ -26,9 +24,11 @@ With lazy.nvim:
 
 ## Connections
 
-The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database. Completion follows the change: vim-dadbod-completion reads the connection once per buffer and keeps what it found, so `:DBConnect` tells it to fetch again.
+The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database.
 
-The list comes from vim-dadbod-ui's `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
+This was designed to fit within the [vim-dadbod](https://github.com/tpope/vim-dadbod) ecosystem, so if you use that then it will pick up your existing configured connections. If you have [vim-dadbod-completion](https://github.com/kristijanhusak/vim-dadbod-completion) installed, it will utilize the connection this plugin sets.
+
+The list comes from [vim-dadbod-ui](https://github.com/kristijanhusak/vim-dadbod-ui)'s `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
 
 ```lua
 opts = {
@@ -48,7 +48,7 @@ A URL can hold environment variables, so your connections file does not have to 
 ]
 ```
 
-This needs vim-dadbod, which expands them. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
+This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
 
 A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. That is the variable vim-dadbod and vim-dadbod-completion read, so completion follows your choice. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
@@ -89,38 +89,36 @@ require("db-query").setup({
 
 ## Commands
 
-| Command              |                                    |
-|----------------------|------------------------------------|
-| `:DBQuery`           | Run the buffer                     |
-| `:DBQueryStatement`  | Run the statement the cursor is in |
-| `:'<,'>DBQuery`      | Run the selection                  |
-| `:1,20DBQuery`       | Run lines 1 to 20                  |
-| `:DBQuery -f csv`    | Output CSV instead                 |
-| `:DBQuery -o report` | Name the output file yourself      |
-| `:DBConnect`         | Pick the database for this buffer  |
-| `:DBOutputDir ~/out` | Write output there and keep it     |
+| Command              |                                          |
+|----------------------|------------------------------------------|
+| `:DBQuery`           | Run the buffer                           |
+| `:DBQueryStatement`  | Run the statement the cursor is in       |
+| `:'<,'>DBQuery`      | Run the selection                        |
+| `:1,20DBQuery`       | Run lines 1 to 20                        |
+| `:DBQuery -f csv`    | Output CSV instead                       |
+| `:DBQuery -o report` | Name the output file yourself            |
+| `:DBConnect`         | Pick the database for this buffer        |
+| `:DBOutputDir ~/out` | Set the output directory for this buffer |
 
 `:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
 `-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). A query that fails writes the client's error into the csv as its only cell, so what renders the file shows the error rather than an empty table.
 
-`-o` writes the output where you say, and `<Tab>` completes the path. Give it the name without an extension, because the extension is the client's to choose: `csv` or `tsv` for an export, `log` for anything else. `-o report` with `-f csv` writes `report.csv`, and a name ending in any of those three has that one replaced, so `-o report.csv` without `-f csv` writes `report.log`. A relative path starts from the working directory, and a path ending in `/`, or naming a directory, puts a file named after the sql buffer inside it.
-
-A file you named is yours: `:w` saves it, a session restores it, and closing its window leaves it where it is. What is deleted is decided by the directory rather than by who named the file, so a `-o` into a directory you asked to have cleared up is cleared up too. A file that already exists asks before being overwritten, and answering Cancel runs nothing. The one place `-o` cannot point is the plugin's own cache directory, which is cleared on startup.
+`-o` changes the output directory from the ephemral `~/.cache/nvim/db-query/<pid>` location to a permanent directory of your choice. The extension is set by the format, using `csv` or `tsv` for an export, depending on the client, and `log` for anything else. Each new query execution runs to a new file that is automatically named.
 
 ## Where output goes
 
-Output is written to a directory of this nvim's own under `stdpath("cache")`, one file per query, named for the sql buffer and numbered one past whatever is already there. A file is deleted with the window that showed it, and whatever an nvim exited without clearing up is swept the next time one starts.
+Output is written to a directory in `stdpath("cache")/<pid>/`, one file per query, named for the sql buffer and auto numbered. A file is deleted with the window that showed it, and if nvim exited without cleaning up, it will be swept the next time one starts.
 
-`:DBOutputDir ~/exports` writes there instead, for the rest of the session, and nothing written there is deleted. Naming a directory while you work is how you say you are keeping what lands in it. `<Tab>` completes the path, and `:DBOutputDir` with no path asks, offering the one in use. Emptying that prompt puts it back to the directory `setup` gave.
+Set `output_dir` in `setup` to choose your own default output location. Set `output_cleanup = true` to have that directory auto delete it's contents when query buffer or nvim is closed.
 
-`output_dir` in `setup` is the same choice made once, and `output_cleanup` is how you ask for a directory of your own that is still cleared up.
+`:DBOutputDir ~/exports` writes there instead, for the rest of the session, and those files will not be deleted by the plugin. You can reset the output path to the auto location by running `:DBOutputDir` with no args.
 
-`-o` with no path asks for one, prefilled with the last path this buffer wrote, so rerunning an export is a matter of pressing enter. It applies to that one query, and the next query without it goes back to the cache directory.
+`-o` with no path will prompt for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the configured output directory.
 
 ## Keys
 
-The only key the plugin binds by default is `cancel`, and only while a query is running. Everything else is yours:
+The only key the plugin binds by default is `cancel`, and only while a query is running. Here are some example bindings:
 
 ```lua
 vim.keymap.set("n", "<M-x>", function()
@@ -130,13 +128,21 @@ end, { desc = "run the buffer" })
 vim.keymap.set("x", "<M-x>", function()
   require("db-query").execute({ visual = true })
 end, { desc = "run the selection" })
+
+-- Ctrl-Enter: Execute the query the cursor is on in a file that may have multiple
+-- statements, and output CSV
+vim.keymap.set("n", "<C-CR>", function()
+  require("db-query").execute({ statement = true, csv = true })
+end, { buffer = event.buf, desc = "Execute query at cursor" })
 ```
 
 `execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the output file or `true` to be asked for one.
 
 ## While a query runs
 
-A bar marks the lines that ran, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The bar scrolls with the query, and the window showing the last run's output is greyed until the new output replaces it. `status` puts the same spinner somewhere that does not scroll, returning `⠹ 3.4s` while that buffer is running something and an empty string when it is not. Asked about a results buffer, it answers for the query filling it in:
+A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The window showing the last run's output is greyed until the new output replaces it.
+
+You can call `status(buf)` to get the same spinner and timer in your winbar or statusline:
 
 ```lua
 local text = require("db-query").status(vim.api.nvim_get_current_buf())
@@ -147,7 +153,7 @@ end
 
 ## Highlights
 
-`DbQueryIndicator` colours the bar and everything drawn under it. It links to `DiagnosticInfo` unless you set it:
+`DbQueryIndicator` colors the bar and everything drawn under it. It links to `DiagnosticInfo` unless you set it:
 
 ```lua
 vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
@@ -166,3 +172,7 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
   opts = { parquet = true },
 }
 ```
+
+## Contributing
+
+[ARCHITECTURE.md](ARCHITECTURE.md) describes how it works. New data adapters are welcome, as are bug fixes. I make no guarantee about new features being accepted, so file an issue first so we can discuss it.

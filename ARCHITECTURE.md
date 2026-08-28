@@ -1,5 +1,7 @@
 # Architecture
 
+**Warning:** This is AI generated content, I am still reviewing the architecture and code.
+
 The query never passes through lua. The database's own client is spawned with its stdout redirected to a file, nvim opens that file in a window, and a result set large enough to exhaust nvim's memory cannot, because nvim only ever reads what the window shows.
 
 Everything else follows from that one decision: the file needs a name, the window needs reloading while the file is still being written, and the client needs a way to be stopped.
