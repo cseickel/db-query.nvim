@@ -2,23 +2,19 @@
 
 **Warning:** This is AI generated content, I am still reviewing the architecture and code.
 
-The query never passes through lua. The database's own client is spawned with its stdout redirected to a file, nvim opens that file in a window, and a result set large enough to exhaust nvim's memory cannot, because nvim only ever reads what the window shows.
-
-Everything else follows from that one decision: the file needs a name, the window needs reloading while the file is still being written, and the client needs a way to be stopped.
+How this works is that a query is sent to a cli client, which writes its output to a file, and the file is opened in a window. This allows us to handle large result sets without impacting memory usage or tying up the thread in nvim. When paired with exporting to csv and opening it with csv-table, the size of the result set that we can effectively handle is measured in GBs.
 
 ## The components
 
 ```
    ┌──────────────────────────────────────────────────────────────┐
    │ command                                                      │
-   │ :DBQuery · :DBQueryStatement · :DBConnect · :DBOutputDir     │
-   │ -f text|csv · -o path/basename                               │
+   │ :DBQuery | :DBQueryStatement | :DBConnect | :DBOutputDir     │
+   │ -f text|csv -o path/basename                                 │
    └───────────────────────────┬──────────────────────────────────┘
                                │
-   ┌───────────────────────────▼──────────────────────────────────┐
-   │ init                                                         │
-   │ execute() · connect() · status()                             │
-   └───────────────────────────┬──────────────────────────────────┘
+                               ▼
+                      connect() execute()
                                │
    ┌───────────────────────────▼──────────────────────────────────┐
    │ source            one per buffer that runs queries           │
@@ -39,7 +35,7 @@ Everything else follows from that one decision: the file needs a name, the windo
              │ uses
              ▼
    ┌──────────────────────────────────────────────────────────────┐
-   │ settings and stateless functions                             │
+   │ settings and utility functions                               │
    │                                                              │
    │  client  → argv · env · stdin · extension · cancel(pid)      │
    │  url     → scheme · file path · password                     │
@@ -50,10 +46,6 @@ Everything else follows from that one decision: the file needs a name, the windo
    │  connections → the list the chooser offers                   │
    └──────────────────────────────────────────────────────────────┘
 ```
-
-Every arrow points down. A run holds a process and a file, and publishes one event, so a query with nothing watching it is an ordinary thing to start: `parquet` runs its `create view` through `client.run` and nothing is drawn at all.
-
-The bottom layer holds two settings between them. `config` is what `setup` was given, and `output` is where files go, which `:DBOutputDir` changes for the session. Everything else there is a function of its arguments.
 
 ## What each one owns
 
