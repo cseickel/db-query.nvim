@@ -13,6 +13,10 @@ the first did, and resolved again whenever that window has gone.
 
 local output = require("db-query.output")
 
+-- This module's own group, so that taking back what it put on a buffer takes
+-- back nothing else.
+local GROUP = vim.api.nvim_create_augroup("db-query.pane", { clear = true })
+
 ---@class dbquery.Pane
 ---@field srcBuf integer The buffer whose queries this pane shows.
 ---@field win integer|nil Where the last output opened, while that window lasts.
@@ -75,7 +79,14 @@ end
 --- has been closed. The current window does not change.
 ---
 --- A path the user named is one they can ask for again, and the buffer that
---- read it the last time is still holding what it read, so it is reread here.
+--- read it the last time is still holding what it read, so `:edit` is run on
+--- it. That is a plain reread for a plain file, and the refresh a plugin that
+--- renders this kind of file offers, since a read command fired on a buffer it
+--- has already taken over is how such a plugin is told to render again.
+---
+--- `checktime` would not do: it passes over every buffer whose buftype is set,
+--- which is every buffer one of those plugins has taken over.
+---
 --- The buffer this plugin names is new every run and has nothing to reread.
 ---@param path string
 ---@param db string|nil The connection the file came from, for the buffer to carry.
@@ -93,11 +104,11 @@ function Pane:show(path, db)
   end
 
   if shownBefore then
-    -- The buftype goes first, because a sealed buffer is no longer reading a
-    -- file and :edit would have nothing to read.
-    vim.bo[buf].buftype = ""
-    vim.api.nvim_buf_call(buf, function()
-      vim.cmd("silent! edit!")
+    -- In the window it is shown in, since a plugin that renders this file sets
+    -- up the window it renders into. Nothing else is set here, since whatever
+    -- owns the buffer set what it wanted the first time it read it.
+    vim.api.nvim_win_call(self.win, function()
+      vim.cmd("edit!")
     end)
   end
 
@@ -117,13 +128,22 @@ function Pane:show(path, db)
   self.buf = buf
   self:undim()
 
-  -- A file this plugin named is scratch: it goes when the next query takes the
-  -- window, it outlives nvim otherwise, and one query's output can be larger
-  -- than everything else in the cache directory put together. A file the user
-  -- asked for by name is an ordinary file and is left alone.
-  if output.owns(path) then
-    vim.bo[buf].bufhidden = "wipe"
+  -- Whether this file is deleted with the window can have changed since this
+  -- buffer last held one, so what was decided then is taken back first.
+  vim.api.nvim_clear_autocmds({ group = GROUP, buffer = buf })
+
+  -- A file this plugin clears up goes when the window moves on, since it
+  -- outlives nvim otherwise and one query's output can be larger than
+  -- everything else in the cache put together. A file that is kept is an
+  -- ordinary file, so its buffer is left to whatever `hidden` says, as any file
+  -- the user opened would be. `unload` and its neighbours throw away unsaved
+  -- changes without asking, which is not this plugin's to do to a file it is
+  -- not deleting.
+  local ours = output.owns(path)
+  vim.bo[buf].bufhidden = ours and "wipe" or ""
+  if ours then
     vim.api.nvim_create_autocmd("BufWipeout", {
+      group = GROUP,
       buffer = buf,
       once = true,
       callback = function()
@@ -132,26 +152,6 @@ function Pane:show(path, db)
     })
   end
   return buf
-end
-
---- Cuts `buf` loose from the file it read, so that a saved session does not
---- come back to a path that was deleted with the buffer. `:mksession` skips a
---- window only when its buffer is `nofile`, and writes it as a blank one when
---- `blank` is in `sessionoptions`.
----
---- Only once nothing is going to reread it, because checktime ignores every
---- buffer that has a buftype at all, and a transcript would stop filling in.
----
---- A file the user named is theirs to save and to reopen, so it keeps the
---- buftype that lets both work.
----@param buf integer|nil
-local function seal(buf)
-  if not (buf and vim.api.nvim_buf_is_valid(buf)) then
-    return
-  end
-  if output.owns(vim.api.nvim_buf_get_name(buf)) then
-    vim.bo[buf].buftype = "nofile"
-  end
 end
 
 --- Whether `buf` is the output this pane put in its window.
@@ -237,7 +237,6 @@ function Pane:follow(run)
       self:undim()
     end
     refresh()
-    seal(shown)
   end)
 end
 
@@ -266,7 +265,7 @@ function Pane:display(run)
     end
     self:undim()
     if run.status ~= "cancelled" then
-      seal(self:show(run.path, run.url))
+      self:show(run.path, run.url)
     end
   end)
 end

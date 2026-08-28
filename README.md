@@ -74,6 +74,16 @@ require("db-query").setup({
   -- native cli output. The other option is "csv", which exports to csv when the
   -- query is a single row-returning statement.
   format = "text",
+
+  -- Where output files are written. The default is a directory of this nvim's
+  -- own under `stdpath("cache")`.
+  output_dir = nil,
+
+  -- Whether an output file is deleted with the window that showed it, and
+  -- whether what an nvim left behind is swept at startup. Setting `output_dir`
+  -- and leaving this alone turns it off, since a directory of your own is
+  -- somewhere you put results you are keeping.
+  output_cleanup = true,
 })
 ```
 
@@ -88,16 +98,25 @@ require("db-query").setup({
 | `:DBQuery -f csv`    | Output CSV instead                 |
 | `:DBQuery -o report` | Name the output file yourself      |
 | `:DBConnect`         | Pick the database for this buffer  |
+| `:DBOutputDir ~/out` | Write output there and keep it     |
 
 `:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
-`-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim).
+`-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). A query that fails writes the client's error into the csv as its only cell, so what renders the file shows the error rather than an empty table.
 
-`-o` writes the output where you say, and `<Tab>` completes the path. Give it the name without an extension, because the extension is the client's to choose: `csv` or `tsv` for an export, `log` for anything else. `-o report` with `-f csv` writes `report.csv`, and a name that already ends in the right extension is used as it is. A relative path starts from the working directory, and a path ending in `/`, or naming a directory, puts a file named after the sql buffer inside it.
+`-o` writes the output where you say, and `<Tab>` completes the path. Give it the name without an extension, because the extension is the client's to choose: `csv` or `tsv` for an export, `log` for anything else. `-o report` with `-f csv` writes `report.csv`, and a name ending in any of those three has that one replaced, so `-o report.csv` without `-f csv` writes `report.log`. A relative path starts from the working directory, and a path ending in `/`, or naming a directory, puts a file named after the sql buffer inside it.
 
-A file you named is yours: `:w` saves it, a session restores it, and closing its window does not delete it. A path that already exists asks before being overwritten, and answering Cancel runs nothing. The one place `-o` cannot point is the plugin's own cache directory, which is cleared on startup.
+A file you named is yours: `:w` saves it, a session restores it, and closing its window leaves it where it is. What is deleted is decided by the directory rather than by who named the file, so a `-o` into a directory you asked to have cleared up is cleared up too. A file that already exists asks before being overwritten, and answering Cancel runs nothing. The one place `-o` cannot point is the plugin's own cache directory, which is cleared on startup.
 
-`-o` with no path asks for one, prefilled with the last path this buffer wrote, so rerunning an export is a matter of pressing enter.
+## Where output goes
+
+Output is written to a directory of this nvim's own under `stdpath("cache")`, one file per query, named for the sql buffer and numbered one past whatever is already there. A file is deleted with the window that showed it, and whatever an nvim exited without clearing up is swept the next time one starts.
+
+`:DBOutputDir ~/exports` writes there instead, for the rest of the session, and nothing written there is deleted. Naming a directory while you work is how you say you are keeping what lands in it. `<Tab>` completes the path, and `:DBOutputDir` with no path asks, offering the one in use. Emptying that prompt puts it back to the directory `setup` gave.
+
+`output_dir` in `setup` is the same choice made once, and `output_cleanup` is how you ask for a directory of your own that is still cleared up.
+
+`-o` with no path asks for one, prefilled with the last path this buffer wrote, so rerunning an export is a matter of pressing enter. It applies to that one query, and the next query without it goes back to the cache directory.
 
 ## Keys
 

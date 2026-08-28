@@ -127,14 +127,33 @@ local function writeTo(path, text, mode)
   end
 end
 
+--- `message` as the rows an export would have written, so that whatever renders
+--- the output shows what went wrong in place of the result.
+---
+--- A csv field holds newlines as long as it is quoted and its own quotes are
+--- doubled. A tsv has neither, so the message goes on one line.
+---@param message string
+---@param path string The file the client was writing, which names the format.
+---@return string
+local function errorRows(message, path)
+  if vim.endswith(path, ".tsv") then
+    local flattened = message:gsub("%s+", " ")
+    return "error\n" .. flattened .. "\n"
+  end
+  local quoted = message:gsub('"', '""')
+  return 'error\n"' .. quoted .. '"\n'
+end
+
 --- Records how the client ended and tells everyone who asked.
 ---
 --- The footer is written before nvim hears about the exit, so the transcript is
 --- complete by the time anything rereads it.
 ---
 --- An export that failed wrote no rows and printed why on a stream the rows
---- file never sees, so what it has to show is a transcript of that message.
---- Under its own name, because a csv reader would render an error as a table.
+--- file never sees, so the message is written into that file as the one row it
+--- has. A cancelled export is never shown, so its file goes: half a result set
+--- that reads as a whole one is worse than no file, and nothing else would ever
+--- delete it.
 ---@param self dbquery.Run
 ---@param result vim.SystemCompleted
 local function finish(self, result)
@@ -145,10 +164,9 @@ local function finish(self, result)
   if self.mode == "script" then
     writeTo(self.path, footer, "a")
   elseif status == "failed" then
-    local transcript = self.path:gsub("%.[^.]+$", ".log")
-    writeTo(transcript, vim.trim(result.stderr or "") .. footer, "w")
+    writeTo(self.path, errorRows(vim.trim(result.stderr or "") .. footer, self.path), "w")
+  elseif status == "cancelled" then
     os.remove(self.path)
-    self.path = transcript
   end
 
   vim.schedule(function()

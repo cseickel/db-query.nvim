@@ -112,7 +112,7 @@ end
 ---@field sql string
 ---@field mode dbquery.Mode
 ---@field span [integer, integer] The first and last line the sql was taken from.
----@field outputPath string|nil The path and base name the user asked the output to be written to.
+---@field outputPath string|nil The path and base name this query asked the output to be written to.
 
 --- Runs `spec.sql`, taking the place of whatever this buffer was running.
 ---
@@ -120,6 +120,7 @@ end
 --- running that nothing holds a handle to. The first is only asked, so it may
 --- still be finishing when this one starts, and it has already lost the
 --- indicator and the pane by then.
+---
 ---@param spec dbquery.ExecuteSpec
 function Source:execute(spec)
   self:cancel()

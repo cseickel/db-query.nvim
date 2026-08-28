@@ -13,68 +13,16 @@ local command = require("db-query.command")
 local config = require("db-query.config")
 local connections = require("db-query.connections")
 local output = require("db-query.output")
+local selection = require("db-query.selection")
 local Source = require("db-query.source")
 local sql = require("db-query.sql")
 
 local M = {}
 
---- Which sql to run. Nothing named means the whole buffer.
----@class dbquery.Selection
----@field visual boolean|nil The visual selection, live or the one just ended.
----@field range [integer, integer]|nil First and last line, as a command's range gives them.
----@field statement boolean|nil The statement the cursor is in, of however many the buffer holds.
-
 --- Which sql to run, and what becomes of what it prints.
 ---@class dbquery.ExecuteOptions : dbquery.Selection
 ---@field format dbquery.Format|nil What the client is asked for, defaulting to the configured format.
 ---@field output string|true|nil A path to write the output to, true to be asked for one, and nil for the file this plugin names.
-
---- The selection, and the lines it starts and ends on. Empty when nothing is
---- selected.
----
---- A `<cmd>` mapping leaves visual mode on and `'<` and `'>` still holding the
---- previous selection, so the live selection is read while it is there and the
---- marks only after it has ended, which is how a `-range` command arrives.
----@return string[] lines
----@return [integer, integer] span First and last line, as nvim counts them.
-local function selection()
-  local mode = vim.fn.mode()
-  local from, to = vim.fn.getpos("v"), vim.fn.getpos(".")
-  if not (mode == "v" or mode == "V" or mode == "\22") then
-    mode = vim.fn.visualmode()
-    if mode == "" then
-      return {}, { 0, 0 }
-    end
-    from, to = vim.fn.getpos("'<"), vim.fn.getpos("'>")
-  end
-
-  local lines = vim.fn.getregion(from, to, { type = mode })
-  return lines, { math.min(from[2], to[2]) - 1, math.max(from[2], to[2]) - 1 }
-end
-
---- The sql `opts` names, and the lines it was taken from: a command's range,
---- the visual selection, or the whole buffer.
----@param opts dbquery.Selection
----@return string sql
----@return [integer, integer] span First and last line, as nvim counts them.
-local function sqlText(opts)
-  local lines, span
-  if opts.range then
-    lines = vim.api.nvim_buf_get_lines(0, opts.range[1] - 1, opts.range[2], false)
-    span = { opts.range[1] - 1, opts.range[2] - 1 }
-  elseif opts.visual then
-    lines, span = selection()
-  elseif opts.statement then
-    local buffer = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-    local found = sql.statementAt(buffer, vim.api.nvim_win_get_cursor(0)[1] - 1)
-    span = found or { 0, 0 }
-    lines = found and vim.list_slice(buffer, found[1] + 1, found[2] + 1) or {}
-  else
-    lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-    span = { 0, #lines - 1 }
-  end
-  return vim.trim(table.concat(lines, "\n")), span
-end
 
 --- Asks which database this buffer speaks to and assigns it, then calls
 --- `chosen` with the url. A cancelled choice calls nothing.
@@ -194,7 +142,7 @@ end
 ---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}
-  local statement, span = sqlText(opts)
+  local statement, span = selection.text(opts)
   if statement == "" then
     return vim.notify("db-query: no query to run", vim.log.levels.WARN)
   end
@@ -209,10 +157,11 @@ function M.execute(opts)
       return
     end
     -- Remembered as the full path, so a working directory change does not move
-    -- what the prompt offers next time.
+    -- what the prompt offers next time. The query is given what was typed,
+    -- which is resolved the same way where the file is made.
     if outputPath then
-      outputPath = output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
-      vim.b[buf].db_last_output_path = outputPath
+      vim.b[buf].db_last_output_path =
+        output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
     end
 
     ---@param url string|nil
@@ -239,6 +188,29 @@ function M.execute(opts)
   end
 
   chooseOutput(buf, opts.output, run)
+end
+
+--- Writes output to `path` from now on, and nothing there is deleted, since
+--- naming a directory while you work is how you say you are keeping what lands
+--- in it. Numbering carries on from what is already there.
+---
+--- Nil asks for a directory, offering the one in use. Emptying the prompt puts
+--- it back to what `setup` was given, and cancelling changes nothing.
+---@param path string|nil
+function M.outputDir(path)
+  if path then
+    return output.setDirectory(path)
+  end
+
+  vim.ui.input({
+    prompt = "Output directory",
+    default = output.directory(),
+    completion = "dir",
+  }, function(value)
+    if value then
+      output.setDirectory(vim.trim(value))
+    end
+  end)
 end
 
 --- The spinner and the clock for a winbar or a statusline, empty unless `buf`

@@ -104,6 +104,14 @@ function M.setup()
   vim.api.nvim_create_user_command("DBConnect", function()
     require("db-query").connect()
   end, { desc = "Choose the database this buffer speaks to" })
+
+  vim.api.nvim_create_user_command("DBOutputDir", function(command)
+    require("db-query").outputDir(command.args ~= "" and command.args or nil)
+  end, {
+    nargs = "?",
+    complete = "dir",
+    desc = "Write output to a directory of your own, and keep it",
+  })
 end
 
 return M

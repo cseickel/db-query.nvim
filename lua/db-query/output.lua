@@ -1,27 +1,47 @@
 --[[
 The files clients write their output to.
 
-A file this module names goes under the cache directory rather than through
-vim.fn.tempname, because nvim's temp directory is under /tmp, and a /tmp on
-tmpfs is memory. A result set large enough to be worth exporting would be held
-in memory twice over. Each nvim writes into a directory named for its own pid,
-which is what lets one nvim clear up after the ones that exited without doing
-it themselves.
+Output goes to a directory rather than through vim.fn.tempname, because nvim's
+temp directory is under /tmp, and a /tmp on tmpfs is memory. A result set large
+enough to be worth exporting would be held in memory twice over.
 
-`-o` names a file instead, and that one is the user's: it is written where they
-said, kept when the window showing it closes, and never swept. `owns` is the
-question everything else asks to tell the two apart.
+Which directory is the whole of what this module decides. Nothing says, and it
+is one named for this nvim's pid under the cache, which is what lets one nvim
+clear up after the ones that exited without doing it themselves. `setup` says,
+and it is that one, cleared up or kept as `output_cleanup` asks. `:DBOutputDir`
+says, and it is that one and nothing there is ever deleted, since naming a
+directory while you work is how you say you are keeping what lands in it.
+
+`owns` is that question asked about one file: whether this plugin deletes it
+with the window that showed it.
 ]]
+
+local config = require("db-query.config")
 
 local M = {}
 
 local ROOT = vim.fn.stdpath("cache") .. "/db-query"
 local MINE = ROOT .. "/" .. vim.fn.getpid()
 
--- How many files each source buffer has been given, so a second run of the
--- same query does not write over the first while it is still on screen.
----@type table<string, integer>
-local written = {}
+-- Where output goes for the rest of the session, once a command has said so.
+---@type string|nil
+local asked = nil
+
+-- What a client is ever asked to write, which is what makes an extension one
+-- this plugin put there and may take back.
+local EXTENSIONS = { csv = true, tsv = true, log = true }
+
+--- Where output is written.
+---@return string
+function M.directory()
+  return asked or config.values.output_dir or MINE
+end
+
+--- Whether what is written to `M.directory()` is this plugin's to clear up.
+---@return boolean
+local function clearing()
+  return asked == nil and config.values.output_cleanup
+end
 
 --- What output taken from `srcName` is called, before the number and the
 --- extension. An unnamed buffer has no name to take, and its output is called
@@ -34,6 +54,25 @@ local function baseName(srcName)
     return "query"
   end
   return name
+end
+
+--- Makes the directory `path` is in and empties the file, so that the client
+--- has somewhere to write and so that this is where finding out it has not is
+--- done, rather than through whatever a shell redirect makes of a path it
+--- cannot open. An emptied file also means its size is this run's output.
+---
+--- False and reported when the file cannot be written.
+---@param path string
+---@return boolean
+local function ready(path)
+  pcall(vim.fn.mkdir, vim.fs.dirname(path), "p")
+  local file = io.open(path, "w")
+  if not file then
+    vim.notify("db-query: cannot write " .. path, vim.log.levels.ERROR)
+    return false
+  end
+  file:close()
+  return true
 end
 
 --- Where output from `srcName` goes, before the extension: the path the user
@@ -51,82 +90,117 @@ function M.destination(srcName, chosen)
     return vim.fs.joinpath(vim.fn.getcwd(), baseName(srcName))
   end
 
-  local directory = chosen:sub(-1) == "/"
+  local named = chosen:sub(-1) ~= "/"
   local full = vim.fs.normalize(chosen)
   if not vim.startswith(full, "/") then
     full = vim.fs.joinpath(vim.fn.getcwd(), full)
   end
-  if directory or vim.fn.isdirectory(full) == 1 then
-    return vim.fs.joinpath(full, baseName(srcName))
+  if named and vim.fn.isdirectory(full) == 0 then
+    return full
   end
-  return full
+  return vim.fs.joinpath(full, baseName(srcName))
 end
 
---- Whether this plugin made `path` up, which is what makes it ours to delete.
---- A file the user named is theirs, and outlives the window that showed it.
+--- Where output is written from now on, until nvim exits, and nothing written
+--- there is deleted. An empty `path` puts it back to what `setup` was given.
+---
+--- The directory is made here rather than at the first query, so that somewhere
+--- it cannot go is answered while the user is still looking at the question.
+---@param path string
+function M.setDirectory(path)
+  local full = path ~= "" and vim.fs.normalize(path) or nil
+  if full and not (pcall(vim.fn.mkdir, full, "p") and vim.fn.isdirectory(full) == 1) then
+    return vim.notify("db-query: cannot write in " .. full, vim.log.levels.ERROR)
+  end
+
+  asked = full
+  vim.notify("db-query: output goes to " .. M.directory())
+end
+
+--- Whether this plugin deletes `path` with the window that showed it, which is
+--- a question about the directory output is going to rather than about who
+--- named the file.
 ---@param path string
 ---@return boolean
 function M.owns(path)
-  return vim.startswith(path, ROOT .. "/")
+  return clearing() and vim.startswith(path, M.directory() .. "/")
 end
 
---- The file `full` names, with the extension the client is going to write, made
---- empty and ready for it. Nil for a place it cannot be written, or an
---- overwrite that was turned down.
----
---- Emptying it here is what tells the caller now, rather than through whatever
---- the client's redirect does with a path it cannot open, and it is what makes
---- the size of the file mean this run's output rather than the last one's.
----@param full string The path and base name the user asked for.
+--- `full` with the extension the client is going to write. An extension a
+--- client would have written is replaced rather than added to, so `-o
+--- report.csv` on a query that writes a transcript is `report.log`.
+---@param full string
+---@param extension string
+---@return string
+local function withExtension(full, extension)
+  if EXTENSIONS[vim.fn.fnamemodify(full, ":e")] then
+    return vim.fn.fnamemodify(full, ":r") .. "." .. extension
+  end
+  return full .. "." .. extension
+end
+
+--- The file `full` names, with the client's extension, ready to be written.
+--- Nil for a place it cannot be written, or an overwrite that was turned down.
+---@param full string The path and base name the output is to be written to.
 ---@param extension string
 ---@return string|nil
-local function named(full, extension)
-  if M.owns(full) then
+local function namedFile(full, extension)
+  if vim.startswith(full, ROOT .. "/") then
     return vim.notify(
       "db-query: nothing may be written in " .. ROOT .. ", which is cleared up on startup",
       vim.log.levels.ERROR
     )
   end
 
-  local suffix = "." .. extension
-  local path = vim.endswith(full, suffix) and full or (full .. suffix)
+  local path = withExtension(full, extension)
   if vim.uv.fs_stat(path) and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
     return nil
   end
-
-  pcall(vim.fn.mkdir, vim.fs.dirname(path), "p")
-  local file = io.open(path, "w")
-  if not file then
-    return vim.notify("db-query: cannot write " .. path, vim.log.levels.ERROR)
-  end
-  file:close()
-  return path
+  return ready(path) and path or nil
 end
 
---- A file for one query's output. `chosen` is the path and base name the user
+--- The number to give the next file called `name` in `dir`, which is one past
+--- the highest already there. Output kept beside older output does not write
+--- over it, and a directory that is cleared up starts again at one by itself.
+---@param dir string
+---@param name string
+---@return integer
+local function unused(dir, name)
+  local pattern = "^" .. vim.pesc(name) .. "%-(%d+)%."
+  local highest = 0
+  for entry in vim.fs.dir(dir) do
+    local number = tonumber(entry:match(pattern))
+    if number and number > highest then
+      highest = number
+    end
+  end
+  return highest + 1
+end
+
+--- A file for one query's output. `chosen` is the path and base name the query
 --- asked for, and without one the file is named for the buffer the sql came
---- from and is unused, so a second run of the same query does not write over
---- the first while it is still on screen.
+--- from, numbered so that running the same query again does not write over a
+--- result still on screen.
 ---
 --- The extension is the client's either way, because what the file holds is the
---- client's to decide and a csv named `.txt` is read by nothing. A `chosen` that
---- already ends in that extension keeps the one it has.
+--- client's to decide and a csv named `.txt` is read by nothing.
 ---
---- Nil for a file the user asked for and cannot have, already reported or
---- turned down, so the caller runs nothing.
+--- Nil for a file that cannot be written or an overwrite that was turned down,
+--- already reported or asked about, so the caller runs nothing.
 ---@param srcName string The full path of the buffer the sql came from.
 ---@param extension string What the client writes: csv, tsv, or log.
 ---@param chosen string|nil
 ---@return string|nil
 function M.path(srcName, extension, chosen)
   if chosen then
-    return named(M.destination(srcName, chosen), extension)
+    return namedFile(M.destination(srcName, chosen), extension)
   end
 
-  vim.fn.mkdir(MINE, "p")
+  -- The directory is made by `ready`, which reports what it cannot make.
+  local dir = M.directory()
   local name = baseName(srcName)
-  written[name] = (written[name] or 0) + 1
-  return string.format("%s/%s-%d.%s", MINE, name, written[name], extension)
+  local path = string.format("%s/%s-%d.%s", dir, name, unused(dir, name), extension)
+  return ready(path) and path or nil
 end
 
 --- Whether a process is still running, which is what makes its output worth
@@ -138,12 +212,12 @@ local function alive(pid)
   return called and result == 0
 end
 
---- Removes what nvims that are no longer running left behind.
+--- Removes what nvims that are no longer running left behind in the cache.
 ---
 --- A file is deleted when the buffer showing it is wiped, so what this finds is
 --- the output of an nvim that was killed, or that exited with a result still on
 --- screen. Sweeping at startup rather than at exit is what covers the first of
---- those.
+--- those. A directory of the user's has no pid in its name and is never walked.
 function M.sweep()
   if vim.fn.isdirectory(ROOT) == 0 then
     return
