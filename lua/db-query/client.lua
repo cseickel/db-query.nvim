@@ -42,9 +42,9 @@ end
 
 --- Tells psql to put the backend pid in `file` rather than in its output, so
 --- neither the transcript nor the rows have to be picked apart to find it.
---- `echoing` says whether the statement echo has to be turned off around it
---- and back on afterwards, which script mode needs and export mode must not
---- do, since export mode never turned it on.
+--- `echoing` says whether to turn the statement echo off around these lines and
+--- back on afterwards. Script mode needs that, and export mode must not do it,
+--- because export mode never turned the echo on.
 ---@param file string
 ---@param echoing boolean
 ---@return string

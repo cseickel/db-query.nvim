@@ -98,23 +98,23 @@ require("db-query").setup({
 | `:DBQuery -f csv`    | Output CSV instead                       |
 | `:DBQuery -o report` | Name the output file yourself            |
 | `:DBConnect`         | Pick the database for this buffer        |
-| `:DBOutputDir ~/out` | Set the output directory for this buffer |
+| `:DBOutputDir ~/out` | Set the output directory for the session |
 
 `:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
 `-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). A query that fails writes the client's error into the csv as its only cell, so what renders the file shows the error rather than an empty table.
 
-`-o` changes the output directory from the ephemral `~/.cache/nvim/db-query/<pid>` location to a permanent directory of your choice. The extension is set by the format, using `csv` or `tsv` for an export, depending on the client, and `log` for anything else. Each new query execution runs to a new file that is automatically named.
+`-o` names the file for one query, in place of the one the plugin would have named. `-o report` writes `report.csv` in the working directory, `-o ~/exports/` writes into that directory under the buffer's own name, and an existing file is confirmed before the query starts. The extension is always set by the format, using `csv` or `tsv` for an export, depending on the client, and `log` for anything else, so `-o report.csv` on a text query writes `report.log`.
 
 ## Where output goes
 
-Output is written to a directory in `stdpath("cache")/<pid>/`, one file per query, named for the sql buffer and auto numbered. A file is deleted with the window that showed it, and if nvim exited without cleaning up, it will be swept the next time one starts.
+Output is written to `stdpath("cache")/db-query/<pid>/`, one file per query, named for the sql buffer and numbered one past the highest number already there. A file is deleted when the window showing it is closed, and anything an nvim left behind is swept the next time one starts.
 
-Set `output_dir` in `setup` to choose your own default output location. Set `output_cleanup = true` to have that directory auto delete it's contents when query buffer or nvim is closed.
+Set `output_dir` in `setup` to write somewhere else. That turns `output_cleanup` off, because a directory of your own is somewhere you put results you are keeping. Set `output_cleanup = true` alongside it to have those files deleted with their windows anyway.
 
-`:DBOutputDir ~/exports` writes there instead, for the rest of the session, and those files will not be deleted by the plugin. You can reset the output path to the auto location by running `:DBOutputDir` with no args.
+`:DBOutputDir ~/exports` writes there for the rest of the session, and nothing written there is ever deleted by the plugin. `:DBOutputDir` with no argument prompts for a directory, and emptying the prompt puts it back to what `setup` was given.
 
-`-o` with no path will prompt for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the configured output directory.
+`-o` with no path prompts for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the output directory.
 
 ## Keys
 

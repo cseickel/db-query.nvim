@@ -50,9 +50,9 @@ function Source.of(buf)
   return self
 end
 
---- The source whose pane is showing `buf`, which is how output answers for the
---- query that is filling it in. Output left over from an earlier run is in no
---- pane and answers for nothing.
+--- The source whose pane is showing `buf`, so that an output buffer can report
+--- the status of the query filling it in. Output left over from an earlier run
+--- is in no pane and reports nothing.
 ---@param buf integer
 ---@return dbquery.Source|nil
 local function showing(buf)
@@ -65,11 +65,12 @@ local function showing(buf)
 end
 
 --- What `buf` shows in a winbar or a statusline while its query runs, and an
---- empty string the rest of the time. A buffer that has never run one has no
---- source, and is not given one for asking.
+--- empty string the rest of the time. A buffer that has never run a query has
+--- no source, and asking does not create one.
 ---
---- A winbar over the output says the same as the one over the sql it came from,
---- which is what the greyed window it is drawn over is waiting for.
+--- A winbar over the output window shows the same spinner as one over the sql
+--- buffer, because that output window is greyed until this query replaces what
+--- it is showing.
 ---@param buf integer
 ---@return string
 function Source.status(buf)
@@ -95,8 +96,8 @@ end
 ---
 --- An output window that is already open is left where it is, since it shows a
 --- file that is worth reading after the query it came from has been closed.
---- The pane is told to stop so that a query still finishing does not open a
---- new one, which would split off whatever the user is looking at instead.
+--- The pane is told to stop so that a query still finishing does not open a new
+--- window, which would split whatever the user is looking at by then.
 function Source:close()
   self:cancel()
   if self.indicator then

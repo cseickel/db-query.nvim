@@ -139,8 +139,9 @@ end
 --- cannot be narrowed to the windows showing this buffer.
 ---
 --- A tick is queued on the main loop rather than run where the timer fires, so
---- one can still be waiting when the query ends, and drawing it then would put
---- the spinner back for good.
+--- a tick can still be waiting when the query ends. Drawing that one would put
+--- the spinner back on screen for good, which is what the `self.timer` check
+--- prevents.
 ---
 --- `:bdelete` unloads a buffer without wiping it, so a query can outlive the
 --- lines it was drawn on and still be one the window showing its output is

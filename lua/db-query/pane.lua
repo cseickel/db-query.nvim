@@ -78,14 +78,14 @@ end
 --- Shows the file at `path`, opening a window below the query if the last one
 --- has been closed. The current window does not change.
 ---
---- A path the user named is one they can ask for again, and the buffer that
---- read it the last time is still holding what it read, so `:edit` is run on
---- it. That is a plain reread for a plain file, and the refresh a plugin that
---- renders this kind of file offers, since a read command fired on a buffer it
---- has already taken over is how such a plugin is told to render again.
+--- A path the user named with `-o` can be written to again, and the buffer that
+--- read it last time still holds what it read then, so `:edit!` is run on it.
+--- For a plain file that is a reread. For a file that a plugin renders, such as
+--- csv-table, a read command on a buffer it has taken over is how that plugin
+--- is told to render again.
 ---
---- `checktime` would not do: it passes over every buffer whose buftype is set,
---- which is every buffer one of those plugins has taken over.
+--- `checktime` would not do: it skips every buffer whose buftype is set, which
+--- is every buffer one of those plugins has taken over.
 ---
 --- The buffer this plugin names is new every run and has nothing to reread.
 ---@param path string
@@ -132,7 +132,7 @@ function Pane:show(path, db)
   -- buffer last held one, so what was decided then is taken back first.
   vim.api.nvim_clear_autocmds({ group = GROUP, buffer = buf })
 
-  -- A file this plugin clears up goes when the window moves on, since it
+  -- A file this plugin clears up is deleted when the window moves on, since it
   -- outlives nvim otherwise and one query's output can be larger than
   -- everything else in the cache put together. A file that is kept is an
   -- ordinary file, so its buffer is left to whatever `hidden` says, as any file

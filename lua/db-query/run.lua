@@ -39,9 +39,9 @@ local live = {}
 -- runs and clears the group it makes.
 local GROUP = vim.api.nvim_create_augroup("db-query.run", { clear = true })
 
--- Cancelling leaves the client to end in its own time, which it will not get
+-- Cancelling leaves the client to end in its own time, which it does not get
 -- once nvim is gone, and a detached client does not die with nvim either.
--- Someone will delete this and leave a psql holding a transaction open.
+-- Deleting this leaves a psql running with a transaction open.
 vim.api.nvim_create_autocmd("VimLeavePre", {
   group = GROUP,
   callback = function()
@@ -176,9 +176,9 @@ local function finish(self, result)
       os.remove(self.sessionFile)
     end
 
-    -- Every subscriber is told, whatever the one before it did. They are
-    -- independent, and one of them putting the output on screen is what takes
-    -- away another's indication that a query is still running.
+    -- Subscribers are independent, so one that throws must not stop the rest.
+    -- A pane failing to open its window would otherwise leave the indicator
+    -- spinning on a query that has ended.
     for _, subscriber in ipairs(self.subscribers) do
       local ok, err = pcall(subscriber, self)
       if not ok then

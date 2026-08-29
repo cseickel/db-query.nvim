@@ -28,9 +28,9 @@ local M = {}
 --- `chosen` with the url. A cancelled choice calls nothing.
 ---
 --- The connection is remembered in `g:db` as well, which is what gives the next
---- sql buffer a connection without being asked again. When the buffer this was
---- opened for has been closed in the meantime, remembering it is all a choice
---- can do, and `chosen` is not called.
+--- sql buffer a connection without being asked again. When the buffer has been
+--- closed while the chooser was open, the choice is only remembered in `g:db`
+--- and `chosen` is not called.
 ---@param chosen fun(url: string)|nil
 function M.connect(chosen)
   local list, err = connections.list(config.values.connections)
@@ -91,11 +91,11 @@ end
 --- when `url` is nil. The client is then given the url completion connects
 --- with.
 ---
---- Anything dadbod cannot answer for, including not being installed, leaves the
---- url as it came in, and running it is where that is found out. Nil in is nil
---- out, which is how the caller knows to ask for a connection. Dadbod answers
---- a buffer with no connection anywhere in that chain with an empty url, which
---- is the same answer.
+--- Anything dadbod cannot answer for, including dadbod not being installed,
+--- gives back the url unchanged, and starting the client is where that turns
+--- out to be unusable. A nil url gives back nil, which is how the caller knows
+--- to ask for a connection. Dadbod returns an empty url for a buffer with no
+--- connection anywhere in that chain, and that is treated the same way.
 ---@param url string|nil
 ---@return string|nil
 local function resolve(url)
@@ -136,9 +136,9 @@ end
 --- Runs the sql `opts` names, asking where the output goes when `output` is
 --- true and for a connection when the buffer has none.
 ---
---- The sql and the place it was run from are read before either is asked for,
---- because choosing ends visual mode and takes the selection with it, and gives
---- the user time to move somewhere else before the query starts.
+--- The sql and the lines it came from are read before either prompt opens,
+--- because a prompt ends visual mode and takes the selection with it, and gives
+--- the user time to move the cursor somewhere else before the query starts.
 ---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}

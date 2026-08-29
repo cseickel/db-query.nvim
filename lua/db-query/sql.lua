@@ -42,8 +42,8 @@ end
 --- blank lines between two of them belong to neither.
 ---
 --- A semicolon inside a string literal ends a statement here as it does in
---- `mode`, and two statements written on one line cannot be told apart,
---- because the line is what this counts in.
+--- `mode`, and two statements written on one line cannot be told apart, because
+--- this counts in whole lines.
 ---@param lines string[] Every line of the buffer.
 ---@param row integer The line the cursor is on, as nvim counts lines.
 ---@return [integer, integer]|nil
@@ -76,17 +76,17 @@ function M.statementAt(lines, row)
   return { first, last }
 end
 
--- Statements whose result is the table the csv export carries.
+-- Statements that return rows, which is what the csv export needs.
 local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = true }
 
 -- A CTE ending in one of these writes rows instead of returning them, and
 -- Postgres refuses to put it inside COPY.
 local WRITES = { "insert", "update", "delete", "merge" }
 
---- Whether `sql` is the single row-returning statement the csv export can
---- carry, or a script to be run for its transcript. A semicolon inside a
---- string literal reads as a second statement, which costs the table and
---- gives the transcript instead.
+--- Whether `sql` is the single row-returning statement a csv export needs, or a
+--- script to be run for its transcript. A semicolon inside a string literal
+--- reads as a second statement, so a query holding one runs as a script and its
+--- output opens as text.
 ---@param sql string
 ---@return dbquery.Mode
 function M.mode(sql)

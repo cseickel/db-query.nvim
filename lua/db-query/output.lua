@@ -1,19 +1,20 @@
 --[[
-The files clients write their output to.
+Choosing the file a client writes its output to, and deciding who deletes it.
 
-Output goes to a directory rather than through vim.fn.tempname, because nvim's
-temp directory is under /tmp, and a /tmp on tmpfs is memory. A result set large
-enough to be worth exporting would be held in memory twice over.
+Output does not go through `vim.fn.tempname`, because nvim's temp directory is
+under /tmp, and a /tmp on tmpfs is memory. A result set large enough to be worth
+exporting would then be held in memory twice over.
 
-Which directory is the whole of what this module decides. Nothing says, and it
-is one named for this nvim's pid under the cache, which is what lets one nvim
-clear up after the ones that exited without doing it themselves. `setup` says,
-and it is that one, cleared up or kept as `output_cleanup` asks. `:DBOutputDir`
-says, and it is that one and nothing there is ever deleted, since naming a
-directory while you work is how you say you are keeping what lands in it.
+`directory` answers with the first of these that applies: the path
+`:DBOutputDir` was given, the `output_dir` setting, or a directory named for
+this nvim's pid under the cache. That pid is what lets one nvim clear up after
+another that exited without doing it itself.
 
-`owns` is that question asked about one file: whether this plugin deletes it
-with the window that showed it.
+`owns` says whether this plugin deletes a file with the window that showed it.
+A file in the cache always goes, a file in `output_dir` goes unless
+`output_cleanup` is off, and a file in a directory named by `:DBOutputDir` never
+goes, since naming a directory while you work is how you say you are keeping
+what lands in it.
 ]]
 
 local config = require("db-query.config")
@@ -44,8 +45,8 @@ local function clearing()
 end
 
 --- What output taken from `srcName` is called, before the number and the
---- extension. An unnamed buffer has no name to take, and its output is called
---- what it holds.
+--- extension. An unnamed buffer has no name to take, so its output is called
+--- `query`.
 ---@param srcName string
 ---@return string
 local function baseName(srcName)
@@ -57,9 +58,9 @@ local function baseName(srcName)
 end
 
 --- Makes the directory `path` is in and empties the file, so that the client
---- has somewhere to write and so that this is where finding out it has not is
---- done, rather than through whatever a shell redirect makes of a path it
---- cannot open. An emptied file also means its size is this run's output.
+--- has somewhere to write. Creating the file here is what reports an unwritable
+--- path clearly, rather than leaving it to whatever a shell redirect does with a
+--- path it cannot open. Emptying it also means its size is this run's output.
 ---
 --- False and reported when the file cannot be written.
 ---@param path string
@@ -104,8 +105,8 @@ end
 --- Where output is written from now on, until nvim exits, and nothing written
 --- there is deleted. An empty `path` puts it back to what `setup` was given.
 ---
---- The directory is made here rather than at the first query, so that somewhere
---- it cannot go is answered while the user is still looking at the question.
+--- The directory is made here rather than at the first query, so a path that
+--- cannot be created is reported while the user is still looking at the prompt.
 ---@param path string
 function M.setDirectory(path)
   local full = path ~= "" and vim.fs.normalize(path) or nil

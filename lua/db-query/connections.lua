@@ -86,10 +86,9 @@ end
 --- Every connection the chooser offers.
 ---
 --- `configured` replaces both other sources when the user supplies one, as a
---- list or as a function returning one. Configuring it and getting back
---- something that is not a list is an error rather than a reason to read the
---- file, because falling back would answer with a list the user did not ask
---- for and gave no sign of wanting.
+--- list or as a function returning one. A `configured` that is not a list is an
+--- error rather than a reason to read the file, because falling back would
+--- offer a list the user did not ask for.
 ---
 --- Otherwise a name already taken is skipped, so the file wins over `g:dbs` and
 --- neither can hide the other's entries behind a duplicate.
