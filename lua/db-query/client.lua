@@ -1,16 +1,3 @@
---[[
-What each database's own command line client needs to be told.
-
-A client is named by the scheme of the connection url, and knows two things:
-how to be asked to run a statement, and how the server it is talking to can be
-asked to stop. A client that is the database rather than a client of one has no
-server to ask and no second connection to ask on, so it has no cancel.
-
-Only psql has a script mode worth the name, echoing each statement and
-reporting its row count and duration. Every other client is handed the script
-unchanged and prints whatever it prints.
-]]
-
 local sql = require("db-query.sql")
 local url = require("db-query.url")
 
@@ -27,8 +14,8 @@ local M = {}
 ---@field command fun(connection: string, statement: string, mode: dbquery.Mode): dbquery.Command
 ---@field cancel? fun(connection: string, pid: integer): { argv: string[], env: table<string, string>|nil }
 
---- A script command, whose output is the client's own transcript rather than
---- rows in a delimited format.
+--- Any query, including DDL and multi-statement SQL, is a script. Returns output in the client's
+--- native format.
 ---@param command { argv: string[], stdin: string|nil, env: table<string, string>|nil }
 ---@return dbquery.Command
 local function script(command)
@@ -40,21 +27,12 @@ local function script(command)
   }
 end
 
---- Tells psql to put the backend pid in `file` rather than in its output, so
---- neither the transcript nor the rows have to be picked apart to find it.
---- `echoing` says whether to turn the statement echo off around these lines and
---- back on afterwards. Script mode needs that, and export mode must not do it,
---- because export mode never turned the echo on.
+--- Tells psql to put the backend pid in `file`.
 ---@param file string
----@param echoing boolean
 ---@return string
-local function backendPid(file, echoing)
+local function backendPid(file)
   local lines = { "\\o '" .. file .. "'", "SELECT pg_backend_pid();", "\\o" }
-  if echoing then
-    table.insert(lines, 1, "\\set ECHO none")
-    table.insert(lines, "\\set ECHO queries")
-  end
-  return table.concat(lines, "\n") .. "\n"
+  return table.concat(lines, "\n")
 end
 
 --- What the mysql client needs to connect, which is not a url.
@@ -107,14 +85,22 @@ CLIENTS.postgres = {
       -- -e echoes each statement before it runs, so the row count and the
       -- duration underneath it are labelled by the statement they belong to.
       vim.list_extend(argv, { "-e", "-f", "-" })
+      local script = {
+        "\\set ECHO none", -- We don;t need to echo the pid command.
+        backendPid(sessionFile, true),
+        "\\set ECHO queries", -- But we do need to echo the rest.
+        "\\timing on\n",
+        statement,
+        -- The trailing semicolon is separated from the last statement because
+        -- a script may end inside a line comment, which would swallow it.
+        ";\n",
+      }
       return {
         argv = argv,
         extension = "log",
         env = env,
         sessionFile = sessionFile,
-        -- The trailing semicolon is separated from the last statement because
-        -- a script may end inside a line comment, which would swallow it.
-        stdin = backendPid(sessionFile, true) .. "\\timing on\n" .. statement .. "\n;\n",
+        stdin = table.concat(script, "\n"),
       }
     end
 
