@@ -1,14 +1,11 @@
 --[[
-A query in flight.
+A running query.
 
-The client writes what it prints straight to a file and nvim reads that file,
-so the output never passes through lua and a result set large enough to exhaust
-nvim's memory cannot.
+The client writes directly to a file; nvim reads that file. This keeps large
+result sets out of lua memory.
 
-A run knows nothing about buffers or windows. It holds the process, the file it
-is writing, and how it ended, and whatever wants to react to it subscribes with
-`onFinish`. A run nobody subscribes to is a query with no result on screen,
-which is a legitimate thing to want.
+A Run holds the process, output path, and status. Interested parties subscribe
+via onFinish().
 ]]
 
 local client = require("db-query.client")
@@ -17,31 +14,26 @@ local output = require("db-query.output")
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
 ---@class dbquery.Run
----@field url string|nil The connection as it was written, which is what `b:db` holds.
----@field resolved string The connection the client was given, which may hold a password.
+---@field url string|nil Original connection (for b:db).
+---@field resolved string Resolved connection (may include password).
 ---@field sql string
 ---@field mode dbquery.Mode
----@field path string The file the client is writing, named for what it holds.
+---@field path string Output file path.
 ---@field status dbquery.Status
----@field started integer When the client was spawned, as hrtime nanoseconds.
+---@field started integer hrtime nanoseconds.
 ---@field job vim.SystemObj
----@field sessionFile string|nil Where this client writes the server session it holds.
----@field asked boolean Whether a cancel has already been asked for.
+---@field sessionFile string|nil Backend pid file for server-side cancel.
+---@field asked boolean Cancel already requested.
 ---@field subscribers fun(run: dbquery.Run)[]
 local Run = {}
 Run.__index = Run
 
--- Every run still going, so nvim leaving can take the clients with it.
 ---@type dbquery.Run[]
 local live = {}
 
--- This module's own group, registered at require time, which is before `setup`
--- runs and clears the group it makes.
 local GROUP = vim.api.nvim_create_augroup("db-query.run", { clear = true })
 
--- Cancelling leaves the client to end in its own time, which it does not get
--- once nvim is gone, and a detached client does not die with nvim either.
--- Deleting this leaves a psql running with a transaction open.
+-- Kill running clients on exit; detached processes don't die with nvim.
 vim.api.nvim_create_autocmd("VimLeavePre", {
   group = GROUP,
   callback = function()
@@ -52,22 +44,14 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
   end,
 })
 
---- `argument` as one word of a `sh -c` command line.
 ---@param argument string
 ---@return string
 local function quoted(argument)
   return "'" .. argument:gsub("'", "'\\''") .. "'"
 end
 
---- `argv` as a command line that writes what the client prints to `path`, so
---- the output goes from the client to the file without passing through nvim.
---- `exec` leaves the client holding the shell's own pid, so a signal reaches
---- the client.
----
---- A transcript is read, so the client's errors belong in it in the order the
---- client printed them, and one stream is the only way to get that. Rows are
---- data, and their stderr stays a separate pipe so an error cannot land in the
---- csv.
+--- Wraps `argv` to redirect stdout to `path`. Uses `exec` so signals reach the
+--- client directly. For transcripts, stderr is merged with stdout.
 ---@param argv string[]
 ---@param path string
 ---@param transcript boolean
@@ -78,8 +62,7 @@ local function writingTo(argv, path, transcript)
     table.insert(words, quoted(argument))
   end
   local line = table.concat(words, " ")
-  -- Clients block buffer their output when it is not a terminal, and a long
-  -- script would then show nothing until it had finished.
+  -- Line-buffer output so scripts show progress.
   if vim.fn.executable("stdbuf") == 1 then
     line = "stdbuf -oL " .. line
   end
@@ -87,13 +70,11 @@ local function writingTo(argv, path, transcript)
   return { "sh", "-c", transcript and (line .. " 2>&1") or line }
 end
 
---- How long the client has been running, in seconds.
 ---@return number
 function Run:elapsed()
   return (vim.uv.hrtime() - self.started) / 1e9
 end
 
---- Takes `self` out of the live list.
 ---@param self dbquery.Run
 local function forget(self)
   for index, run in ipairs(live) do
@@ -104,8 +85,6 @@ local function forget(self)
   end
 end
 
---- How the client ended, which a nonzero exit alone does not say: a client
---- that was asked to stop reports the same failure as one that broke.
 ---@param self dbquery.Run
 ---@param code integer
 ---@return dbquery.Status
@@ -127,13 +106,9 @@ local function writeTo(path, text, mode)
   end
 end
 
---- `message` as the rows an export would have written, so that whatever renders
---- the output shows what went wrong in place of the result.
----
---- A csv field holds newlines as long as it is quoted and its own quotes are
---- doubled. A tsv has neither, so the message goes on one line.
+--- Formats `message` as csv or tsv error output based on `path`'s extension.
 ---@param message string
----@param path string The file the client was writing, which names the format.
+---@param path string
 ---@return string
 local function errorRows(message, path)
   if vim.endswith(path, ".tsv") then
@@ -144,16 +119,7 @@ local function errorRows(message, path)
   return 'error\n"' .. quoted .. '"\n'
 end
 
---- Records how the client ended and tells everyone who asked.
----
---- The footer is written before nvim hears about the exit, so the transcript is
---- complete by the time anything rereads it.
----
---- An export that failed wrote no rows and printed why on a stream the rows
---- file never sees, so the message is written into that file as the one row it
---- has. A cancelled export is never shown, so its file goes: half a result set
---- that reads as a whole one is worse than no file, and nothing else would ever
---- delete it.
+--- Handles process exit: writes footer/error, updates status, notifies subscribers.
 ---@param self dbquery.Run
 ---@param result vim.SystemCompleted
 local function finish(self, result)
@@ -176,9 +142,6 @@ local function finish(self, result)
       os.remove(self.sessionFile)
     end
 
-    -- Subscribers are independent, so one that throws must not stop the rest.
-    -- A pane failing to open its window would otherwise leave the indicator
-    -- spinning on a query that has ended.
     for _, subscriber in ipairs(self.subscribers) do
       local ok, err = pcall(subscriber, self)
       if not ok then
@@ -189,15 +152,14 @@ local function finish(self, result)
 end
 
 ---@class dbquery.RunSpec
----@field url string|nil The connection as it was written.
----@field resolved string The connection to hand the client.
+---@field url string|nil
+---@field resolved string
 ---@field sql string
 ---@field mode dbquery.Mode
----@field srcName string The name of the buffer the sql came from, which names the output file.
----@field outputPath string|nil The path and base name the user asked the output to be written to.
+---@field srcName string Source buffer name (for output file naming).
+---@field outputPath string|nil User-specified output path.
 
---- Starts the client and returns the run it is. Nil for a url no client is
---- known for and for an output file the user turned down, so nothing runs.
+--- Starts the client process. Returns nil on invalid url or cancelled output.
 ---@param spec dbquery.RunSpec
 ---@return dbquery.Run|nil
 function Run.start(spec)
@@ -228,9 +190,7 @@ function Run.start(spec)
     text = true,
     env = command.env,
     stdin = command.stdin,
-    -- Detached, so the client leads its own process group. A client that
-    -- shares nvim's group can be reached by a signal aimed at the group, and
-    -- these clients are signalled to cancel them.
+    -- Own process group so cancel signals don't hit nvim.
     detach = true,
   }, function(result)
     finish(self, result)
@@ -240,8 +200,8 @@ function Run.start(spec)
   return self
 end
 
---- Calls `subscriber` once this run has ended, on the main loop, with the
---- status already recorded. A run that has already ended calls it now.
+--- Registers `subscriber` to be called when the run finishes. If already
+--- finished, calls immediately.
 ---@param subscriber fun(run: dbquery.Run)
 function Run:onFinish(subscriber)
   if self.status == "running" then
@@ -251,11 +211,8 @@ function Run:onFinish(subscriber)
   end
 end
 
---- Asks for this query to stop, through the server wherever there is one to
---- ask and by interrupting the client where there is not.
----
---- A cancel is a request the client is still free to take its time over, so the
---- run stays running until it exits and reports the cancellation itself.
+--- Requests cancellation via server-side cancel or SIGINT. The run remains
+--- active until the client exits.
 function Run:cancel()
   if self.asked or self.status ~= "running" then
     return

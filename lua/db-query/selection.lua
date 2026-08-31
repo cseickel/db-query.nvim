@@ -1,29 +1,22 @@
 --[[
-Which lines of a buffer a query is made of.
+Extracting sql from a buffer.
 
-A query is the whole buffer, a command's range, the visual selection, or the
-statement the cursor is in. All four answer with the same two things: the sql,
-and the lines it came from, which is what the running indicator is drawn beside.
+Supports whole buffer, command range, visual selection, or statement at cursor.
+Returns both the sql text and the line span for the indicator.
 ]]
 
 local sql = require("db-query.sql")
 
 local M = {}
 
---- Which sql to run. Nothing named means the whole buffer.
 ---@class dbquery.Selection
----@field visual boolean|nil The visual selection, live or the one just ended.
----@field range [integer, integer]|nil First and last line, as a command's range gives them.
----@field statement boolean|nil The statement the cursor is in, of however many the buffer holds.
+---@field visual boolean|nil Use visual selection (live or just ended).
+---@field range [integer, integer]|nil Command range as first and last line.
+---@field statement boolean|nil Statement containing the cursor.
 
---- The visual selection, and the lines it starts and ends on. Empty when
---- nothing is selected.
----
---- A `<cmd>` mapping leaves visual mode on and `'<` and `'>` still holding the
---- previous selection, so the live selection is read while it is there and the
---- marks only after it has ended, which is how a `-range` command arrives.
+--- Returns the visual selection text and line span.
 ---@return string[] lines
----@return [integer, integer] span First and last line, as nvim counts them.
+---@return [integer, integer] span
 local function visual()
   local mode = vim.fn.mode()
   local from, to = vim.fn.getpos("v"), vim.fn.getpos(".")
@@ -39,10 +32,10 @@ local function visual()
   return lines, { math.min(from[2], to[2]) - 1, math.max(from[2], to[2]) - 1 }
 end
 
---- The sql `opts` names, and the lines it was taken from.
+--- Returns the sql text and line span for `opts`. Defaults to whole buffer.
 ---@param opts dbquery.Selection
 ---@return string sql
----@return [integer, integer] span First and last line, as nvim counts them.
+---@return [integer, integer] span
 function M.text(opts)
   local lines, span
   if opts.range then

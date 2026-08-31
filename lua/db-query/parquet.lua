@@ -1,42 +1,34 @@
 --[[
-Opening a parquet file.
+BufReadCmd handler for *.parquet files.
 
-A parquet holds nothing editable, so what opens is a duckdb query against it.
-duckdb reads the file where it lies and nothing is imported. The file is named
-as a view first, because a view is a table with a schema, which is what sql
-completion lists.
+Opens a duckdb query against the parquet file instead of showing binary
+content. The file is registered as a view so sql completion includes its
+columns.
 
-This is off unless `setup` is given `parquet = true`, since claiming every
-`*.parquet` in the editor is a decision its user has to make.
+Disabled by default; requires `parquet = true` in setup().
 ]]
 
 local client = require("db-query.client")
 
 local M = {}
 
--- One database per nvim, because duckdb takes an exclusive lock on the file it
--- opens. The database lives in nvim's temp directory, which nvim removes on
--- exit.
+-- Shared database per nvim; duckdb takes an exclusive lock.
 local URL = "duckdb:" .. vim.fn.tempname() .. ".duckdb"
 local SCRATCH = vim.fn.stdpath("cache") .. "/parquet"
 
---- `text` as a duckdb string literal.
 ---@param text string
 ---@return string
 local function literal(text)
   return "'" .. text:gsub("'", "''") .. "'"
 end
 
---- `name` as a duckdb identifier.
 ---@param name string
 ---@return string
 local function identifier(name)
   return '"' .. name:gsub('"', '""') .. '"'
 end
 
---- Names the parquet at `path` as a view in the shared database. Nil when that
---- database cannot be opened, which one duckdb process holding it is enough to
---- cause.
+--- Creates a view for `path` in the shared database. Returns nil on failure.
 ---@param path string
 ---@return string|nil name
 local function define(path)
@@ -52,9 +44,8 @@ local function define(path)
   return name
 end
 
---- The query that opens in place of the parquet at `path`, and the connection
---- that answers it. Without a view the file is read by path, which costs only
---- the completion the view was for.
+--- Returns the initial query for `path`. Falls back to querying by path if
+--- view creation fails.
 ---@param path string
 ---@return { url: string, lines: string[] }
 local function opening(path)
@@ -71,7 +62,7 @@ local function opening(path)
   }
 end
 
----@param group integer The augroup db-query clears on setup, so this handler cannot be registered twice.
+---@param group integer
 function M.setup(group)
   vim.api.nvim_create_autocmd("BufReadCmd", {
     group = group,
@@ -79,9 +70,6 @@ function M.setup(group)
     callback = function(event)
       local path = vim.fn.fnamemodify(event.match, ":p")
 
-      -- The buffer is renamed before it holds any sql, so that a name already
-      -- taken leaves an empty buffer rather than a parquet file one `:w` away
-      -- from being overwritten.
       vim.fn.mkdir(SCRATCH, "p")
       vim.api.nvim_buf_set_name(
         event.buf,
@@ -94,8 +82,7 @@ function M.setup(group)
       vim.b[event.buf].db = opened.url
       vim.bo[event.buf].modified = false
 
-      -- Scheduled, because execute opens a window and BufReadCmd is still in
-      -- the middle of reading the buffer for this one.
+      -- Scheduled because execute opens a window during BufReadCmd.
       vim.schedule(function()
         if vim.api.nvim_get_current_buf() == event.buf then
           require("db-query").execute({ format = "csv" })

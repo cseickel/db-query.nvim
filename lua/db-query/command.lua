@@ -1,13 +1,11 @@
 --[[
-The commands, and the arguments they take.
+User commands and their argument parsing.
 
-`:DBQuery` and `:DBQueryStatement` differ only in which lines they run, so the
-arguments are read once here and the rest of the plugin is handed what they
-mean rather than what was typed.
+`:DBQuery` and `:DBQueryStatement` share argument handling, differing only in
+which lines they run.
 
-The module the commands call is required where they call it. Commands are
-registered while that module is still loading, and it is loaded by the time one
-of them runs.
+The callbacks require `db-query` at call time to avoid a circular dependency:
+this module is loaded during init.lua, before init.lua finishes.
 ]]
 
 local M = {}
@@ -15,13 +13,11 @@ local M = {}
 local FORMATS = { "text", "csv" }
 local FLAGS = { "-f", "-o" }
 
---- What the arguments to a query command ask for.
 ---@class dbquery.Arguments
 ---@field format dbquery.Format
----@field output string|true|nil A path to write the output to, true to be asked for one, and nil for the file this plugin names.
+---@field output string|true|nil Path for output, true to prompt, nil for auto-generated.
 
---- What `args` asks for, with text as the format nothing names. Nil for
---- arguments that are not these, already reported, so the caller runs nothing.
+--- Parses command arguments. Returns nil and shows an error on invalid input.
 ---@param args string[]
 ---@return dbquery.Arguments|nil
 local function parse(args)
@@ -49,8 +45,7 @@ local function parse(args)
   return parsed
 end
 
---- What completes the word being typed: a format after `-f`, a path after
---- `-o`, and the flags themselves anywhere else.
+--- Completion for command arguments.
 ---@param lead string
 ---@param line string
 ---@return string[]
@@ -64,8 +59,7 @@ local function complete(lead, line)
   end, offered)
 end
 
---- Runs the lines `selection` names as `args` asks for them, and runs nothing
---- when they ask for something that is not on offer.
+--- Executes `selection` with parsed `args`. Aborts on invalid arguments.
 ---@param selection dbquery.Selection
 ---@param args string[]
 local function run(selection, args)
@@ -81,7 +75,7 @@ local function run(selection, args)
   })
 end
 
---- Registers every command this plugin answers to.
+--- Registers all user commands.
 function M.setup()
   vim.api.nvim_create_user_command("DBQuery", function(command)
     local range = command.range > 0 and { command.line1, command.line2 } or nil
@@ -90,7 +84,7 @@ function M.setup()
     range = true,
     nargs = "*",
     complete = complete,
-    desc = "Run the selection, or the whole buffer",
+    desc = "Execute the query for the whole buffer or selection",
   })
 
   vim.api.nvim_create_user_command("DBQueryStatement", function(command)
@@ -98,19 +92,19 @@ function M.setup()
   end, {
     nargs = "*",
     complete = complete,
-    desc = "Run the statement the cursor is in",
+    desc = "Run the statement that the cursor is on",
   })
 
   vim.api.nvim_create_user_command("DBConnect", function()
     require("db-query").connect()
-  end, { desc = "Choose the database this buffer speaks to" })
+  end, { desc = "Choose the database this buffer connects to" })
 
   vim.api.nvim_create_user_command("DBOutputDir", function(command)
     require("db-query").outputDir(command.args ~= "" and command.args or nil)
   end, {
     nargs = "?",
     complete = "dir",
-    desc = "Write output to a directory of your own, and keep it",
+    desc = "Choose output directory",
   })
 end
 

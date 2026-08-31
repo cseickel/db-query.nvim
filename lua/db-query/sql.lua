@@ -1,23 +1,22 @@
 --[[
-Reading a statement well enough to know how it has to be run.
+SQL parsing for execution mode detection.
 
-A single row-returning statement can be asked for as delimited text, which
-opens as a table. Anything else has to be run for the client's own transcript.
+Determines whether sql can be exported as csv (single row-returning statement)
+or must run as a script (multiple statements, DDL, DML).
 ]]
 
 local M = {}
 
 ---@alias dbquery.Mode "export"|"script"
 
---- `sql` without the semicolon and space that end it.
+--- Removes trailing semicolon and whitespace.
 ---@param sql string
 ---@return string
 function M.stripTerminator(sql)
   return (sql:gsub(";%s*$", ""))
 end
 
---- `sql` without the comments it opens with, so the statement keyword is
---- first.
+--- Strips leading comments to expose the first keyword.
 ---@param sql string
 ---@return string
 local function uncommented(sql)
@@ -37,15 +36,11 @@ local function blank(line)
   return line == nil or line:match("^%s*$") ~= nil
 end
 
---- The first and last line of the statement `row` is in, and nil where that is
---- nothing but blank lines. Statements are separated by semicolons, and the
---- blank lines between two of them belong to neither.
----
---- A semicolon inside a string literal ends a statement here as it does in
---- `mode`, and two statements written on one line cannot be told apart, because
---- this counts in whole lines.
----@param lines string[] Every line of the buffer.
----@param row integer The line the cursor is on, as nvim counts lines.
+--- Returns the line span of the statement containing `row`, or nil for blank
+--- lines. Uses semicolons as statement separators (does not parse string
+--- literals).
+---@param lines string[]
+---@param row integer 0-based line number.
 ---@return [integer, integer]|nil
 function M.statementAt(lines, row)
   local first, last = 0, #lines - 1
@@ -76,40 +71,35 @@ function M.statementAt(lines, row)
   return { first, last }
 end
 
--- Statements that return rows, which is what the csv export needs.
 local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = true }
 
--- A CTE ending in one of these writes rows instead of returning them, and
--- Postgres refuses to put it inside COPY.
+-- CTEs ending in these cannot be wrapped in COPY.
 local WRITES = { "insert", "update", "delete", "merge" }
 
---- Whether `sql` is the single row-returning statement a csv export needs, or a
---- script to be run for its transcript. A semicolon inside a string literal
---- reads as a second statement, so a query holding one runs as a script and its
---- output opens as text.
+--- Returns true for a single row-returning statement, false otherwise.
 ---@param sql string
----@return dbquery.Mode
-function M.mode(sql)
+---@return boolean
+function M.canExport(sql)
   local body = M.stripTerminator(sql)
   if body:find(";", 1, true) then
-    return "script"
+    return false
   end
 
   local head = uncommented(body)
   local first = (head:match("^%s*(%a+)") or ""):lower()
   if not ROW_SOURCES[first] then
-    return "script"
+    return false
   end
 
   if first == "with" then
     local lowered = body:lower()
     for _, word in ipairs(WRITES) do
       if lowered:find("%f[%w_]" .. word .. "%f[^%w_]") then
-        return "script"
+        return false
       end
     end
   end
-  return "export"
+  return true
 end
 
 return M

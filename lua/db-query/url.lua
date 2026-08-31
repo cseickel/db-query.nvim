@@ -1,22 +1,18 @@
 --[[
-Taking a dadbod connection url apart.
+URL parsing for dadbod connection strings.
 
-What is pulled out of a url is handed to a client as itself rather than as part
-of one, so everything here decodes the percent escapes dadbod's
-canonicalization put in.
+All functions decode percent-escapes from dadbod's canonicalization.
 ]]
 
 local M = {}
 
----@param url string A dadbod connection url.
+---@param url string
 ---@return string
 function M.scheme(url)
   return (url:match("^(%a[%w+.-]*):") or ""):lower()
 end
 
---- `text` with its percent escapes turned back into the characters they stand
---- for. A url that has been through vim-dadbod's canonicalization carries a
---- space as `%20`.
+--- Decodes percent-escapes.
 ---@param text string
 ---@return string
 function M.decoded(text)
@@ -25,10 +21,7 @@ function M.decoded(text)
   end))
 end
 
---- The file a `scheme:path` url names, empty for an in-memory database.
----
---- Made absolute with `fnamemodify` rather than `expand`, which would read a
---- decoded `%` as the current file name.
+--- Returns the file path from a `scheme:path` url, or empty for in-memory.
 ---@param url string
 ---@return string
 function M.filePath(url)
@@ -39,16 +32,8 @@ function M.filePath(url)
   return vim.fn.fnamemodify(M.decoded(path), ":p")
 end
 
---- `url` with the password taken out of it, and that password. Both unchanged
---- when the url names none.
----
---- A command line is readable by every process on the machine, so the password
---- reaches the client through its environment instead.
----
---- The authority is cut at the last `@` it holds rather than the first, so a
---- password with an unencoded `@` in it splits where the user meant. What is
---- handed to the client afterwards has no password left in it, so the url it
---- parses is unambiguous either way.
+--- Returns `url` with the password removed, and the password separately.
+--- Splits on the last `@` to handle passwords containing `@`.
 ---@param url string
 ---@return string url
 ---@return string|nil password

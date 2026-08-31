@@ -5,17 +5,15 @@ local M = {}
 
 ---@class dbquery.Command
 ---@field argv string[]
----@field extension string What the client will write: csv, tsv, or log.
+---@field extension string Output format: csv, tsv, or log.
 ---@field env table<string, string>|nil
 ---@field stdin string|nil
----@field sessionFile string|nil Where the client writes the server session it holds.
+---@field sessionFile string|nil Path where the client writes the backend pid.
 
 ---@class dbquery.Client
 ---@field command fun(connection: string, statement: string, mode: dbquery.Mode): dbquery.Command
 ---@field cancel? fun(connection: string, pid: integer): { argv: string[], env: table<string, string>|nil }
 
---- Any query, including DDL and multi-statement SQL, is a script. Returns output in the client's
---- native format.
 ---@param command { argv: string[], stdin: string|nil, env: table<string, string>|nil }
 ---@return dbquery.Command
 local function script(command)
@@ -27,7 +25,7 @@ local function script(command)
   }
 end
 
---- Tells psql to put the backend pid in `file`.
+--- Returns psql commands that write the backend pid to `file`.
 ---@param file string
 ---@return string
 local function backendPid(file)
@@ -35,13 +33,13 @@ local function backendPid(file)
   return table.concat(lines, "\n")
 end
 
---- What the mysql client needs to connect, which is not a url.
+--- Converts a mysql:// url into command-line arguments and environment.
 ---@param connection string mysql://user:password@host:port/database
 ---@return { argv: string[], env: table<string, string>|nil }
 local function mysqlArguments(connection)
   local rest = connection:gsub("^mysql://", "")
   local authority, path = rest:match("^([^/]*)(.*)$")
-  -- The last `@` of the authority, so a password holding one is not cut short.
+  -- Split on last @ to handle passwords containing @.
   local credentials, location = authority:match("^(.*)@([^@]*)$")
   if not credentials then
     credentials, location = "", authority
@@ -77,22 +75,19 @@ CLIENTS.postgres = {
   command = function(connection, statement, mode)
     local without, password = url.withoutPassword(connection)
     local env = password and { PGPASSWORD = password } or nil
-    -- --no-psqlrc leaves this module the only thing shaping the output.
     local argv = { "psql", without, "-w", "--no-psqlrc", "-v", "ON_ERROR_STOP=1" }
     local sessionFile = vim.fn.tempname() .. ".pid"
 
     if mode == "script" then
-      -- -e echoes each statement before it runs, so the row count and the
-      -- duration underneath it are labelled by the statement they belong to.
+      -- -e echoes statements so row counts are labeled.
       vim.list_extend(argv, { "-e", "-f", "-" })
       local script = {
-        "\\set ECHO none", -- We don;t need to echo the pid command.
+        "\\set ECHO none",
         backendPid(sessionFile, true),
-        "\\set ECHO queries", -- But we do need to echo the rest.
+        "\\set ECHO queries",
         "\\timing on\n",
         statement,
-        -- The trailing semicolon is separated from the last statement because
-        -- a script may end inside a line comment, which would swallow it.
+        -- Separate semicolon in case the statement ends in a line comment.
         ";\n",
       }
       return {
@@ -104,7 +99,6 @@ CLIENTS.postgres = {
       }
     end
 
-    -- -q keeps psql's command tags out of the rows.
     vim.list_extend(argv, { "-q", "-f", "-" })
     local copy = "COPY (\n"
       .. sql.stripTerminator(statement)
@@ -146,8 +140,7 @@ CLIENTS.duckdb = {
     if mode == "script" then
       return script({ argv = vim.list_extend(argv, { "-c", statement }) })
     end
-    -- `COPY ... TO '/dev/stdout'` reopens stdout, which fails when the caller
-    -- gives the process a socket rather than a file.
+    -- COPY TO '/dev/stdout' fails when stdout is a socket, so use -csv instead.
     vim.list_extend(argv, { "-csv", "-header", "-c", statement })
     return { argv = argv, extension = "csv" }
   end,
@@ -172,8 +165,7 @@ CLIENTS.mysql = {
     local argv = { "mysql", "--batch" }
     vim.list_extend(argv, connects.argv)
     vim.list_extend(argv, { "-e", statement })
-    -- The password goes in the environment because a command line is readable
-    -- by every process on the machine.
+    -- Password in environment because command lines are world-readable.
     if mode == "script" then
       return script({ argv = argv, env = connects.env })
     end
@@ -181,11 +173,12 @@ CLIENTS.mysql = {
   end,
 }
 
---- How to ask `connection`'s client to run `statement`. In export mode the
---- client writes delimited rows to stdout and the extension names the
---- delimiter it wrote with. In script mode it writes its own transcript.
+--- Returns the command to run `statement` against `connection`.
 ---
---- Nil for a url no client is known for, already reported.
+--- In export mode, the client writes delimited rows to stdout; the extension
+--- indicates the delimiter. In script mode, the client writes its transcript.
+---
+--- Returns nil and shows an error when no client is known for the url scheme.
 ---@param connection string
 ---@param statement string
 ---@param mode dbquery.Mode
@@ -193,16 +186,14 @@ CLIENTS.mysql = {
 function M.command(connection, statement, mode)
   local client = CLIENTS[url.scheme(connection)]
   if not client then
-    -- The scheme rather than the url, which by here holds whatever a `$VAR` in
-    -- it named, and `:messages` is kept for the rest of the session.
+    -- Show scheme, not full url, to avoid exposing expanded $VAR values.
     vim.notify("no client known for " .. url.scheme(connection), vim.log.levels.ERROR)
     return nil
   end
   return client.command(connection, statement, mode)
 end
 
---- The server session recorded in `file`, nil while the client has yet to
---- write one.
+--- Returns the server pid from `file`, or nil if not yet written.
 ---@param file string
 ---@return integer|nil
 local function recorded(file)
@@ -215,12 +206,13 @@ local function recorded(file)
   return tonumber(text:match("%d+"))
 end
 
---- Asks `connection`'s server to cancel the query running in the session
---- recorded in `file`. False when there is no server to ask or no session
---- recorded yet, so the caller can fall back to interrupting the client.
+--- Sends a cancel request to the server for the session recorded in `file`.
+---
+--- Returns false when the client has no server-side cancel (caller should
+--- SIGINT the client instead) or when no session pid has been recorded yet.
 ---@param connection string
 ---@param file string
----@return boolean asked
+---@return boolean
 function M.cancel(connection, file)
   local client = CLIENTS[url.scheme(connection)]
   if not (client and client.cancel) then
@@ -231,19 +223,17 @@ function M.cancel(connection, file)
     return false
   end
 
-  -- Nothing waits on this. The client being cancelled reports the outcome in
-  -- the pane, which is where the reader is already looking.
   local command = client.cancel(connection, pid)
   vim.system(command.argv, { env = command.env, detach = true })
   return true
 end
 
---- Runs `statement` against `connection` as a script and waits for it,
---- returning what the client printed. Nil for a failure, already reported.
+--- Runs `statement` synchronously and returns the output.
 ---
---- This is for a statement whose output is small and wanted right now, such as
---- the ddl that names a parquet file as a view. Anything a user asked for runs
---- as a Run instead, which neither blocks nor holds its output in memory.
+--- This is not used internally, but is provided as a convenience for
+--- external use.
+---
+--- Returns nil and shows an error on failure.
 ---@param connection string
 ---@param statement string
 ---@return string|nil
@@ -258,8 +248,6 @@ function M.run(connection, statement)
     env = command.env,
     stdin = command.stdin,
   }):wait()
-  -- Nothing here can be cancelled, so the session the client recorded was only
-  -- ever going to be read by a Run.
   if command.sessionFile then
     os.remove(command.sessionFile)
   end

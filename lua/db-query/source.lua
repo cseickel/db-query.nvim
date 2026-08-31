@@ -1,15 +1,8 @@
 --[[
-A buffer that queries are run from.
+Coordinates queries from a sql buffer.
 
-This is where the rule that a buffer runs one query at a time is kept, and the
-only place that knows a run, a pane, and an indicator all belong to the same
-piece of work. Everything below it is independent: a run does not know it is
-being watched, and a pane does not know how to start anything.
-
-The source is the buffer rather than the window because a window shows a
-different buffer later, and because the indicator and its key are buffer local
-and cannot be told apart per window. The connection is not held here either,
-since `b:db` is where dadbod and its completion source both read it.
+A Source ties together a Run, Pane, and Indicator for one buffer. Each buffer
+can have one active query at a time.
 ]]
 
 local config = require("db-query.config")
@@ -20,7 +13,7 @@ local Run = require("db-query.run")
 ---@class dbquery.Source
 ---@field buf integer
 ---@field pane dbquery.Pane
----@field run dbquery.Run|nil The query in flight, while there is one.
+---@field run dbquery.Run|nil
 ---@field indicator dbquery.Indicator|nil
 local Source = {}
 Source.__index = Source
@@ -28,8 +21,7 @@ Source.__index = Source
 ---@type table<integer, dbquery.Source>
 local sources = {}
 
---- The source `buf` is, making it if this is its first query. It lasts as long
---- as the buffer does.
+--- Returns the Source for `buf`, creating one if needed.
 ---@param buf integer
 ---@return dbquery.Source
 function Source.of(buf)
@@ -50,9 +42,7 @@ function Source.of(buf)
   return self
 end
 
---- The source whose pane is showing `buf`, so that an output buffer can report
---- the status of the query filling it in. Output left over from an earlier run
---- is in no pane and reports nothing.
+--- Returns the Source whose pane is showing `buf`, or nil.
 ---@param buf integer
 ---@return dbquery.Source|nil
 local function showing(buf)
@@ -64,13 +54,7 @@ local function showing(buf)
   return nil
 end
 
---- What `buf` shows in a winbar or a statusline while its query runs, and an
---- empty string the rest of the time. A buffer that has never run a query has
---- no source, and asking does not create one.
----
---- A winbar over the output window shows the same spinner as one over the sql
---- buffer, because that output window is greyed until this query replaces what
---- it is showing.
+--- Returns spinner status for `buf` (as source or output pane), or empty string.
 ---@param buf integer
 ---@return string
 function Source.status(buf)
@@ -84,20 +68,15 @@ function Source.status(buf)
   return self.indicator:status()
 end
 
---- Asks the query in flight to stop, if there is one.
+--- Cancels the active query, if any.
 function Source:cancel()
   if self.run then
     self.run:cancel()
   end
 end
 
---- Gives up on this buffer: the query it is running has nobody left to read
---- it, and the indicator is drawn in a buffer that is going.
----
---- An output window that is already open is left where it is, since it shows a
---- file that is worth reading after the query it came from has been closed.
---- The pane is told to stop so that a query still finishing does not open a new
---- window, which would split whatever the user is looking at by then.
+--- Cleans up when the source buffer is wiped. Cancels any running query and
+--- stops the indicator. Leaves existing output windows open.
 function Source:close()
   self:cancel()
   if self.indicator then
@@ -108,20 +87,15 @@ function Source:close()
 end
 
 ---@class dbquery.ExecuteSpec
----@field url string|nil The connection as it was written, which the output buffer carries.
----@field resolved string The connection the client is given, which may hold a password.
+---@field url string|nil
+---@field resolved string
 ---@field sql string
 ---@field mode dbquery.Mode
----@field span [integer, integer] The first and last line the sql was taken from.
----@field outputPath string|nil The path and base name this query asked the output to be written to.
+---@field span [integer, integer]
+---@field outputPath string|nil
 
---- Runs `spec.sql`, taking the place of whatever this buffer was running.
----
---- Starting a second query asks the first to stop rather than leaving a client
---- running that nothing holds a handle to. The first is only asked, so it may
---- still be finishing when this one starts, and it has already lost the
---- indicator and the pane by then.
----
+--- Runs `spec.sql`, replacing any active query. The previous query is cancelled
+--- but may still be finishing when this one starts.
 ---@param spec dbquery.ExecuteSpec
 function Source:execute(spec)
   self:cancel()

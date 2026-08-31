@@ -1,12 +1,8 @@
 --[[
-Running the query in a sql buffer.
+Entry point for running queries from a sql buffer.
 
-The connection is `b:db`, a vim-dadbod url. That variable is the whole of what
-this plugin shares with vim-dadbod and its completion source, and nothing here
-reads or writes anything else of dadbod's.
-
-This module is the way in: it reads the sql, finds the connection, and hands
-both to the buffer's source. ARCHITECTURE.md draws what happens after that.
+This module reads the sql, resolves the connection, and passes both to the
+buffer's Source. ARCHITECTURE.md covers the flow from there.
 ]]
 
 local command = require("db-query.command")
@@ -19,18 +15,16 @@ local sql = require("db-query.sql")
 
 local M = {}
 
---- Which sql to run, and what becomes of what it prints.
 ---@class dbquery.ExecuteOptions : dbquery.Selection
----@field format dbquery.Format|nil What the client is asked for, defaulting to the configured format.
----@field output string|true|nil A path to write the output to, true to be asked for one, and nil for the file this plugin names.
+---@field format dbquery.Format|nil Output format (default: config value).
+---@field output string|true|nil Output path, true to prompt, nil to auto-generate.
 
---- Asks which database this buffer speaks to and assigns it, then calls
---- `chosen` with the url. A cancelled choice calls nothing.
+--- Opens the connection picker, assigns the selection to `b:db`, and calls
+--- the provided callback with the chosen url. A cancelled picker does nothing.
 ---
---- The connection is remembered in `g:db` as well, which is what gives the next
---- sql buffer a connection without being asked again. When the buffer has been
---- closed while the chooser was open, the choice is only remembered in `g:db`
---- and `chosen` is not called.
+--- The connection is also stored in `g:db`, so subsequent sql buffers inherit
+--- it without prompting. If the buffer is closed while the picker is open,
+--- only `g:db` is set.
 ---@param chosen fun(url: string)|nil
 function M.connect(chosen)
   local list, err = connections.list(config.values.connections)
@@ -59,9 +53,8 @@ function M.connect(chosen)
     vim.b[buf].db_name = choice.name
     vim.b[buf].db = choice.url
 
-    -- vim-dadbod-completion reads b:db once per buffer and keeps what it found,
-    -- so a buffer that has completed already goes on completing against the
-    -- database it was pointed at before this.
+    -- vim-dadbod-completion caches b:db on first completion, so changing it
+    -- requires re-fetching.
     pcall(vim.fn["vim_dadbod_completion#fetch"], buf)
 
     if chosen then
@@ -70,32 +63,29 @@ function M.connect(chosen)
   end)
 end
 
---- How to run `statement` to get `format` out of it.
+--- Returns the execution mode for `statement` given the requested `format`.
 ---
---- Text is what the client prints for itself, and every statement can be run
---- that way. Csv is a rendering of one result set, so it is asked for only when
---- the sql is the single row-returning statement that can fill one, and
---- anything else falls back to text rather than failing.
+--- Text output works for any statement. Csv requires a single row-returning
+--- statement; anything else falls back to text.
 ---@param statement string
 ---@param format dbquery.Format
 ---@return dbquery.Mode
 local function modeFor(statement, format)
   if format == "csv" then
-    return sql.mode(statement)
+    if sql.canExport(statement) then
+      return "export"
+    end
   end
   return "script"
 end
 
---- `url` as vim-dadbod would take it, which expands `$VAR`, follows a variable
---- name, and falls back to `w:db`, `t:db`, `b:db`, `g:db` and `$DATABASE_URL`
---- when `url` is nil. The client is then given the url completion connects
---- with.
+--- Resolves `url` through vim-dadbod, which expands `$VAR`, follows variable
+--- references, and falls back through `w:db`, `t:db`, `b:db`, `g:db`, and
+--- `$DATABASE_URL`.
 ---
---- Anything dadbod cannot answer for, including dadbod not being installed,
---- gives back the url unchanged, and starting the client is where that turns
---- out to be unusable. A nil url gives back nil, which is how the caller knows
---- to ask for a connection. Dadbod returns an empty url for a buffer with no
---- connection anywhere in that chain, and that is treated the same way.
+--- Returns the url unchanged when dadbod is not installed. Returns nil when
+--- `url` is nil or empty, signaling that the caller should prompt for a
+--- connection.
 ---@param url string|nil
 ---@return string|nil
 local function resolve(url)
@@ -106,42 +96,14 @@ local function resolve(url)
   return url
 end
 
---- Calls `use` with the path and base name the output is to be written to, and
---- with nil for the one this plugin makes up.
+--- Runs the sql specified in `opts`.
 ---
---- `true` asks for one, offering what this buffer was last given, so running
---- the same export again is a matter of accepting what is already in the
---- prompt. A cancelled prompt runs nothing.
----@param buf integer
----@param wanted string|true|nil
----@param use fun(outputPath: string|nil)
-local function chooseOutput(buf, wanted, use)
-  if wanted ~= true then
-    return use(wanted)
-  end
-
-  vim.ui.input({
-    prompt = "Output file",
-    default = vim.b[buf].db_last_output_path
-      or output.destination(vim.api.nvim_buf_get_name(buf)),
-    completion = "file",
-  }, function(value)
-    value = value and vim.trim(value) or ""
-    if value ~= "" then
-      use(value)
-    end
-  end)
-end
-
---- Runs the sql `opts` names, asking where the output goes when `output` is
---- true and for a connection when the buffer has none.
----
---- The sql and the lines it came from are read before either prompt opens,
---- because a prompt ends visual mode and takes the selection with it, and gives
---- the user time to move the cursor somewhere else before the query starts.
 ---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}
+  --- The sql and source lines are captured before any prompt opens, because
+  --- opening a prompt exits visual mode and the user may move the cursor while
+  --- a prompt is open.
   local statement, span = selection.text(opts)
   if statement == "" then
     return vim.notify("db-query: no query to run", vim.log.levels.WARN)
@@ -152,13 +114,10 @@ function M.execute(opts)
 
   ---@param outputPath string|nil
   local function run(outputPath)
-    -- The prompt gives the user time to close the buffer the sql came from.
     if not vim.api.nvim_buf_is_loaded(buf) then
       return
     end
-    -- Remembered as the full path, so a working directory change does not move
-    -- what the prompt offers next time. The query is given what was typed,
-    -- which is resolved the same way where the file is made.
+    -- Store as absolute path so cwd changes don't affect the next prompt.
     if outputPath then
       vim.b[buf].db_last_output_path =
         output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
@@ -183,19 +142,36 @@ function M.execute(opts)
     end
 
     M.connect(function(url)
+      if not url then
+        return
+      end
       start(url, resolve(url))
     end)
   end
 
-  chooseOutput(buf, opts.output, run)
+  if opts.output == true then
+    vim.ui.input({
+      prompt = "Output file",
+      default = vim.b[buf].db_last_output_path
+        or output.destination(vim.api.nvim_buf_get_name(buf)),
+      completion = "file",
+    }, function(value)
+      value = value and vim.trim(value) or ""
+      if value ~= "" then
+        run(value)
+      end
+    end)
+  else
+    run(opts.output)
+  end
 end
 
---- Writes output to `path` from now on, and nothing there is deleted, since
---- naming a directory while you work is how you say you are keeping what lands
---- in it. Numbering carries on from what is already there.
+--- Sets the output directory for this session. Files written there are not
+--- auto-deleted. Numbering continues from existing files.
 ---
---- Nil asks for a directory, offering the one in use. Emptying the prompt puts
---- it back to what `setup` was given, and cancelling changes nothing.
+--- When `path` is nil, opens a prompt with the current directory as default.
+--- An empty response resets to the configured `output_dir`. Cancelling the
+--- prompt changes nothing.
 ---@param path string|nil
 function M.outputDir(path)
   if path then
@@ -213,13 +189,12 @@ function M.outputDir(path)
   end)
 end
 
---- The spinner and the clock for a winbar or a statusline, empty unless `buf`
---- is running a query. It turns while the query runs, so it is drawn where a
---- long buffer would have scrolled the indicator out of sight:
+--- Returns the spinner and elapsed time for a winbar or statusline, or an
+--- empty string when no query is running in `buf`.
 ---
 ---     vim.o.winbar = "%{%v:lua.require'db-query'.status()%}"
 ---
----@param buf integer|nil Defaults to the buffer being drawn.
+---@param buf integer|nil Defaults to the current buffer.
 ---@return string
 function M.status(buf)
   return Source.status(buf or vim.api.nvim_get_current_buf())
@@ -230,11 +205,9 @@ function M.setup(opts)
   config.set(opts)
   output.sweep()
 
-  -- Cleared, so calling setup twice leaves one of each rather than two.
   local group = vim.api.nvim_create_augroup("db-query", { clear = true })
 
-  -- A new sql buffer speaks to whatever was last chosen, so the connection is
-  -- picked once per session rather than once per buffer.
+  -- Inherit g:db so the connection is selected once per session, not per buffer.
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     pattern = { "sql", "mysql", "plsql" },

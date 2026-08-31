@@ -1,13 +1,8 @@
 --[[
-Where the list of databases comes from.
+Connection sources for the database picker.
 
-vim-dadbod-ui keeps its connections in a json file, and this module reads that
-same file rather than introducing a second list, so a config that already names
-its databases needs no new configuration. `g:dbs` is read too, because that is
-where vim-dadbod itself looks.
-
-Nothing here writes. A connection is added by editing the file, or by giving
-`setup` a `connections` function that answers from somewhere else entirely.
+Reads from vim-dadbod-ui's connections.json and `g:dbs` by default. A custom
+`connections` function in setup() replaces both sources.
 ]]
 
 local M = {}
@@ -16,15 +11,13 @@ local M = {}
 ---@field name string
 ---@field url string
 
---- The file vim-dadbod-ui reads, wherever the user has pointed it.
 ---@return string
 local function connectionsPath()
   local location = vim.g.db_ui_save_location or "~/.local/share/db_ui"
   return vim.fn.expand(location) .. "/connections.json"
 end
 
---- Appends every well-formed entry of `entries` to `into`, skipping any that
---- does not name both a connection and a url.
+--- Appends valid entries (those with name and url strings) to `into`.
 ---@param into dbquery.Connection[]
 ---@param entries table
 local function collect(into, entries)
@@ -58,8 +51,7 @@ local function fromFile()
   return connections, nil
 end
 
---- `g:dbs` is written either as a list of name and url pairs or as a table of
---- name to url, and vim-dadbod reads both, so both are read here.
+--- Reads connections from `g:dbs`, supporting both list and dict formats.
 ---@return dbquery.Connection[]
 local function fromGlobal()
   local dbs = vim.g.dbs
@@ -83,15 +75,14 @@ local function fromGlobal()
   return connections
 end
 
---- Every connection the chooser offers.
+--- Returns all connections for the picker.
 ---
---- `configured` replaces both other sources when the user supplies one, as a
---- list or as a function returning one. A `configured` that is not a list is an
---- error rather than a reason to read the file, because falling back would
---- offer a list the user did not ask for.
+--- When `configured` is provided (list or function), it replaces the default
+--- sources entirely. An invalid `configured` returns an error rather than
+--- falling back to defaults.
 ---
---- Otherwise a name already taken is skipped, so the file wins over `g:dbs` and
---- neither can hide the other's entries behind a duplicate.
+--- Without `configured`, connections come from the json file then `g:dbs`,
+--- with duplicates (by name) skipped.
 ---@param configured dbquery.Connection[]|fun(): dbquery.Connection[]|nil
 ---@return dbquery.Connection[] connections
 ---@return string|nil err
