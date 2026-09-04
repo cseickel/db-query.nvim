@@ -162,6 +162,8 @@ if text ~= "" then
 end
 ```
 
+`b:db_name` holds the name of the connection, in the sql buffer and its output windows alike, so `%{get(b:, 'db_name', '')}` shows which database you are looking at.
+
 ## Highlights
 
 `DbQueryIndicator` colors the bar and everything drawn under it. It links to `DiagnosticInfo` unless you set it:

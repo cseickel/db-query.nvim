@@ -8,8 +8,9 @@ Everything the client prints goes to the log, which every run of a source
 buffer appends to. Rows go to a separate file, which only exists when the
 statement returns any.
 
-A Run holds the process, its files, and its status. Interested parties
-subscribe via onFinish().
+A Run holds the process, its files, and its status, along with the request it
+came from as `run.ctx`, which is where the indicator and the pane read what
+they need. Interested parties subscribe via onFinish().
 ]]
 
 local client = require("db-query.client")
@@ -20,10 +21,7 @@ local sql = require("db-query.sql")
 
 ---@class dbquery.Run
 ---@field id integer Distinguishes runs sharing a log.
----@field url string|nil Original connection (for b:db).
----@field resolved string Resolved connection (may include password).
----@field sql string
----@field format dbquery.Format
+---@field ctx dbquery.Context What was asked for.
 ---@field log string Log file, appended to by every run of this buffer.
 ---@field path string|nil Results file, when the statement returns rows.
 ---@field staged string|nil Path the client wrote rows to, moved onto `path`.
@@ -146,7 +144,7 @@ local function announce(self)
   if self.path then
     table.insert(lines, "-- rows -> " .. self.path)
   end
-  vim.list_extend(lines, { self.sql, "" })
+  vim.list_extend(lines, { self.ctx.sql, "" })
   append(self.log, table.concat(lines, "\n"))
 end
 
@@ -193,44 +191,49 @@ local function finish(self, result)
   end)
 end
 
----@class dbquery.RunSpec
----@field url string|nil
----@field resolved string
+--- What one query was asked to do, fixed when the user ran it. Every component
+--- of a run reads it from `run.ctx`.
+---@class dbquery.Context
+---@field buf integer Sql buffer the query came from.
+---@field url string|nil Connection as written, for b:db.
+---@field name string|nil Connection's chosen name, for b:db_name.
+---@field resolved string Resolved connection (may include password).
 ---@field sql string
+---@field srcName string Sql buffer's file name, for naming output files.
 ---@field format dbquery.Format
----@field srcName string Source buffer name (for output file naming).
+---@field span [integer, integer] First and last line the sql came from.
 ---@field outputPath string|nil User-specified output path.
 
 --- Starts the client process. Returns nil on invalid url or cancelled output.
----@param spec dbquery.RunSpec
+---@param ctx dbquery.Context
 ---@return dbquery.Run|nil
-function Run.start(spec)
-  local log = output.log(spec.srcName)
+function Run.start(ctx)
+  local log = output.log(ctx.srcName)
   if not log then
     return nil
   end
 
-  local kind = sql.rowKind(spec.sql)
-  local extension = client.target(spec.resolved, kind, spec.format)
+  local kind = sql.rowKind(ctx.sql)
+  local extension = client.target(ctx.resolved, kind, ctx.format)
 
   local path = nil
   if extension then
-    path = output.path(spec.srcName, extension, spec.outputPath)
+    path = output.path(ctx.srcName, extension, ctx.outputPath)
     if not path then
       return nil
     end
-  elseif spec.outputPath then
+  elseif ctx.outputPath then
     vim.notify(
-      "db-query: this query returns no rows, so nothing is written to " .. spec.outputPath,
+      "db-query: this query returns no rows, so nothing is written to " .. ctx.outputPath,
       vim.log.levels.WARN
     )
   end
 
   local staging = extension and output.staging(extension) or nil
   local command = client.command({
-    connection = spec.resolved,
-    statement = spec.sql,
-    format = spec.format,
+    connection = ctx.resolved,
+    statement = ctx.sql,
+    format = ctx.format,
     kind = kind,
     path = path,
     staging = staging,
@@ -242,10 +245,7 @@ function Run.start(spec)
   started = started + 1
   local self = setmetatable({
     id = started,
-    url = spec.url,
-    resolved = spec.resolved,
-    sql = spec.sql,
-    format = spec.format,
+    ctx = ctx,
     log = log,
     path = path,
     staged = command.staged and staging or nil,
@@ -288,7 +288,7 @@ function Run:cancel()
     return
   end
   self.asked = true
-  if not (self.sessionFile and client.cancel(self.resolved, self.sessionFile)) then
+  if not (self.sessionFile and client.cancel(self.ctx.resolved, self.sessionFile)) then
     self.job:kill("sigint")
   end
 end

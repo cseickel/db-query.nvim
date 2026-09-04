@@ -11,7 +11,6 @@ outlives the window that showed it.
 ]]
 
 ---@class dbquery.Pane
----@field srcBuf integer
 ---@field win integer|nil
 ---@field buf integer|nil
 ---@field path string|nil File the window is showing.
@@ -22,10 +21,9 @@ Pane.__index = Pane
 
 local REFRESH = 500
 
----@param srcBuf integer
 ---@return dbquery.Pane
-function Pane.new(srcBuf)
-  return setmetatable({ srcBuf = srcBuf }, Pane)
+function Pane.new()
+  return setmetatable({}, Pane)
 end
 
 --- Returns the window to split from: a window showing `srcBuf`, or current.
@@ -59,23 +57,24 @@ local function reread(buf)
   end
 end
 
---- Opens `path` in the pane's window, creating the window if needed. `tail`
---- puts the cursor on the last line, for a file still being written to.
+--- Opens one of `run`'s files in the pane's window, creating the window if
+--- needed. `tail` puts the cursor on the last line, for a file still being
+--- written to.
 ---
 --- For previously-shown paths, runs `:edit!` to reload (needed for buftype
 --- buffers like csv-table, where checktime is a no-op).
+---@param run dbquery.Run
 ---@param path string
----@param db string|nil Connection url for b:db.
 ---@param tail boolean
 ---@return integer buf
-function Pane:show(path, db, tail)
+function Pane:show(run, path, tail)
   local buf = vim.fn.bufadd(path)
   local shownBefore = vim.api.nvim_buf_is_loaded(buf)
 
   if self.win and vim.api.nvim_win_is_valid(self.win) then
     vim.api.nvim_win_set_buf(self.win, buf)
   else
-    self.win = vim.api.nvim_open_win(buf, false, { split = "below", win = parentOf(self.srcBuf) })
+    self.win = vim.api.nvim_open_win(buf, false, { split = "below", win = parentOf(run.ctx.buf) })
   end
 
   if shownBefore then
@@ -92,7 +91,8 @@ function Pane:show(path, db, tail)
 
   vim.bo[buf].autoread = true
   vim.bo[buf].buflisted = true
-  vim.b[buf].db = db
+  vim.b[buf].db = run.ctx.url
+  vim.b[buf].db_name = run.ctx.name
 
   self.buf = buf
   self.path = path
@@ -137,7 +137,7 @@ end
 function Pane:display(run)
   self:stop()
   self.run = run
-  self:show(run.log, run.url, true)
+  self:show(run, run.log, true)
 
   local function refresh()
     if self.run == run and self.buf and vim.api.nvim_buf_is_valid(self.buf) then
@@ -154,7 +154,7 @@ function Pane:display(run)
     end
     self:unfollow()
     if run.status == "ok" and run.path then
-      self:show(run.path, run.url, false)
+      self:show(run, run.path, false)
     else
       refresh()
     end

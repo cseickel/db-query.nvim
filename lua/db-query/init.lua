@@ -14,18 +14,28 @@ local Source = require("db-query.source")
 
 local M = {}
 
+--- The `g:db` this plugin set, which is what `g:db_name` names. Setting `g:db`
+--- by hand leaves the old name behind, and a winbar naming the wrong database
+--- is worse than one naming none.
+---@type string|nil
+local namedUrl = nil
+
 ---@class dbquery.ExecuteOptions : dbquery.Selection
 ---@field format dbquery.Format|nil Output format (default: config value).
 ---@field output string|true|nil Output path, true to prompt, nil to auto-generate.
 
---- Opens the connection picker, assigns the selection to `b:db`, and calls
---- the provided callback with the chosen url. A cancelled picker does nothing.
+--- Opens the connection picker, assigns the choice to `buf`, and calls the
+--- provided callback with it. A cancelled picker does nothing.
 ---
---- The connection is also stored in `g:db`, so subsequent sql buffers inherit
---- it without prompting. If the buffer is closed while the picker is open,
---- only `g:db` is set.
----@param chosen fun(url: string)|nil
-function M.connect(chosen)
+--- The choice is also stored in `g:db`, so subsequent sql buffers inherit it
+--- without prompting. If the buffer is closed while the picker is open, only
+--- `g:db` is set.
+---
+--- `buf` is taken rather than read at the end, because the picker may open long
+--- after the query was asked for and the user is free to move in the meantime.
+---@param buf integer|nil Buffer to connect (default: the current one).
+---@param chosen fun(connection: dbquery.Connection)|nil
+function M.connect(buf, chosen)
   local list, err = connections.list(config.values.connections)
   if err then
     return vim.notify("db-query: " .. err, vim.log.levels.ERROR)
@@ -34,7 +44,7 @@ function M.connect(chosen)
     return vim.notify("db-query: no connections configured", vim.log.levels.WARN)
   end
 
-  local buf = vim.api.nvim_get_current_buf()
+  buf = buf or vim.api.nvim_get_current_buf()
   vim.ui.select(list, {
     prompt = "Database",
     format_item = function(connection)
@@ -45,6 +55,8 @@ function M.connect(chosen)
       return
     end
     vim.g.db = choice.url
+    vim.g.db_name = choice.name
+    namedUrl = choice.url
     if not vim.api.nvim_buf_is_loaded(buf) then
       return
     end
@@ -57,7 +69,7 @@ function M.connect(chosen)
     pcall(vim.fn["vim_dadbod_completion#fetch"], buf)
 
     if chosen then
-      chosen(choice.url)
+      chosen(choice)
     end
   end)
 end
@@ -107,28 +119,33 @@ function M.execute(opts)
     end
 
     ---@param url string|nil
+    ---@param name string|nil
     ---@param resolved string
-    local function start(url, resolved)
+    local function start(url, name, resolved)
       Source.of(buf):execute({
+        buf = buf,
         url = url,
+        name = name,
         resolved = resolved,
         sql = statement,
+        srcName = vim.api.nvim_buf_get_name(buf),
         format = format,
         span = span,
         outputPath = outputPath,
       })
     end
 
-    local resolved = resolve(vim.b[buf].db)
+    local written = vim.b[buf].db
+    local resolved = resolve(written)
     if resolved then
-      return start(vim.b[buf].db, resolved)
+      return start(written, vim.b[buf].db_name, resolved)
     end
 
-    M.connect(function(url)
-      if not url then
-        return
+    M.connect(buf, function(connection)
+      local chosen = resolve(connection.url)
+      if chosen then
+        start(connection.url, connection.name, chosen)
       end
-      start(url, resolve(url))
     end)
   end
 
@@ -209,6 +226,9 @@ function M.setup(opts)
     callback = function(event)
       if vim.g.db and not vim.b[event.buf].db then
         vim.b[event.buf].db = vim.g.db
+        if vim.g.db == namedUrl then
+          vim.b[event.buf].db_name = vim.g.db_name
+        end
       end
     end,
   })

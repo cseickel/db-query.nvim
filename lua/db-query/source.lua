@@ -5,7 +5,6 @@ A Source ties together a Run, Pane, and Indicator for one buffer. Each buffer
 can have one active query at a time.
 ]]
 
-local config = require("db-query.config")
 local Indicator = require("db-query.indicator")
 local output = require("db-query.output")
 local Pane = require("db-query.pane")
@@ -34,7 +33,7 @@ function Source.of(buf)
     return existing
   end
 
-  local self = setmetatable({ buf = buf, pane = Pane.new(buf), files = {} }, Source)
+  local self = setmetatable({ buf = buf, pane = Pane.new(), files = {} }, Source)
   sources[buf] = self
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = buf,
@@ -99,13 +98,13 @@ function Source:output(view)
     view = self.pane:showing() == self.run.log and "result" or "log"
   end
   if view == "log" then
-    return self.pane:show(self.run.log, self.run.url, true)
+    return self.pane:show(self.run, self.run.log, true)
   end
 
   if not (self.run.status == "ok" and self.run.path) then
     return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
   end
-  self.pane:show(self.run.path, self.run.url, false)
+  self.pane:show(self.run, self.run.path, false)
 end
 
 --- Cleans up when the source buffer is wiped. Cancels any running query, stops
@@ -132,33 +131,23 @@ function Source:close()
   sources[self.buf] = nil
 end
 
----@class dbquery.ExecuteSpec
----@field url string|nil
----@field resolved string
----@field sql string
----@field format dbquery.Format
----@field span [integer, integer]
----@field outputPath string|nil
-
---- Runs `spec.sql`, replacing any active query. The previous query is cancelled
+--- Runs `ctx.sql`, replacing any active query. The previous query is cancelled
 --- but may still be finishing when this one starts.
----@param spec dbquery.ExecuteSpec
-function Source:execute(spec)
+---
+--- The replacement has to exist before the previous query is cancelled.
+--- `Run.start` returns nil for an unknown url scheme, an output path it cannot
+--- write, and an overwrite the user declined, and none of those are a reason to
+--- stop the query already running.
+---@param ctx dbquery.Context
+function Source:execute(ctx)
+  local run = Run.start(ctx)
+  if not run then
+    return
+  end
+
   self:cancel()
   if self.indicator then
     self.indicator:stop()
-  end
-
-  local run = Run.start({
-    url = spec.url,
-    resolved = spec.resolved,
-    sql = spec.sql,
-    format = spec.format,
-    srcName = vim.api.nvim_buf_get_name(self.buf),
-    outputPath = spec.outputPath,
-  })
-  if not run then
-    return
   end
 
   -- Kept after it finishes, so :DBOutput can still find both files.
@@ -168,12 +157,7 @@ function Source:execute(spec)
     table.insert(self.files, run.path)
   end
 
-  self.indicator = Indicator.attach({
-    buf = self.buf,
-    span = spec.span,
-    run = run,
-    key = config.values.cancel,
-  })
+  self.indicator = Indicator.attach(run)
   self.pane:display(run)
 end
 

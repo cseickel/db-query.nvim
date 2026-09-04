@@ -9,6 +9,8 @@ local, so each buffer can run one query at a time.
 would have to configure themselves.
 ]]
 
+local config = require("db-query.config")
+
 ---@class dbquery.Indicator
 ---@field buf integer
 ---@field first integer First executed line (0-based).
@@ -115,6 +117,11 @@ function Indicator:tick()
 end
 
 --- Removes the bar, spinner, and keybinding.
+---
+--- The nil timer makes this idempotent, which matters because a replaced
+--- indicator is stopped when its successor is attached and stopped again when
+--- its own run finally finishes. Without the guard the second call would delete
+--- the successor's keymap and clear its extmarks.
 function Indicator:stop()
   if not self.timer then
     return
@@ -130,23 +137,17 @@ function Indicator:stop()
   vim.api.nvim__redraw({ statusline = true, winbar = true })
 end
 
----@class dbquery.IndicatorSpec
----@field buf integer
----@field span [integer, integer]
----@field run dbquery.Run
----@field key string
-
---- Creates an indicator for `spec.run`, drawing the bar and spinner and binding
---- the cancel key. Stops automatically when the run finishes.
----@param spec dbquery.IndicatorSpec
+--- Creates an indicator for `run`, drawing the bar and spinner and binding the
+--- cancel key. Stops automatically when the run finishes.
+---@param run dbquery.Run
 ---@return dbquery.Indicator
-function Indicator.attach(spec)
+function Indicator.attach(run)
   local self = setmetatable({
-    buf = spec.buf,
-    first = spec.span[1],
-    last = spec.span[2],
-    key = spec.key,
-    run = spec.run,
+    buf = run.ctx.buf,
+    first = run.ctx.span[1],
+    last = run.ctx.span[2],
+    key = config.values.cancel,
+    run = run,
     frame = 1,
     timer = vim.uv.new_timer(),
   }, Indicator)
@@ -165,7 +166,7 @@ function Indicator.attach(spec)
       self:tick()
     end)
   )
-  spec.run:onFinish(function()
+  run:onFinish(function()
     self:stop()
   end)
   return self

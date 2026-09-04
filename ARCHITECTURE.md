@@ -51,7 +51,7 @@ Everything else is helper functions:
     - `selection.text(opts)` returns the sql and its `span`, the first and last line it came from. The sql is read before any prompt opens, because a `vim.ui` prompt ends visual mode and the selection goes with it.
     - When `-o` was given without a path, `vim.ui.input` asks for one, prefilled with `b:db_last_output_path`.
     - `db#resolve` expands `$VAR` in `vim.b.db`. When the buffer has no connection, `M.connect` asks for one and the rest continues in its callback.
-    - `Source.of(buf):execute(spec)` starts the work.
+    - `Source.of(buf):execute(ctx)` starts the work. The `dbquery.Context` holds the request as it stood when the user ran it, and every part of the run reads what it needs from `run.ctx` rather than being handed it.
 
 3. `Source:execute` cancels whatever this buffer was running and stops its indicator, calls `Run.start`, records the results file in `self.files`, then attaches an `Indicator` and calls `Pane:display`. Both of those subscribe to the run.
 
@@ -114,7 +114,7 @@ Without a results file, psql runs with `-e` and `\timing on` so the log labels e
 
 ## Connections
 
-`b:db` is the whole of what this plugin shares with vim-dadbod and vim-dadbod-completion. Two forms of the url are in play:
+`b:db` is what this plugin shares with vim-dadbod and vim-dadbod-completion. Two forms of the url are in play:
 
 - The written form, which may hold `$PGPASS` or be the name of a dadbod variable. `b:db` on the sql buffer holds it, and `Pane:show` copies it onto the output buffer, so completion reads the same url in both windows.
 - The resolved form from `db#resolve`, which is what the client is given. `url.withoutPassword` takes any password out of it and `client.lua` puts that password in the environment instead, because a command line is readable by every process on the machine.
