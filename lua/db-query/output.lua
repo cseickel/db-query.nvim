@@ -1,11 +1,12 @@
 --[[
 Output file paths and cleanup.
 
-Files are written to a subdirectory of nvim's cache by default, named by nvim's
-pid. On startup, sweep() removes directories for nvims that have exited.
+Row data goes to the output directory, which the user chooses. Logs go to a
+subdirectory of nvim's cache named by nvim's pid, and never anywhere else. On
+startup, sweep() removes directories for nvims that have exited.
 
-The `output_dir` config and `:DBOutputDir` command override the path. Files in
-a user-specified directory are not auto-deleted.
+The `output_dir` config and `:DBOutputDir` command set the output directory.
+Files in a user-specified directory are not auto-deleted.
 ]]
 
 local config = require("db-query.config")
@@ -18,7 +19,10 @@ local MINE = ROOT .. "/" .. vim.fn.getpid()
 ---@type string|nil
 local asked = nil
 
-local EXTENSIONS = { csv = true, tsv = true, log = true }
+--- Counts staging files, so each run gets its own.
+local staged = 0
+
+local EXTENSIONS = { csv = true, tsv = true, txt = true, log = true }
 
 ---@return string
 function M.directory()
@@ -41,13 +45,15 @@ local function baseName(srcName)
   return name
 end
 
---- Creates the parent directory and touches `path`. Returns false and shows an
---- error when the path cannot be written.
+--- Creates the parent directory and opens `path` in `mode`, so the client's
+--- shell redirect cannot fail. Returns false and shows an error when the path
+--- cannot be written.
 ---@param path string
+---@param mode "a"|"w"
 ---@return boolean
-local function ready(path)
+local function ready(path, mode)
   pcall(vim.fn.mkdir, vim.fs.dirname(path), "p")
-  local file = io.open(path, "w")
+  local file = io.open(path, mode)
   if not file then
     vim.notify("db-query: cannot write " .. path, vim.log.levels.ERROR)
     return false
@@ -93,7 +99,35 @@ function M.setDirectory(path)
   vim.notify("db-query: output goes to " .. M.directory())
 end
 
---- Returns true when `path` should be deleted when its window closes.
+--- Returns the log for `srcName`, which every run of that buffer appends to,
+--- or nil when it cannot be written.
+---
+--- Logs live in this nvim's cache directory whatever the output directory is,
+--- so a buffer keeps one log for the session and sweep() clears it later.
+---@param srcName string Full path of the source buffer.
+---@return string|nil
+function M.log(srcName)
+  local path = MINE .. "/" .. baseName(srcName) .. ".log"
+  return ready(path, "a") and path or nil
+end
+
+--- Returns a fresh path under this nvim's cache directory, named without
+--- whitespace, for a client that cannot write to the results path itself. The
+--- caller moves the file onto the results path once the query finishes.
+---
+--- Each call returns a new name, so two runs writing to the same `-o` path
+--- never share a staging file.
+---@param extension string
+---@return string
+function M.staging(extension)
+  pcall(vim.fn.mkdir, MINE, "p")
+  staged = staged + 1
+  return string.format("%s/staging-%d.%s", MINE, staged, extension)
+end
+
+--- Returns true when the plugin should delete `path` once the buffer that
+--- produced it is gone. A file the user named or sent to a directory of their
+--- own is theirs to keep.
 ---@param path string
 ---@return boolean
 function M.owns(path)
@@ -127,7 +161,7 @@ local function namedFile(full, extension)
   if vim.uv.fs_stat(path) and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
     return nil
   end
-  return ready(path) and path or nil
+  return ready(path, "w") and path or nil
 end
 
 --- Returns the next available number for `name-N.ext` files in `dir`.
@@ -153,7 +187,7 @@ end
 ---
 --- Returns nil on error or cancelled overwrite.
 ---@param srcName string Full path of the source buffer.
----@param extension string File extension: csv, tsv, or log.
+---@param extension string File extension: csv, tsv, or txt.
 ---@param chosen string|nil
 ---@return string|nil
 function M.path(srcName, extension, chosen)
@@ -164,7 +198,7 @@ function M.path(srcName, extension, chosen)
   local dir = M.directory()
   local name = baseName(srcName)
   local path = string.format("%s/%s-%d.%s", dir, name, unused(dir, name), extension)
-  return ready(path) and path or nil
+  return ready(path, "w") and path or nil
 end
 
 ---@param pid integer

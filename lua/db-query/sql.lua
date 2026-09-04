@@ -1,13 +1,14 @@
 --[[
-SQL parsing for execution mode detection.
+SQL parsing for output routing.
 
-Determines whether sql can be exported as csv (single row-returning statement)
-or must run as a script (multiple statements, DDL, DML).
+Determines whether a statement returns rows, and if so whether it can be
+wrapped in COPY. A statement that returns no rows writes nothing but its
+transcript, which belongs in the log.
 ]]
 
 local M = {}
 
----@alias dbquery.Mode "export"|"script"
+---@alias dbquery.RowKind "query"|"returning"
 
 --- Removes trailing semicolon and whitespace.
 ---@param sql string
@@ -73,33 +74,47 @@ end
 
 local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = true }
 
--- CTEs ending in these cannot be wrapped in COPY.
-local WRITES = { "insert", "update", "delete", "merge" }
+local WRITES = { insert = true, update = true, delete = true, merge = true }
 
---- Returns true for a single row-returning statement, false otherwise.
----@param sql string
+---@param lowered string
+---@param word string
 ---@return boolean
-function M.canExport(sql)
+local function mentions(lowered, word)
+  return lowered:find("%f[%w_]" .. word .. "%f[^%w_]") ~= nil
+end
+
+--- Returns how a single statement produces rows, or nil when it produces none.
+---
+--- "query" is a select, with, table, or values statement, which COPY accepts as
+--- its argument. "returning" is an insert, update, delete, or merge with a
+--- RETURNING clause, which some clients cannot write to a file.
+---@param sql string
+---@return dbquery.RowKind|nil
+function M.rowKind(sql)
   local body = M.stripTerminator(sql)
   if body:find(";", 1, true) then
-    return false
+    return nil
   end
 
-  local head = uncommented(body)
-  local first = (head:match("^%s*(%a+)") or ""):lower()
-  if not ROW_SOURCES[first] then
-    return false
-  end
+  local lowered = body:lower()
+  local first = uncommented(lowered):match("^%s*(%a+)") or ""
 
-  if first == "with" then
-    local lowered = body:lower()
-    for _, word in ipairs(WRITES) do
-      if lowered:find("%f[%w_]" .. word .. "%f[^%w_]") then
-        return false
+  if ROW_SOURCES[first] then
+    if first == "with" then
+      for word in pairs(WRITES) do
+        -- Postgres refuses a data-modifying CTE inside COPY.
+        if mentions(lowered, word) then
+          return nil
+        end
       end
     end
+    return "query"
   end
-  return true
+
+  if WRITES[first] and mentions(lowered, "returning") then
+    return "returning"
+  end
+  return nil
 end
 
 return M

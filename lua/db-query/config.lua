@@ -14,7 +14,7 @@ local M = {}
 ---@field cancel string Cancel keybinding.
 ---@field format dbquery.Format Default output format.
 ---@field output_dir string|nil Output directory (nil = cache).
----@field output_cleanup boolean Delete files on window close.
+---@field output_cleanup boolean Delete results files when their sql buffer is wiped.
 
 ---@type dbquery.Config
 M.values = {

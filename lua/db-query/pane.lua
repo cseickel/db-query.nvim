@@ -1,28 +1,26 @@
 --[[
 Output window management.
 
-A pane belongs to a source buffer and shows query results in a split window.
-The client writes to a file; nvim reads that file. For scripts, the file is
-reloaded on a timer to show progress.
+A pane belongs to a source buffer and shows query output in a split window.
+The client writes to a file and nvim reads that file. The log is shown while
+the query runs, reloaded on a timer, and gives way to the rows when they arrive.
+
+Output files open as ordinary listed buffers, so leaving one on screen keeps
+it. Deleting them is `Source:close`'s job, since the run that wrote a file
+outlives the window that showed it.
 ]]
-
-local output = require("db-query.output")
-
-local GROUP = vim.api.nvim_create_augroup("db-query.pane", { clear = true })
 
 ---@class dbquery.Pane
 ---@field srcBuf integer
 ---@field win integer|nil
 ---@field buf integer|nil
+---@field path string|nil File the window is showing.
 ---@field run dbquery.Run|nil
----@field dimmed boolean|nil
 ---@field timer uv.uv_timer_t|nil
 local Pane = {}
 Pane.__index = Pane
 
 local REFRESH = 500
-
-local STALE = "Normal:Comment,NormalNC:Comment"
 
 ---@param srcBuf integer
 ---@return dbquery.Pane
@@ -61,14 +59,16 @@ local function reread(buf)
   end
 end
 
---- Opens `path` in the pane's window, creating the window if needed.
+--- Opens `path` in the pane's window, creating the window if needed. `tail`
+--- puts the cursor on the last line, for a file still being written to.
 ---
 --- For previously-shown paths, runs `:edit!` to reload (needed for buftype
 --- buffers like csv-table, where checktime is a no-op).
 ---@param path string
 ---@param db string|nil Connection url for b:db.
+---@param tail boolean
 ---@return integer buf
-function Pane:show(path, db)
+function Pane:show(path, db, tail)
   local buf = vim.fn.bufadd(path)
   local shownBefore = vim.api.nvim_buf_is_loaded(buf)
 
@@ -84,31 +84,18 @@ function Pane:show(path, db)
     end)
   end
 
-  vim.api.nvim_win_set_cursor(self.win, { vim.api.nvim_buf_line_count(buf), 0 })
+  local row = tail and vim.api.nvim_buf_line_count(buf) or 1
+  vim.api.nvim_win_set_cursor(self.win, { row, 0 })
   vim.wo[self.win].wrap = false
   vim.wo[self.win].number = false
   vim.wo[self.win].relativenumber = false
 
   vim.bo[buf].autoread = true
+  vim.bo[buf].buflisted = true
   vim.b[buf].db = db
 
   self.buf = buf
-  self:undim()
-
-  vim.api.nvim_clear_autocmds({ group = GROUP, buffer = buf })
-
-  local ours = output.owns(path)
-  vim.bo[buf].bufhidden = ours and "wipe" or ""
-  if ours then
-    vim.api.nvim_create_autocmd("BufWipeout", {
-      group = GROUP,
-      buffer = buf,
-      once = true,
-      callback = function()
-        os.remove(path)
-      end,
-    })
-  end
+  self.path = path
   return buf
 end
 
@@ -118,24 +105,10 @@ function Pane:shows(buf)
   return self.buf == buf
 end
 
---- Greys the window to indicate stale output from a previous run.
-function Pane:dim()
-  if
-    self.win
-    and vim.api.nvim_win_is_valid(self.win)
-    and self:shows(vim.api.nvim_win_get_buf(self.win))
-  then
-    vim.wo[self.win].winhighlight = STALE
-    self.dimmed = true
-  end
-end
-
---- Restores normal highlighting after dim().
-function Pane:undim()
-  if self.dimmed and self.win and vim.api.nvim_win_is_valid(self.win) then
-    vim.wo[self.win].winhighlight = ""
-  end
-  self.dimmed = false
+--- Returns the file in the window, or nil before the first query.
+---@return string|nil
+function Pane:showing()
+  return self.path
 end
 
 --- Stops the reload timer.
@@ -150,63 +123,40 @@ end
 --- Disconnects from the current run without affecting the window contents.
 function Pane:stop()
   self:unfollow()
-  self:undim()
   self.run = nil
 end
 
---- Displays `run`'s output with live reloading. Opens the window when the file
---- has content; a query that prints nothing opens nothing.
+--- Shows `run`'s log in the window, then its rows, replacing whatever the
+--- window held before.
+---
+--- The log opens straight away and reloads every REFRESH ms, so a long query
+--- fills in as it goes. A query that finishes and returned rows gives way to
+--- them. One that failed or was cancelled leaves the log on screen with the
+--- reason at the bottom.
 ---@param run dbquery.Run
-function Pane:follow(run)
-  local shown
+function Pane:display(run)
+  self:stop()
+  self.run = run
+  self:show(run.log, run.url, true)
 
   local function refresh()
-    if self.run ~= run then
-      return
-    end
-    if not shown then
-      local stat = vim.uv.fs_stat(run.path)
-      if stat and stat.size > 0 then
-        shown = self:show(run.path, run.url)
-      end
-      return
-    end
-    if vim.api.nvim_buf_is_valid(shown) then
-      reread(shown)
+    if self.run == run and self.buf and vim.api.nvim_buf_is_valid(self.buf) then
+      reread(self.buf)
     end
   end
 
   self.timer = vim.uv.new_timer()
   self.timer:start(REFRESH, REFRESH, vim.schedule_wrap(refresh))
-  run:onFinish(function()
-    if self.run == run then
-      self:unfollow()
-      self:undim()
-    end
-    refresh()
-  end)
-end
 
---- Displays `run`'s output, replacing any previous output.
----
---- Scripts use live reloading (follow). Exports wait for completion, then show
---- the result or error; cancelled exports show nothing.
----@param run dbquery.Run
-function Pane:display(run)
-  self:stop()
-  self.run = run
-  self:dim()
-
-  if run.mode == "script" then
-    return self:follow(run)
-  end
   run:onFinish(function()
     if self.run ~= run then
       return
     end
-    self:undim()
-    if run.status ~= "cancelled" then
-      self:show(run.path, run.url)
+    self:unfollow()
+    if run.status == "ok" and run.path then
+      self:show(run.path, run.url, false)
+    else
+      refresh()
     end
   end)
 end

@@ -2,7 +2,7 @@
 User commands and their argument parsing.
 
 `:DBQuery` and `:DBQueryStatement` share argument handling, differing only in
-which lines they run.
+which lines they run. The rest take no arguments.
 
 The callbacks require `db-query` at call time to avoid a circular dependency:
 this module is loaded during init.lua, before init.lua finishes.
@@ -12,6 +12,16 @@ local M = {}
 
 local FORMATS = { "text", "csv" }
 local FLAGS = { "-f", "-o" }
+local VIEWS = { "log", "result", "toggle" }
+
+---@param lead string
+---@param words string[]
+---@return string[]
+local function matching(lead, words)
+  return vim.tbl_filter(function(word)
+    return vim.startswith(word, lead)
+  end, words)
+end
 
 ---@class dbquery.Arguments
 ---@field format dbquery.Format
@@ -53,10 +63,7 @@ local function complete(lead, line)
   if line:match("%-o%s+%S*$") then
     return vim.fn.getcompletion(lead, "file")
   end
-  local offered = line:match("%-f%s+%S*$") and FORMATS or FLAGS
-  return vim.tbl_filter(function(word)
-    return vim.startswith(word, lead)
-  end, offered)
+  return matching(lead, line:match("%-f%s+%S*$") and FORMATS or FLAGS)
 end
 
 --- Executes `selection` with parsed `args`. Aborts on invalid arguments.
@@ -98,6 +105,23 @@ function M.setup()
   vim.api.nvim_create_user_command("DBConnect", function()
     require("db-query").connect()
   end, { desc = "Choose the database this buffer connects to" })
+
+  vim.api.nvim_create_user_command("DBOutput", function(command)
+    local view = command.args ~= "" and command.args or "toggle"
+    if not vim.tbl_contains(VIEWS, view) then
+      return vim.notify(
+        "db-query: DBOutput wants " .. table.concat(VIEWS, ", "),
+        vim.log.levels.ERROR
+      )
+    end
+    require("db-query").output(view)
+  end, {
+    nargs = "?",
+    complete = function(lead)
+      return matching(lead, VIEWS)
+    end,
+    desc = "Show the log or the last query's result (default: toggle)",
+  })
 
   vim.api.nvim_create_user_command("DBOutputDir", function(command)
     require("db-query").outputDir(command.args ~= "" and command.args or nil)

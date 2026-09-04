@@ -1,14 +1,14 @@
 # db-query.nvim
 
-A SQL runner for Neovim, which utilizes command line clients to execute queries. This is just another take on the dadbod concept. The reason it exists is that I wanted more control over how the output was generated and managed.
+A SQL runner for Neovim, which utilizes command line clients to execute queries. This is just another take on the dadbod concept. I wrote it to control how the output is written and where it goes.
 
-Queries run through `psql`, `duckdb`, `sqlite3`, or `mysql`. Long scripts stream into the results window as they run. `<C-c>` cancels.
+Queries run through `psql`, `duckdb`, `sqlite3`, or `mysql`. Everything the client prints goes to a log that fills in as the query runs. Rows go to a file of their own, which replaces the log on screen when the query finishes. `<C-c>` cancels.
 
 ## Requirements
 
 Neovim 0.11 or newer.
 
-The client for your database, on your `PATH`. `stdbuf` from coreutils is used when it is there, which will enable postgres scripts to stream progress line by line instead of in large chunks.
+The client for your database, on your `PATH`. `stdbuf` from coreutils is used when it is there, so the log fills in line by line instead of in large chunks.
 
 ## Install
 
@@ -50,7 +50,7 @@ A URL can hold environment variables, so your connections file does not have to 
 
 This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
 
-A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. That is the variable vim-dadbod and vim-dadbod-completion read, so completion follows your choice. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
+A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and vim-dadbod-completion read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
 ## Options
 
@@ -69,52 +69,59 @@ require("db-query").setup({
   -- can change it, but not disable it.
   -- Omitting this setting will just revert it to the default.
   cancel = "<C-c>",
-  
-  -- The format to use for the output pane. The default is "text", which is
-  -- native cli output. The other option is "csv", which exports to csv when the
-  -- query is a single row-returning statement.
+
+  -- The format of the results file. "text" is the client's own table, written
+  -- to a .txt file. "csv" is delimited rows, written to a .csv file (.tsv for
+  -- mysql).
   format = "text",
 
-  -- Where output files are written. The default is a directory of this nvim's
+  -- Where results files are written. The default is a directory of this nvim's
   -- own under `stdpath("cache")`.
   output_dir = nil,
 
-  -- Whether an output file is deleted with the window that showed it, and
-  -- whether what an nvim left behind is swept at startup. Setting `output_dir`
-  -- and leaving this alone turns it off, since a directory of your own is
-  -- somewhere you put results you are keeping.
+  -- Whether a results file is deleted with the sql buffer that produced it,
+  -- and whether what an nvim left behind is swept at startup. Setting
+  -- `output_dir` and leaving this alone turns it off, since a directory of
+  -- your own is somewhere you put results you are keeping.
   output_cleanup = true,
 })
 ```
 
 ## Commands
 
-| Command              |                                          |
-|----------------------|------------------------------------------|
-| `:DBQuery`           | Run the buffer                           |
-| `:DBQueryStatement`  | Run the statement the cursor is in       |
-| `:'<,'>DBQuery`      | Run the selection                        |
-| `:1,20DBQuery`       | Run lines 1 to 20                        |
-| `:DBQuery -f csv`    | Output CSV instead                       |
-| `:DBQuery -o report` | Name the output file yourself            |
-| `:DBConnect`         | Pick the database for this buffer        |
-| `:DBOutputDir ~/out` | Set the output directory for the session |
+| Command              |                                                |
+|----------------------|------------------------------------------------|
+| `:DBQuery`           | Run the buffer                                 |
+| `:DBQueryStatement`  | Run the statement the cursor is in             |
+| `:'<,'>DBQuery`      | Run the selection                              |
+| `:1,20DBQuery`       | Run lines 1 to 20                              |
+| `:DBQuery -f csv`    | Write the rows as CSV instead                  |
+| `:DBQuery -o report` | Name the results file yourself                 |
+| `:DBOutput`          | Switch the output window between log and rows  |
+| `:DBOutput log`      | Show the log                                   |
+| `:DBOutput result`   | Show the last query's rows                     |
+| `:DBConnect`         | Pick the database for this buffer              |
+| `:DBOutputDir ~/out` | Set the output directory for the session       |
 
 `:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
 
-`-f csv` only applies to a single `select`. Anything else falls back to normal output. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). A query that fails writes the client's error into the csv as its only cell, so what renders the file shows the error rather than an empty table.
+Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
 
-`-o` names the file for one query, in place of the one the plugin would have named. `-o report` writes `report.csv` in the working directory, `-o ~/exports/` writes into that directory under the buffer's own name, and an existing file is confirmed before the query starts. The extension is always set by the format, using `csv` or `tsv` for an export, depending on the client, and `log` for anything else, so `-o report.csv` on a text query writes `report.log`.
+`-f csv` writes the results file as delimited rows in place of the client's table. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). mysql writes tab-separated rows, so its file is `.tsv`.
+
+`-o` names the results file for one query, in place of the one the plugin would have named. `-o report` writes `report.txt` or `report.csv` in the working directory, depending on the format, `-o ~/exports/` writes into that directory under the buffer's own name, and an existing file is confirmed before the query starts. The extension is always set by the format, so `-o report.csv` on a text query writes `report.txt`. A query that returns no rows has no results file, so `-o` on one warns that nothing will be written there. `-o` with no path prompts for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the output directory.
+
+`:DBOutput` opens the output window if it was closed and swaps between the log and the last query's rows. It works from the sql buffer and from the output window. `:DBOutput result` after a query that failed, or that returned no rows, says so and leaves the window alone.
 
 ## Where output goes
 
-Output is written to `stdpath("cache")/db-query/<pid>/`, one file per query, named for the sql buffer and numbered one past the highest number already there. A file is deleted when the window showing it is closed, and anything an nvim left behind is swept the next time one starts.
+The log for a buffer is `stdpath("cache")/db-query/<pid>/<buffer name>.log`. Every query run from that buffer appends to it, each under a header with the run's number, the time, and the sql. The log is deleted when the sql buffer is wiped, and anything an nvim left behind is swept the next time one starts.
 
-Set `output_dir` in `setup` to write somewhere else. That turns `output_cleanup` off, because a directory of your own is somewhere you put results you are keeping. Set `output_cleanup = true` alongside it to have those files deleted with their windows anyway.
+Results files go to the output directory, which defaults to the same `stdpath("cache")/db-query/<pid>/`, named for the sql buffer and numbered one past the highest number already there. They are ordinary buffers, so closing the window keeps the file, and `:DBOutput` brings it back. Results files are deleted when the sql buffer that produced them is wiped.
 
-`:DBOutputDir ~/exports` writes there for the rest of the session, and nothing written there is ever deleted by the plugin. `:DBOutputDir` with no argument prompts for a directory, and emptying the prompt puts it back to what `setup` was given.
+Set `output_dir` in `setup` to write results somewhere else. That turns `output_cleanup` off, because a directory of your own is somewhere you put results you are keeping. Set `output_cleanup = true` alongside it to have those files deleted with their sql buffer anyway.
 
-`-o` with no path prompts for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the output directory.
+`:DBOutputDir ~/exports` writes results there for the rest of the session, and nothing written there is ever deleted by the plugin. `:DBOutputDir` with no argument prompts for a directory, and emptying the prompt puts it back to what `setup` was given.
 
 ## Keys
 
@@ -129,18 +136,22 @@ vim.keymap.set("x", "<M-x>", function()
   require("db-query").execute({ visual = true })
 end, { desc = "run the selection" })
 
--- Ctrl-Enter: Execute the query the cursor is on in a file that may have multiple
--- statements, and output CSV
+-- Ctrl-Enter: run the statement the cursor is on in a file that may have
+-- multiple statements, and write the rows as CSV
 vim.keymap.set("n", "<C-CR>", function()
-  require("db-query").execute({ statement = true, csv = true })
-end, { buffer = event.buf, desc = "Execute query at cursor" })
+  require("db-query").execute({ statement = true, format = "csv" })
+end, { desc = "run the statement at the cursor" })
+
+vim.keymap.set("n", "<M-o>", function()
+  require("db-query").output("toggle")
+end, { desc = "switch between the log and the rows" })
 ```
 
-`execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the output file or `true` to be asked for one.
+`execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the results file or `true` to be asked for one. `output` takes `"log"`, `"result"`, or `"toggle"`, the same as `:DBOutput`.
 
 ## While a query runs
 
-A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The window showing the last run's output is greyed until the new output replaces it.
+A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. When the query finishes with rows, the window switches to the results file. When it fails or is cancelled, the log stays on screen with the reason at the bottom.
 
 You can call `status(buf)` to get the same spinner and timer in your winbar or statusline:
 

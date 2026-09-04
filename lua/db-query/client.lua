@@ -1,3 +1,11 @@
+--[[
+Turning a connection and a statement into a command line.
+
+Every client writes its transcript to stdout and its errors to stderr, both of
+which the caller sends to the log. Rows go to a file of their own, which the
+client writes wherever it can.
+]]
+
 local sql = require("db-query.sql")
 local url = require("db-query.url")
 
@@ -5,32 +13,36 @@ local M = {}
 
 ---@class dbquery.Command
 ---@field argv string[]
----@field extension string Output format: csv, tsv, or log.
 ---@field env table<string, string>|nil
 ---@field stdin string|nil
+---@field stdout string|nil File the shell must catch stdout in, for a client that cannot write rows itself.
+---@field staged boolean|nil Client wrote rows to `spec.staging`, to be moved onto the results file.
 ---@field sessionFile string|nil Path where the client writes the backend pid.
 
+---@class dbquery.CommandSpec
+---@field connection string
+---@field statement string
+---@field format dbquery.Format
+---@field kind dbquery.RowKind|nil
+---@field path string|nil Results file, set whenever `kind` is.
+---@field staging string|nil Whitespace-free path a client may write to instead of `path`.
+
 ---@class dbquery.Client
----@field command fun(connection: string, statement: string, mode: dbquery.Mode): dbquery.Command
+---@field rows table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
+---@field delimited string Extension for csv format: csv or tsv.
+---@field command fun(spec: dbquery.CommandSpec): dbquery.Command
 ---@field cancel? fun(connection: string, pid: integer): { argv: string[], env: table<string, string>|nil }
 
----@param command { argv: string[], stdin: string|nil, env: table<string, string>|nil }
----@return dbquery.Command
-local function script(command)
-  return {
-    argv = command.argv,
-    extension = "log",
-    stdin = command.stdin,
-    env = command.env,
-  }
-end
-
---- Returns psql commands that write the backend pid to `file`.
----@param file string
+--- Returns the statement psql runs to fill the results file: wrapped in COPY
+--- for csv, and as written for text, where psql's own table is the output.
+---@param spec dbquery.CommandSpec
 ---@return string
-local function backendPid(file)
-  local lines = { "\\o '" .. file .. "'", "SELECT pg_backend_pid();", "\\o", "" }
-  return table.concat(lines, "\n")
+local function pgRows(spec)
+  local body = sql.stripTerminator(spec.statement)
+  if spec.format ~= "csv" then
+    return body
+  end
+  return "COPY (\n" .. body .. "\n) TO STDOUT WITH (FORMAT csv, HEADER)"
 end
 
 --- Converts a mysql:// url into command-line arguments and environment.
@@ -71,44 +83,61 @@ end
 ---@type table<string, dbquery.Client>
 local CLIENTS = {}
 
-CLIENTS.postgres = {
-  command = function(connection, statement, mode)
-    local without, password = url.withoutPassword(connection)
-    local env = password and { PGPASSWORD = password } or nil
-    local argv = { "psql", without, "-w", "--no-psqlrc", "-v", "ON_ERROR_STOP=1" }
-    local sessionFile = vim.fn.tempname() .. ".pid"
+--- psql meta-command sending query results to `file`, or back to stdout when
+--- `file` is nil. psql reads backslash escapes inside a single-quoted
+--- meta-command argument, so both marks have to be escaped.
+---@param file string|nil
+---@return string
+local function sendTo(file)
+  if not file then
+    return "\\o"
+  end
+  return "\\o '" .. file:gsub("\\", "\\\\"):gsub("'", "\\'") .. "'"
+end
 
-    if mode == "script" then
+CLIENTS.postgres = {
+  rows = { query = true, returning = true },
+  delimited = "csv",
+
+  command = function(spec)
+    local without, password = url.withoutPassword(spec.connection)
+    local sessionFile = vim.fn.tempname() .. ".pid"
+    local argv = { "psql", without, "-w", "--no-psqlrc", "-v", "ON_ERROR_STOP=1" }
+    local script
+
+    if spec.path then
+      vim.list_extend(argv, { "-f", "-" })
+      script = {
+        sendTo(sessionFile),
+        "SELECT pg_backend_pid();",
+        sendTo(spec.path),
+        pgRows(spec),
+        -- Separate semicolon in case the statement ends in a line comment.
+        ";",
+        sendTo(nil),
+        "",
+      }
+    else
       -- -e echoes statements so row counts are labeled.
       vim.list_extend(argv, { "-e", "-f", "-" })
-      local script = {
+      script = {
         "\\set ECHO none",
-        backendPid(sessionFile, true),
+        sendTo(sessionFile),
+        "SELECT pg_backend_pid();",
+        sendTo(nil),
         "\\set ECHO queries",
         "\\timing on\n",
-        statement,
-        -- Separate semicolon in case the statement ends in a line comment.
-        ";\n",
-      }
-      return {
-        argv = argv,
-        extension = "log",
-        env = env,
-        sessionFile = sessionFile,
-        stdin = table.concat(script, "\n"),
+        spec.statement,
+        ";",
+        "",
       }
     end
 
-    vim.list_extend(argv, { "-q", "-f", "-" })
-    local copy = "COPY (\n"
-      .. sql.stripTerminator(statement)
-      .. "\n) TO STDOUT WITH (FORMAT csv, HEADER)"
     return {
       argv = argv,
-      extension = "csv",
-      env = env,
+      env = password and { PGPASSWORD = password } or nil,
       sessionFile = sessionFile,
-      stdin = backendPid(sessionFile, false) .. copy .. "\n;\n",
+      stdin = table.concat(script, "\n"),
     }
   end,
 
@@ -131,66 +160,122 @@ CLIENTS.postgres = {
 CLIENTS.postgresql = CLIENTS.postgres
 
 CLIENTS.duckdb = {
-  command = function(connection, statement, mode)
+  rows = { query = true, returning = true },
+  delimited = "csv",
+
+  command = function(spec)
     local argv = { "duckdb" }
-    local path = url.filePath(connection)
-    if path ~= "" then
-      table.insert(argv, path)
+    local file = url.filePath(spec.connection)
+    if file ~= "" then
+      table.insert(argv, file)
     end
-    if mode == "script" then
-      return script({ argv = vim.list_extend(argv, { "-c", statement }) })
+
+    if not spec.path then
+      vim.list_extend(argv, { "-c", spec.statement })
+      return { argv = argv }
     end
-    -- COPY TO '/dev/stdout' fails when stdout is a socket, so use -csv instead.
-    vim.list_extend(argv, { "-csv", "-header", "-c", statement })
-    return { argv = argv, extension = "csv" }
+
+    -- COPY takes a quoted path, so it reaches an output directory whose name
+    -- has a space in it, but its argument has to be a select.
+    if spec.format == "csv" and spec.kind == "query" then
+      local copy = string.format(
+        "COPY (\n%s\n) TO '%s' (FORMAT csv, HEADER)",
+        sql.stripTerminator(spec.statement),
+        (spec.path:gsub("'", "''"))
+      )
+      vim.list_extend(argv, { "-c", copy })
+      return { argv = argv }
+    end
+
+    -- .output takes any statement, but splits its argument on whitespace and
+    -- reads quotes as part of the name, so it writes to `staging` instead.
+    vim.list_extend(argv, {
+      "-c",
+      ".mode " .. (spec.format == "csv" and "csv" or "duckbox"),
+      "-c",
+      ".headers on",
+      "-c",
+      ".output " .. spec.staging,
+      "-c",
+      spec.statement,
+    })
+    return { argv = argv, staged = true }
   end,
 }
 
 CLIENTS.sqlite = {
-  command = function(connection, statement, mode)
-    local path = url.filePath(connection)
-    if mode == "script" then
-      return script({ argv = { "sqlite3", path, statement } })
+  rows = { query = true, returning = true },
+  delimited = "csv",
+
+  command = function(spec)
+    local file = url.filePath(spec.connection)
+    if not spec.path then
+      return { argv = { "sqlite3", file, spec.statement } }
     end
+
     return {
-      argv = { "sqlite3", "-csv", "-header", path, statement },
-      extension = "csv",
+      argv = {
+        "sqlite3",
+        "-cmd",
+        ".mode " .. (spec.format == "csv" and "csv" or "box"),
+        "-cmd",
+        ".headers on",
+        -- .output splits on whitespace unless the name is in double quotes.
+        "-cmd",
+        '.output "' .. spec.path .. '"',
+        file,
+        spec.statement,
+      },
     }
   end,
 }
 
 CLIENTS.mysql = {
-  command = function(connection, statement, mode)
-    local connects = mysqlArguments(connection)
-    local argv = { "mysql", "--batch" }
-    vim.list_extend(argv, connects.argv)
-    vim.list_extend(argv, { "-e", statement })
-    -- Password in environment because command lines are world-readable.
-    if mode == "script" then
-      return script({ argv = argv, env = connects.env })
+  rows = { query = true },
+  delimited = "tsv",
+
+  command = function(spec)
+    local connects = mysqlArguments(spec.connection)
+    local argv = { "mysql" }
+    -- --batch prints tab-separated rows in place of the ascii table.
+    if spec.format == "csv" and spec.path then
+      table.insert(argv, "--batch")
     end
-    return { argv = argv, extension = "tsv", env = connects.env }
+    vim.list_extend(argv, connects.argv)
+    vim.list_extend(argv, { "-e", spec.statement })
+    -- Password in environment because command lines are world-readable.
+    -- mysql has no way to file rows itself, so the shell catches them.
+    return { argv = argv, env = connects.env, stdout = spec.path }
   end,
 }
 
---- Returns the command to run `statement` against `connection`.
----
---- In export mode, the client writes delimited rows to stdout; the extension
---- indicates the delimiter. In script mode, the client writes its transcript.
----
---- Returns nil and shows an error when no client is known for the url scheme.
+--- Returns the extension for the results file, or nil when the run writes no
+--- rows and everything belongs in the log.
 ---@param connection string
----@param statement string
----@param mode dbquery.Mode
----@return dbquery.Command|nil
-function M.command(connection, statement, mode)
+---@param kind dbquery.RowKind|nil
+---@param format dbquery.Format
+---@return string|nil
+function M.target(connection, kind, format)
   local client = CLIENTS[url.scheme(connection)]
-  if not client then
-    -- Show scheme, not full url, to avoid exposing expanded $VAR values.
-    vim.notify("no client known for " .. url.scheme(connection), vim.log.levels.ERROR)
+  if not (client and kind and client.rows[kind]) then
     return nil
   end
-  return client.command(connection, statement, mode)
+  return format == "csv" and client.delimited or "txt"
+end
+
+--- Returns the command to run `spec.statement` against `spec.connection`.
+---
+--- Returns nil and shows an error when no client is known for the url scheme.
+---@param spec dbquery.CommandSpec
+---@return dbquery.Command|nil
+function M.command(spec)
+  local client = CLIENTS[url.scheme(spec.connection)]
+  if not client then
+    -- Show scheme, not full url, to avoid exposing expanded $VAR values.
+    vim.notify("no client known for " .. url.scheme(spec.connection), vim.log.levels.ERROR)
+    return nil
+  end
+  return client.command(spec)
 end
 
 --- Returns the server pid from `file`, or nil if not yet written.
@@ -238,7 +323,11 @@ end
 ---@param statement string
 ---@return string|nil
 function M.run(connection, statement)
-  local command = M.command(connection, statement, "script")
+  local command = M.command({
+    connection = connection,
+    statement = statement,
+    format = "text",
+  })
   if not command then
     return nil
   end

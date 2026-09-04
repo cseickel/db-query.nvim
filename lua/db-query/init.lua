@@ -11,7 +11,6 @@ local connections = require("db-query.connections")
 local output = require("db-query.output")
 local selection = require("db-query.selection")
 local Source = require("db-query.source")
-local sql = require("db-query.sql")
 
 local M = {}
 
@@ -63,22 +62,6 @@ function M.connect(chosen)
   end)
 end
 
---- Returns the execution mode for `statement` given the requested `format`.
----
---- Text output works for any statement. Csv requires a single row-returning
---- statement; anything else falls back to text.
----@param statement string
----@param format dbquery.Format
----@return dbquery.Mode
-local function modeFor(statement, format)
-  if format == "csv" then
-    if sql.canExport(statement) then
-      return "export"
-    end
-  end
-  return "script"
-end
-
 --- Resolves `url` through vim-dadbod, which expands `$VAR`, follows variable
 --- references, and falls back through `w:db`, `t:db`, `b:db`, `g:db`, and
 --- `$DATABASE_URL`.
@@ -109,7 +92,7 @@ function M.execute(opts)
     return vim.notify("db-query: no query to run", vim.log.levels.WARN)
   end
 
-  local mode = modeFor(statement, opts.format or config.values.format)
+  local format = opts.format or config.values.format
   local buf = vim.api.nvim_get_current_buf()
 
   ---@param outputPath string|nil
@@ -130,7 +113,7 @@ function M.execute(opts)
         url = url,
         resolved = resolved,
         sql = statement,
-        mode = mode,
+        format = format,
         span = span,
         outputPath = outputPath,
       })
@@ -187,6 +170,18 @@ function M.outputDir(path)
       output.setDirectory(vim.trim(value))
     end
   end)
+end
+
+--- Shows the log or the last query's result in the output window, reopening
+--- that window if it was closed. Works from the sql buffer and from the output
+--- window alike.
+---@param view dbquery.OutputView
+function M.output(view)
+  local source = Source.owning(vim.api.nvim_get_current_buf())
+  if not source then
+    return vim.notify("db-query: no query output for this buffer", vim.log.levels.WARN)
+  end
+  source:output(view)
 end
 
 --- Returns the spinner and elapsed time for a winbar or statusline, or an

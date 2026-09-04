@@ -7,14 +7,18 @@ can have one active query at a time.
 
 local config = require("db-query.config")
 local Indicator = require("db-query.indicator")
+local output = require("db-query.output")
 local Pane = require("db-query.pane")
 local Run = require("db-query.run")
+
+---@alias dbquery.OutputView "log"|"result"|"toggle"
 
 ---@class dbquery.Source
 ---@field buf integer
 ---@field pane dbquery.Pane
 ---@field run dbquery.Run|nil
 ---@field indicator dbquery.Indicator|nil
+---@field files string[] Result files this buffer's queries have written.
 local Source = {}
 Source.__index = Source
 
@@ -30,7 +34,7 @@ function Source.of(buf)
     return existing
   end
 
-  local self = setmetatable({ buf = buf, pane = Pane.new(buf) }, Source)
+  local self = setmetatable({ buf = buf, pane = Pane.new(buf), files = {} }, Source)
   sources[buf] = self
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = buf,
@@ -54,14 +58,22 @@ local function showing(buf)
   return nil
 end
 
+--- Returns the Source `buf` belongs to, as either the sql buffer or the output
+--- its pane is showing, or nil when it belongs to none.
+---@param buf integer
+---@return dbquery.Source|nil
+function Source.owning(buf)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return nil
+  end
+  return sources[buf] or showing(buf)
+end
+
 --- Returns spinner status for `buf` (as source or output pane), or empty string.
 ---@param buf integer
 ---@return string
 function Source.status(buf)
-  if not vim.api.nvim_buf_is_valid(buf) then
-    return ""
-  end
-  local self = sources[buf] or showing(buf)
+  local self = Source.owning(buf)
   if not (self and self.indicator) then
     return ""
   end
@@ -75,14 +87,48 @@ function Source:cancel()
   end
 end
 
---- Cleans up when the source buffer is wiped. Cancels any running query and
---- stops the indicator. Leaves existing output windows open.
+--- Puts the log or the last query's result in the pane, reopening the window
+--- if it was closed. "toggle" asks for whichever is not on screen.
+---@param view dbquery.OutputView
+function Source:output(view)
+  if not self.run then
+    return vim.notify("db-query: nothing has run in this buffer yet", vim.log.levels.WARN)
+  end
+
+  if view == "toggle" then
+    view = self.pane:showing() == self.run.log and "result" or "log"
+  end
+  if view == "log" then
+    return self.pane:show(self.run.log, self.run.url, true)
+  end
+
+  if not (self.run.status == "ok" and self.run.path) then
+    return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
+  end
+  self.pane:show(self.run.path, self.run.url, false)
+end
+
+--- Cleans up when the source buffer is wiped. Cancels any running query, stops
+--- the indicator, and deletes the files this buffer's queries wrote. Leaves
+--- existing output windows open.
+---
+--- Deleting here rather than when an output window closes is what lets you
+--- move between the log and the result as often as you like.
 function Source:close()
   self:cancel()
   if self.indicator then
     self.indicator:stop()
   end
   self.pane:stop()
+
+  if self.run then
+    os.remove(self.run.log)
+  end
+  for _, path in ipairs(self.files) do
+    if output.owns(path) then
+      os.remove(path)
+    end
+  end
   sources[self.buf] = nil
 end
 
@@ -90,7 +136,7 @@ end
 ---@field url string|nil
 ---@field resolved string
 ---@field sql string
----@field mode dbquery.Mode
+---@field format dbquery.Format
 ---@field span [integer, integer]
 ---@field outputPath string|nil
 
@@ -107,7 +153,7 @@ function Source:execute(spec)
     url = spec.url,
     resolved = spec.resolved,
     sql = spec.sql,
-    mode = spec.mode,
+    format = spec.format,
     srcName = vim.api.nvim_buf_get_name(self.buf),
     outputPath = spec.outputPath,
   })
@@ -115,12 +161,12 @@ function Source:execute(spec)
     return
   end
 
+  -- Kept after it finishes, so :DBOutput can still find both files.
+  -- Run:cancel ignores a run that is no longer running.
   self.run = run
-  run:onFinish(function()
-    if self.run == run then
-      self.run = nil
-    end
-  end)
+  if run.path then
+    table.insert(self.files, run.path)
+  end
 
   self.indicator = Indicator.attach({
     buf = self.buf,
