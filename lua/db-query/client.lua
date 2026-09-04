@@ -29,7 +29,7 @@ end
 ---@param file string
 ---@return string
 local function backendPid(file)
-  local lines = { "\\o '" .. file .. "'", "SELECT pg_backend_pid();", "\\o" }
+  local lines = { "\\o '" .. file .. "'", "SELECT pg_backend_pid();", "\\o", "" }
   return table.concat(lines, "\n")
 end
 

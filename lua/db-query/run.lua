@@ -106,19 +106,6 @@ local function writeTo(path, text, mode)
   end
 end
 
---- Formats `message` as csv or tsv error output based on `path`'s extension.
----@param message string
----@param path string
----@return string
-local function errorRows(message, path)
-  if vim.endswith(path, ".tsv") then
-    local flattened = message:gsub("%s+", " ")
-    return "error\n" .. flattened .. "\n"
-  end
-  local quoted = message:gsub('"', '""')
-  return 'error\n"' .. quoted .. '"\n'
-end
-
 --- Handles process exit: writes footer/error, updates status, notifies subscribers.
 ---@param self dbquery.Run
 ---@param result vim.SystemCompleted
@@ -130,7 +117,7 @@ local function finish(self, result)
   if self.mode == "script" then
     writeTo(self.path, footer, "a")
   elseif status == "failed" then
-    writeTo(self.path, errorRows(vim.trim(result.stderr or "") .. footer, self.path), "w")
+    writeTo(self.path, vim.trim(result.stderr or "") .. footer, "w")
   elseif status == "cancelled" then
     os.remove(self.path)
   end
