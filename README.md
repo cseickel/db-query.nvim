@@ -151,7 +151,7 @@ end, { desc = "switch between the log and the rows" })
 
 ## While a query runs
 
-A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. When the query finishes with rows, the window switches to the results file. When it fails or is cancelled, the log stays on screen with the reason at the bottom.
+A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
 You can call `status(buf)` to get the same spinner and timer in your winbar or statusline:
 

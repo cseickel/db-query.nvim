@@ -126,18 +126,27 @@ function Pane:stop()
   self.run = nil
 end
 
---- Shows `run`'s log in the window, then its rows, replacing whatever the
---- window held before.
+--- Follows `run` in the window, ending on its rows or on its log.
 ---
---- The log opens straight away and reloads every REFRESH ms, so a long query
---- fills in as it goes. A query that finishes and returned rows gives way to
---- them. One that failed or was cancelled leaves the log on screen with the
---- reason at the bottom.
+--- Rows already on screen are left there while the query runs, so a rerun does
+--- not take away what you were reading. The spinner in the sql buffer, and in
+--- the output window's winbar, is what says a query is under way. Otherwise the
+--- log opens straight away and reloads every REFRESH ms, so a long query fills
+--- in as it goes.
+---
+--- The window ends on the rows when the query returned any, and on the log
+--- otherwise, with the reason at the bottom.
 ---@param run dbquery.Run
 function Pane:display(run)
   self:stop()
   self.run = run
-  self:show(run, run.log, true)
+
+  -- The run about to start truncates its own results file, so a window on that
+  -- file would watch it empty out.
+  local held = self.win and vim.api.nvim_win_is_valid(self.win) and self.path
+  if not (held and held ~= run.log and held ~= run.path) then
+    self:show(run, run.log, true)
+  end
 
   local function refresh()
     if self.run == run and self.buf and vim.api.nvim_buf_is_valid(self.buf) then
@@ -156,7 +165,7 @@ function Pane:display(run)
     if run.status == "ok" and run.path then
       self:show(run, run.path, false)
     else
-      refresh()
+      self:show(run, run.log, true)
     end
   end)
 end
