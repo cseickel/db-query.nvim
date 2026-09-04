@@ -110,7 +110,7 @@ How each client fills the results file:
 
 Without a results file, psql runs with `-e` and `\timing on` so the log labels each statement's row count and elapsed time, and the other clients take the statement on their command line.
 
-`Pane:display` shows the log the moment the run starts, with the cursor on the last line, and rereads it every 500ms. A window already holding a results file keeps it instead, unless the new run is about to write that same file, so a rerun does not take away what you were reading. When the run finishes it stops the timer and shows the results file when the status is `ok` and there is one, and the log otherwise. `Source:output(view)` is what `:DBOutput` calls, and it reopens the window if it was closed. `"toggle"` picks whichever of the two files is not showing.
+`Pane:display` shows the log the moment the run starts, with the cursor on the last line, and rereads it every 500ms. A window already holding a results file keeps it instead, so a rerun does not take away what you were reading. When the run finishes it stops the timer and shows the results file when the status is `ok` and there is one, and the log otherwise. `Source:output(view)` is what `:DBOutput` calls, and it reopens the window if it was closed. `"toggle"` picks whichever of the two files is not showing.
 
 ## Connections
 

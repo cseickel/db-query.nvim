@@ -141,10 +141,8 @@ function Pane:display(run)
   self:stop()
   self.run = run
 
-  -- The run about to start truncates its own results file, so a window on that
-  -- file would watch it empty out.
   local held = self.win and vim.api.nvim_win_is_valid(self.win) and self.path
-  if not (held and held ~= run.log and held ~= run.path) then
+  if not (held and held ~= run.log) then
     self:show(run, run.log, true)
   end
 
