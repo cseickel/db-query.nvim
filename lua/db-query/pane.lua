@@ -77,14 +77,15 @@ function Pane:show(run, path, tail)
     self.win = vim.api.nvim_open_win(buf, false, { split = "below", win = parentOf(run.ctx.buf) })
   end
 
-  if shownBefore then
-    vim.api.nvim_win_call(self.win, function()
-      vim.cmd("edit!")
-    end)
+  if tail then
+    if shownBefore then
+      vim.api.nvim_win_call(self.win, function()
+        vim.cmd("edit!")
+        local row = vim.api.nvim_buf_line_count(buf) or 1
+        vim.api.nvim_win_set_cursor(self.win, { row, 0 })
+      end)
+    end
   end
-
-  local row = tail and vim.api.nvim_buf_line_count(buf) or 1
-  vim.api.nvim_win_set_cursor(self.win, { row, 0 })
   vim.wo[self.win].wrap = false
   vim.wo[self.win].number = false
   vim.wo[self.win].relativenumber = false
