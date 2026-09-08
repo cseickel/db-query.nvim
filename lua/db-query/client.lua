@@ -45,11 +45,18 @@ local function pgRows(spec)
   return "COPY (\n" .. body .. "\n) TO STDOUT WITH (FORMAT csv, HEADER)"
 end
 
---- Converts a mysql:// url into command-line arguments and environment.
----@param connection string mysql://user:password@host:port/database
+--- Converts a mysql or mariadb url into command-line arguments and environment.
+---
+--- A query parameter becomes a `--key=value` option, as dadbod does, so
+--- `?ssl-verify-server-cert=0` reaches the client as that flag. A `password`
+--- parameter goes to the environment instead, because a command line is
+--- readable by every process on the machine. It takes the place of the password
+--- in the credentials, and `?password=` on its own means no password at all.
+---@param connection string mysql://user:password@host:port/database?option=value
 ---@return { argv: string[], env: table<string, string>|nil }
 local function mysqlArguments(connection)
-  local rest = connection:gsub("^mysql://", "")
+  local base, params = url.query(connection)
+  local rest = base:gsub("^%a[%w+.-]*://", "")
   local authority, path = rest:match("^([^/]*)(.*)$")
   -- Split on last @ to handle passwords containing @.
   local credentials, location = authority:match("^(.*)@([^@]*)$")
@@ -59,24 +66,35 @@ local function mysqlArguments(connection)
 
   local user, password = credentials:match("^([^:]*):?(.*)$")
   local host, port = location:match("^([^:]*):?(.*)$")
-  local database = path:gsub("^/", "")
+  user, password, host = url.decoded(user), url.decoded(password), url.decoded(host)
+  local database = url.decoded((path:gsub("^/", "")))
 
   local arguments = {}
+  for _, param in ipairs(params) do
+    -- The name is decoded only to recognize it, so `?%70assword=` cannot walk
+    -- a password onto the command line. The flag keeps the name as written.
+    if url.decoded(param.key) == "password" then
+      password = param.value
+    else
+      table.insert(arguments, "--" .. param.key .. "=" .. param.value)
+    end
+  end
+
   local function add(flag, value)
     if value ~= "" then
       vim.list_extend(arguments, { flag, value })
     end
   end
-  add("-h", url.decoded(host))
+  add("-h", host)
   add("-P", port)
-  add("-u", url.decoded(user))
+  add("-u", user)
   if database ~= "" then
-    table.insert(arguments, url.decoded(database))
+    table.insert(arguments, database)
   end
 
   return {
     argv = arguments,
-    env = password ~= "" and { MYSQL_PWD = url.decoded(password) } or nil,
+    env = password ~= "" and { MYSQL_PWD = password } or nil,
   }
 end
 
@@ -230,24 +248,36 @@ CLIENTS.sqlite = {
   end,
 }
 
-CLIENTS.mysql = {
-  rows = { query = true },
-  delimited = "tsv",
+--- Returns the client that runs `binary`, which is the whole difference between
+--- mysql and mariadb here. MariaDB ships `mariadb` and symlinks `mysql` to it,
+--- so the two schemes are what reaches the right one on a machine holding both.
+--- MySQL 8 removed options MariaDB still takes, `--ssl-verify-server-cert`
+--- among them.
+---@param binary string
+---@return dbquery.Client
+local function mysqlClient(binary)
+  return {
+    rows = { query = true },
+    delimited = "tsv",
 
-  command = function(spec)
-    local connects = mysqlArguments(spec.connection)
-    local argv = { "mysql" }
-    -- --batch prints tab-separated rows in place of the ascii table.
-    if spec.format == "csv" and spec.path then
-      table.insert(argv, "--batch")
-    end
-    vim.list_extend(argv, connects.argv)
-    vim.list_extend(argv, { "-e", spec.statement })
-    -- Password in environment because command lines are world-readable.
-    -- mysql has no way to file rows itself, so the shell catches them.
-    return { argv = argv, env = connects.env, stdout = spec.path }
-  end,
-}
+    command = function(spec)
+      local connects = mysqlArguments(spec.connection)
+      local argv = { binary }
+      -- --batch prints tab-separated rows in place of the ascii table.
+      if spec.format == "csv" and spec.path then
+        table.insert(argv, "--batch")
+      end
+      vim.list_extend(argv, connects.argv)
+      vim.list_extend(argv, { "-e", spec.statement })
+      -- Password in environment because command lines are world-readable.
+      -- mysql has no way to file rows itself, so the shell catches them.
+      return { argv = argv, env = connects.env, stdout = spec.path }
+    end,
+  }
+end
+
+CLIENTS.mysql = mysqlClient("mysql")
+CLIENTS.mariadb = mysqlClient("mariadb")
 
 --- Returns the extension for the results file, or nil when the run writes no
 --- rows and everything belongs in the log.

@@ -28,7 +28,7 @@ Everything else is helper functions:
 - `selection.lua` extracts the query out of the buffer, which may be a range, the visual selection, or the whole buffer.
 - `sql.lua` reads enough of a statement to say whether it returns rows, and finds the statement around the cursor if that selection was requested.
 - `connections.lua` provides the list of connections that the database chooser offers.
-- `url.lua` pulls the scheme, file path, and password out of a dadbod url.
+- `url.lua` pulls the scheme, file path, password, and query parameters out of a dadbod url.
 - `client.lua` turns a connection and a statement into a command line, and says which kinds of rows each client can write to a file.
 - `output.lua` names the log, the results file, and the staging file, and decides which files the plugin deletes.
 
@@ -81,7 +81,7 @@ Everything else is helper functions:
 
 **The client's output is not parsed.** What is in the log is what the client printed, between the header `announce` writes and the footer `finish` writes. The results file holds what the client wrote and nothing else.
 
-**The client writes its own rows where it can.** psql, sqlite3, and duckdb are told the results path and write rows there themselves, which leaves stdout and stderr both free for the log, so command tags, timing, and errors arrive in the order the client printed them. mysql has no such mechanism, so the shell catches its stdout in the results file and only stderr reaches the log.
+**The client writes its own rows where it can.** psql, sqlite3, and duckdb are told the results path and write rows there themselves, which leaves stdout and stderr both free for the log, so command tags, timing, and errors arrive in the order the client printed them. mysql and mariadb have no such mechanism, so the shell catches their stdout in the results file and only stderr reaches the log.
 
 **One log per sql buffer, appended.** Every run of a buffer writes to the same log, always under the cache directory, whatever the output directory is. A cancelled query keeps writing while its replacement is already appending to the same file, so each run has a number that appears in both its header and its footer.
 
@@ -93,20 +93,20 @@ Everything else is helper functions:
 
 Every run appends to the log. A run also writes a results file when `sql.rowKind` finds rows and `client.target` says the client files that kind.
 
-`sql.rowKind` looks at a single statement, so anything holding a semicolon after the trailing one returns nil. It strips leading comments and reads the first keyword:
+`sql.rowKind` looks at a single statement, so anything holding a semicolon after the trailing one returns nil. It reads the first keyword off a copy with the comments blanked out:
 
 - `select`, `with`, `table`, and `values` are `"query"`. A `with` that mentions `insert`, `update`, `delete`, or `merge` anywhere returns nil, because Postgres refuses a data-modifying CTE inside COPY.
 - `insert`, `update`, `delete`, and `merge` that mention `returning` are `"returning"`.
 - Any other statement, such as `create table` or an `update` without RETURNING, returns nil. The client prints its command tag and row count to the log.
 
-`client.target` returns the extension: the client's `delimited` (`csv`, or `tsv` for mysql) for csv format, and `txt` for text format. The `log` extension never appears in the output directory.
+`client.target` returns the extension: the client's `delimited` (`csv`, or `tsv` for mysql and mariadb) for csv format, and `txt` for text format. The `log` extension never appears in the output directory.
 
 How each client fills the results file:
 
 - psql runs a script on stdin. `\o 'path'` sends query output to the file, the statement runs either wrapped in `COPY (...) TO STDOUT WITH (FORMAT csv, HEADER)` for csv or as written for text, and `\o` sends output back to stdout. The same script first sends `SELECT pg_backend_pid()` to `sessionFile` for cancelling.
 - sqlite3 takes `.mode csv` or `.mode box`, `.headers on`, and `.output "path"` as `-cmd` arguments. The double quotes are what let `.output` take a path with a space in it.
 - duckdb has two routes because neither does everything. `COPY (...) TO 'path' (FORMAT csv, HEADER)` reaches a path containing a space but its argument must be a select, so it is used for csv `"query"` rows. `.output` takes any statement but splits its argument on whitespace and reads quotes as part of the name, so every other case sends `.output` to the whitespace-free staging file and returns `staged = true`. `finish` moves that file onto the results path when the run succeeded and removes it otherwise.
-- mysql has no client-side redirect. `command` returns `stdout = spec.path` and the shell catches stdout there, with `--batch` for csv, which prints tab-separated rows in place of the ascii table. mysql's `rows` holds only `"query"`, so a RETURNING statement goes to the log.
+- mysql and mariadb are one client, built by `mysqlClient(binary)`, and differ only in the binary run. Neither has a client-side redirect, so `command` returns `stdout = spec.path` and the shell catches stdout there, with `--batch` for csv, which prints tab-separated rows in place of the ascii table. Their `rows` holds only `"query"`, so a RETURNING statement goes to the log.
 
 Without a results file, psql runs with `-e` and `\timing on` so the log labels each statement's row count and elapsed time, and the other clients take the statement on their command line.
 
@@ -118,6 +118,10 @@ Without a results file, psql runs with `-e` and `\timing on` so the log labels e
 
 - The written form, which may hold `$PGPASS` or be the name of a dadbod variable. `b:db` on the sql buffer holds it, and `Pane:show` copies it onto the output buffer, so completion reads the same url in both windows.
 - The resolved form from `db#resolve`, which is what the client is given. `url.withoutPassword` takes any password out of it and `client.lua` puts that password in the environment instead, because a command line is readable by every process on the machine.
+
+A password is written in either of two places, the credentials before the last `@` or a `password` query parameter, and `url.withoutPassword` takes both out. It returns the parameter over the credentials, because that is the one libpq authenticates with, and `?password=` on its own means no password. This matters most for postgres, where psql is handed the whole url and would otherwise show the parameter in `ps` to every user on the machine.
+
+Two grammars are in play, and mixing them lets a password through. psql gets its url whole, so libpq is what parses it: no fragment, `&` as the only separator, percent-escapes and nothing else. `url.withoutPassword` reads the query that way and leaves every parameter it keeps byte for byte, so what psql receives is what was written minus the password. mysql and mariadb take flags instead, so `mysqlArguments` in `client.lua` splits the url up with `url.query`, which follows dadbod: a fragment goes with the query string, `&` and `;` both separate, `+` in a value is a space, `?compress` with no value becomes `--compress=1`, and a parameter with an empty name is dropped. Each parameter that comes back becomes `--key=value` on the command line. Both paths recognize the `password` name decoded, so `?%70assword=` cannot walk a password onto the command line. sqlite and duckdb urls hold a file path, which `url.filePath` returns whole.
 
 `M.connect` also sets `g:db`, which is what gives the next sql buffer a connection without asking again, and calls `vim_dadbod_completion#fetch`, because that plugin reads `b:db` once per buffer and keeps what it found.
 
@@ -157,6 +161,8 @@ CLIENTS.oracle = {
 ```
 
 `rows` names the row kinds the client writes to a file, keyed by `dbquery.RowKind`. A kind missing here goes to the log. `delimited` is the extension for csv format, `csv` or `tsv`, whichever the client actually writes.
+
+Two schemes can share one entry. `CLIENTS.postgresql` is `CLIENTS.postgres`, and `CLIENTS.mysql` and `CLIENTS.mariadb` are both returned by `mysqlClient(binary)`, which builds the same client around a different executable. The mariadb scheme exists because MariaDB ships `mariadb` and symlinks `mysql` to it, while MySQL 8 removed options MariaDB still takes, `--ssl-verify-server-cert` among them, so on a machine holding both the scheme is what reaches the right binary.
 
 `command` receives a `dbquery.CommandSpec`:
 

@@ -2,7 +2,7 @@
 
 A SQL runner for Neovim, which utilizes command line clients to execute queries. This is just another take on the dadbod concept. I wrote it to control how the output is written and where it goes.
 
-Queries run through `psql`, `duckdb`, `sqlite3`, or `mysql`. Everything the client prints goes to a log that fills in as the query runs. Rows go to a file of their own, which replaces the log on screen when the query finishes. `<C-c>` cancels.
+Queries run through `psql`, `duckdb`, `sqlite3`, `mysql`, or `mariadb`. Everything the client prints goes to a log that fills in as the query runs. Rows go to a file of their own, which replaces the log on screen when the query finishes. `<C-c>` cancels.
 
 ## Requirements
 
@@ -50,6 +50,8 @@ A URL can hold environment variables, so your connections file does not have to 
 
 This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables. Without it, the URL is used exactly as you wrote it. A `$` that is part of a password rather than the start of a variable name has to be written `%24`.
 
+A `mysql://` or `mariadb://` URL can end in client options, which are passed to the client as they are in vim-dadbod. `mariadb://app@db.internal/warehouse?ssl-verify-server-cert=0` runs `mariadb --ssl-verify-server-cert=0`. Postgres URLs take options the same way, read by `psql` itself.
+
 A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and vim-dadbod-completion read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
 ## Options
@@ -72,7 +74,7 @@ require("db-query").setup({
 
   -- The format of the results file. "text" is the client's own table, written
   -- to a .txt file. "csv" is delimited rows, written to a .csv file (.tsv for
-  -- mysql).
+  -- mysql and mariadb).
   format = "text",
 
   -- Where results files are written. The default is a directory of this nvim's
@@ -107,7 +109,7 @@ require("db-query").setup({
 
 Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
 
-`-f csv` writes the results file as delimited rows in place of the client's table. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). mysql writes tab-separated rows, so its file is `.tsv`.
+`-f csv` writes the results file as delimited rows in place of the client's table. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). mysql and mariadb write tab-separated rows, so their file is `.tsv`.
 
 `-o` names the results file for one query, in place of the one the plugin would have named. `-o report` writes `report.txt` or `report.csv` in the working directory, depending on the format, `-o ~/exports/` writes into that directory under the buffer's own name, and an existing file is confirmed before the query starts. The extension is always set by the format, so `-o report.csv` on a text query writes `report.txt`. A query that returns no rows has no results file, so `-o` on one warns that nothing will be written there. `-o` with no path prompts for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the output directory.
 
