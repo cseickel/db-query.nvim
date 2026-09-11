@@ -4,9 +4,6 @@ SQL parsing for output routing and for the statement the cursor is in.
 Determines whether a statement returns rows, and if so whether it can be
 wrapped in COPY. A statement that returns no rows writes nothing but its
 transcript, which belongs in the log.
-
-Every semicolon here is read off a copy with the comments blanked out, so a
-`;` a comment wrote neither splits a statement nor sends its rows to the log.
 ]]
 
 local M = {}
