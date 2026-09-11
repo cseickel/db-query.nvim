@@ -7,88 +7,26 @@ buffer's Source. ARCHITECTURE.md covers the flow from there.
 
 local command = require("db-query.command")
 local config = require("db-query.config")
-local connections = require("db-query.connections")
+local connect = require("db-query.connect")
+local dadbod = require("db-query.dadbod")
 local output = require("db-query.output")
 local selection = require("db-query.selection")
 local Source = require("db-query.source")
 
 local M = {}
 
---- The `g:db` this plugin set, which is what `g:db_name` names. Setting `g:db`
---- by hand leaves the old name behind, and a winbar naming the wrong database
---- is worse than one naming none.
----@type string|nil
-local namedUrl = nil
+local FILETYPES = { "sql", "mysql", "plsql" }
 
 ---@class dbquery.ExecuteOptions : dbquery.Selection
 ---@field format dbquery.Format|nil Output format (default: config value).
 ---@field output string|true|nil Output path, true to prompt, nil to auto-generate.
 
---- Opens the connection picker, assigns the choice to `buf`, and calls the
---- provided callback with it. A cancelled picker does nothing.
----
---- The choice is also stored in `g:db`, so subsequent sql buffers inherit it
---- without prompting. If the buffer is closed while the picker is open, only
---- `g:db` is set.
----
---- `buf` is taken rather than read at the end, because the picker may open long
---- after the query was asked for and the user is free to move in the meantime.
+--- Opens the connection picker for `buf` and calls `chosen` once the choice
+--- has connected. See `connect.pick`.
 ---@param buf integer|nil Buffer to connect (default: the current one).
 ---@param chosen fun(connection: dbquery.Connection)|nil
 function M.connect(buf, chosen)
-  local list, err = connections.list(config.values.connections)
-  if err then
-    return vim.notify("db-query: " .. err, vim.log.levels.ERROR)
-  end
-  if #list == 0 then
-    return vim.notify("db-query: no connections configured", vim.log.levels.WARN)
-  end
-
-  buf = buf or vim.api.nvim_get_current_buf()
-  vim.ui.select(list, {
-    prompt = "Database",
-    format_item = function(connection)
-      return connection.name
-    end,
-  }, function(choice)
-    if not choice then
-      return
-    end
-    vim.g.db = choice.url
-    vim.g.db_name = choice.name
-    namedUrl = choice.url
-    if not vim.api.nvim_buf_is_loaded(buf) then
-      return
-    end
-
-    vim.b[buf].db_name = choice.name
-    vim.b[buf].db = choice.url
-
-    -- vim-dadbod-completion caches b:db on first completion, so changing it
-    -- requires re-fetching.
-    pcall(vim.fn["vim_dadbod_completion#fetch"], buf)
-
-    if chosen then
-      chosen(choice)
-    end
-  end)
-end
-
---- Resolves `url` through vim-dadbod, which expands `$VAR`, follows variable
---- references, and falls back through `w:db`, `t:db`, `b:db`, `g:db`, and
---- `$DATABASE_URL`.
----
---- Returns the url unchanged when dadbod is not installed. Returns nil when
---- `url` is nil or empty, signaling that the caller should prompt for a
---- connection.
----@param url string|nil
----@return string|nil
-local function resolve(url)
-  local ok, resolved = pcall(vim.fn["db#resolve"], url or "")
-  if ok and resolved ~= "" then
-    return resolved
-  end
-  return url
+  connect.pick(buf, chosen)
 end
 
 --- Runs the sql specified in `opts`.
@@ -135,14 +73,22 @@ function M.execute(opts)
       })
     end
 
+    local testing = connect.testing(buf)
+    if testing then
+      return vim.notify(
+        "db-query: still testing " .. testing .. ", run the query again once it answers",
+        vim.log.levels.WARN
+      )
+    end
+
     local written = vim.b[buf].db
-    local resolved = resolve(written)
+    local resolved = dadbod.resolve(written)
     if resolved then
       return start(written, vim.b[buf].db_name, resolved)
     end
 
-    M.connect(buf, function(connection)
-      local chosen = resolve(connection.url)
+    connect.pick(buf, function(connection)
+      local chosen = dadbod.resolve(connection.url)
       if chosen then
         start(connection.url, connection.name, chosen)
       end
@@ -219,16 +165,19 @@ function M.setup(opts)
 
   local group = vim.api.nvim_create_augroup("db-query", { clear = true })
 
-  -- Inherit g:db so the connection is selected once per session, not per buffer.
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
-    pattern = { "sql", "mysql", "plsql" },
+    pattern = FILETYPES,
     callback = function(event)
-      if vim.g.db and not vim.b[event.buf].db then
-        vim.b[event.buf].db = vim.g.db
-        if vim.g.db == namedUrl then
-          vim.b[event.buf].db_name = vim.g.db_name
-        end
+      connect.opened(event.buf)
+    end,
+  })
+
+  vim.api.nvim_create_autocmd("BufWritePost", {
+    group = group,
+    callback = function(event)
+      if vim.tbl_contains(FILETYPES, vim.bo[event.buf].filetype) then
+        connect.follow(event.buf)
       end
     end,
   })

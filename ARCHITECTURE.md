@@ -27,6 +27,9 @@ Everything else is helper functions:
 
 - `selection.lua` extracts the query out of the buffer, which may be a range, the visual selection, or the whole buffer.
 - `sql.lua` reads enough of a statement to say whether it returns rows, and finds the statement around the cursor if that selection was requested.
+- `connect.lua` decides which connection a sql buffer runs against, from its modeline, the picker, or the `g:db` the last pick set, and tests each new one before storing it.
+- `modeline.lua` reads and rewrites the `-- @db-query connection=[name]` comment.
+- `dadbod.lua` holds the calls into vim-dadbod and vim-dadbod-completion: resolving a written url, and pointing completion at a buffer's new `b:db`.
 - `connections.lua` provides the list of connections that the database chooser offers.
 - `url.lua` pulls the scheme, file path, password, and query parameters out of a dadbod url.
 - `client.lua` turns a connection and a statement into a command line, and says which kinds of rows each client can write to a file.
@@ -50,7 +53,8 @@ Everything else is helper functions:
 
     - `selection.text(opts)` returns the sql and its `span`, the first and last line it came from. The sql is read before any prompt opens, because a `vim.ui` prompt ends visual mode and the selection goes with it.
     - When `-o` was given without a path, `vim.ui.input` asks for one, prefilled with `b:db_last_output_path`.
-    - `db#resolve` expands `$VAR` in `vim.b.db`. When the buffer has no connection, `M.connect` asks for one and the rest continues in its callback.
+    - When `connect.testing` names a connection test still pending for the buffer, the query is refused, so it never runs on the connection that test may replace.
+    - `dadbod.resolve` expands `$VAR` in `b:db` through `db#resolve`. When the buffer has no connection, `connect.pick` asks for one and the rest continues in its callback.
     - `Source.of(buf):execute(ctx)` starts the work. The `dbquery.Context` holds the request as it stood when the user ran it, and every part of the run reads what it needs from `run.ctx` rather than being handed it.
 
 3. `Source:execute` cancels whatever this buffer was running and stops its indicator, calls `Run.start`, records the results file in `self.files`, then attaches an `Indicator` and calls `Pane:display`. Both of those subscribe to the run.
@@ -123,7 +127,13 @@ A password is written in either of two places, the credentials before the last `
 
 Two grammars are in play, and mixing them lets a password through. psql gets its url whole, so libpq is what parses it: no fragment, `&` as the only separator, percent-escapes and nothing else. `url.withoutPassword` reads the query that way and leaves every parameter it keeps byte for byte, so what psql receives is what was written minus the password. mysql and mariadb take flags instead, so `mysqlArguments` in `client.lua` splits the url up with `url.query`, which follows dadbod: a fragment goes with the query string, `&` and `;` both separate, `+` in a value is a space, `?compress` with no value becomes `--compress=1`, and a parameter with an empty name is dropped. Each parameter that comes back becomes `--key=value` on the command line. Both paths recognize the `password` name decoded, so `?%70assword=` cannot walk a password onto the command line. sqlite and duckdb urls hold a file path, which `url.filePath` returns whole.
 
-`M.connect` also sets `g:db`, which is what gives the next sql buffer a connection without asking again, and calls `vim_dadbod_completion#fetch`, because that plugin reads `b:db` once per buffer and keeps what it found.
+`connect.lua` decides what goes in `b:db`. A buffer takes its connection from its modeline when it has one, and otherwise from `g:db`, which only the picker sets. A connection from the modeline or the picker is tested before it is stored, by running `select 1` through `client.command` on `vim.system` with a 10 second timeout, so nvim stays responsive while an unreachable host is tried. One that answers goes in `b:db` and `b:db_name`, and `dadbod.refetch` calls `vim_dadbod_completion#fetch`. That plugin records a buffer's database at `FileType`, when a modeline buffer's `b:db` is still empty and it falls back to `g:db`, and keeps it. Its `fetch` reads `w:db`, `t:db`, `b:db`, and `g:db` from the current window and buffer rather than the buffer it is given, so `refetch` runs it inside `nvim_buf_call`. One that fails clears `b:db` and sets `b:db_name` to `<name> CONNECTION ERROR`. `g:db` is copied into new buffers untested, because only a connection that answered is ever put there. A client marked `embedded` in `client.lua`, sqlite3 or duckdb, passes without a test, because opening the file would create it when it is missing and fail when another duckdb process holds its lock.
+
+Each buffer keeps only its latest test, so a slow one that finishes after the user chose something else is dropped. Until the latest one finishes, `b:db` still holds the connection it may replace, so `execute` refuses a query in that time. Queuing the query instead would let several pile up behind one test, and when that test failed each of them would open its own picker.
+
+`dadbod.resolve` returns nil for an empty `b:db` rather than handing it to `db#resolve`, which would resolve it to `w:db`, `t:db`, `g:db`, or `$DATABASE_URL`. A buffer whose modeline connection failed has an empty `b:db`, and a query from it has to open the picker rather than run against a database the modeline never named.
+
+The modeline is read on `FileType` and `BufWritePost`. The `FileType` handler reads it before it would copy `g:db`, so a buffer with a modeline never holds `g:db`'s url. `:DBConnect` in a buffer whose modeline names another connection rewrites the modeline after a confirm, and leaves `g:db` alone.
 
 `connections.list` offers the `connections` setting when there is one, and otherwise vim-dadbod-ui's `connections.json` followed by `g:dbs`. Names already used are skipped, so neither source hides the other's entries.
 
@@ -160,7 +170,7 @@ CLIENTS.oracle = {
 }
 ```
 
-`rows` names the row kinds the client writes to a file, keyed by `dbquery.RowKind`. A kind missing here goes to the log. `delimited` is the extension for csv format, `csv` or `tsv`, whichever the client actually writes.
+`rows` names the row kinds the client writes to a file, keyed by `dbquery.RowKind`. A kind missing here goes to the log. `delimited` is the extension for csv format, `csv` or `tsv`, whichever the client actually writes. Set `embedded = true` when the database is a file the client opens itself, which skips the `select 1` test a connection gets before a buffer takes it.
 
 Two schemes can share one entry. `CLIENTS.postgresql` is `CLIENTS.postgres`, and `CLIENTS.mysql` and `CLIENTS.mariadb` are both returned by `mysqlClient(binary)`, which builds the same client around a different executable. The mariadb scheme exists because MariaDB ships `mariadb` and symlinks `mysql` to it, while MySQL 8 removed options MariaDB still takes, `--ssl-verify-server-cert` among them, so on a machine holding both the scheme is what reaches the right binary.
 

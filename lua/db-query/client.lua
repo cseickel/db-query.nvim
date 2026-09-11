@@ -32,6 +32,7 @@ local M = {}
 ---@field delimited string Extension for csv format: csv or tsv.
 ---@field command fun(spec: dbquery.CommandSpec): dbquery.Command
 ---@field cancel? fun(connection: string, pid: integer): { argv: string[], env: table<string, string>|nil }
+---@field embedded? boolean The database is a file the client opens itself, with no server to reach.
 
 --- Returns the statement psql runs to fill the results file: wrapped in COPY
 --- for csv, and as written for text, where psql's own table is the output.
@@ -180,6 +181,7 @@ CLIENTS.postgresql = CLIENTS.postgres
 CLIENTS.duckdb = {
   rows = { query = true, returning = true },
   delimited = "csv",
+  embedded = true,
 
   command = function(spec)
     local argv = { "duckdb" }
@@ -224,6 +226,7 @@ CLIENTS.duckdb = {
 CLIENTS.sqlite = {
   rows = { query = true, returning = true },
   delimited = "csv",
+  embedded = true,
 
   command = function(spec)
     local file = url.filePath(spec.connection)
@@ -293,6 +296,15 @@ function M.target(connection, kind, format)
   return format == "csv" and client.delimited or "txt"
 end
 
+--- Returns true when `connection` is a file the client opens itself, with no
+--- server to reach.
+---@param connection string
+---@return boolean
+function M.embedded(connection)
+  local client = CLIENTS[url.scheme(connection)]
+  return client ~= nil and client.embedded == true
+end
+
 --- Returns the command to run `spec.statement` against `spec.connection`.
 ---
 --- Returns nil and shows an error when no client is known for the url scheme.
@@ -343,12 +355,8 @@ function M.cancel(connection, file)
   return true
 end
 
---- Runs `statement` synchronously and returns the output.
----
---- This is not used internally, but is provided as a convenience for
---- external use.
----
---- Returns nil and shows an error on failure.
+--- Runs `statement` synchronously and returns the output, blocking nvim until
+--- the client exits. Returns nil and shows an error on failure.
 ---@param connection string
 ---@param statement string
 ---@return string|nil

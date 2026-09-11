@@ -26,6 +26,8 @@ With lazy.nvim:
 
 The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database.
 
+A connection is tested with `select 1` before the buffer takes it. One that fails, or gives no answer within 10 seconds, leaves the buffer with no connection and `b:db_name` reading `<name> CONNECTION ERROR`, and the next query opens the picker. A query you run while the test is under way is refused, and you run it again once the test answers. sqlite and duckdb files are taken without a test.
+
 This was designed to fit within the [vim-dadbod](https://github.com/tpope/vim-dadbod) ecosystem, so if you use that then it will pick up your existing configured connections. If you have [vim-dadbod-completion](https://github.com/kristijanhusak/vim-dadbod-completion) installed, it will utilize the connection this plugin sets.
 
 The list comes from [vim-dadbod-ui](https://github.com/kristijanhusak/vim-dadbod-ui)'s `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
@@ -53,6 +55,22 @@ This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables
 A `mysql://` or `mariadb://` URL can end in client options, which are passed to the client as they are in vim-dadbod. `mariadb://app@db.internal/warehouse?ssl-verify-server-cert=0` runs `mariadb --ssl-verify-server-cert=0`. Postgres URLs take options the same way, read by `psql` itself.
 
 A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and vim-dadbod-completion read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
+
+## Naming the connection in the file
+
+A comment in the first or last five lines of a file names the connection that file runs against:
+
+```sql
+select * from orders;
+
+-- @db-query connection=[rva-3-dev]
+```
+
+The name is one from the list the picker shows. The brackets are needed only when the name has a space in it, and `connection` can be cut to any length, so `c=rva-3-dev` works too.
+
+The comment is read when the file opens and every time it is written, so an edit takes effect when you save. It takes precedence over the last connection you picked, and it never changes the connection other buffers start with. A name missing from the list, or a connection that fails its test, leaves the buffer with no connection rather than on some other database.
+
+`:DBConnect` in a file with the comment asks before replacing the name in it, and cancelling leaves the comment and the connection as they were. Deleting the comment and saving leaves the buffer on the connection it had.
 
 ## Options
 

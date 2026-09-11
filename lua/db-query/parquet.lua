@@ -78,8 +78,10 @@ function M.setup(group)
 
       local opened = opening(path)
       vim.api.nvim_buf_set_lines(event.buf, 0, -1, false, opened.lines)
-      vim.bo[event.buf].filetype = "sql"
+      -- Before the filetype, whose autocmd gives a buffer with no b:db the g:db
+      -- connection and its name.
       vim.b[event.buf].db = opened.url
+      vim.bo[event.buf].filetype = "sql"
       vim.bo[event.buf].modified = false
 
       -- Scheduled because execute opens a window during BufReadCmd.

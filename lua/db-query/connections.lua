@@ -127,4 +127,23 @@ function M.list(configured)
   return connections, nil
 end
 
+--- Returns the connection called `name` from the same list `M.list` returns,
+--- or nil and why not.
+---@param configured dbquery.Connection[]|fun(): dbquery.Connection[]|nil
+---@param name string
+---@return dbquery.Connection|nil connection
+---@return string|nil err
+function M.named(configured, name)
+  local connections, err = M.list(configured)
+  if err then
+    return nil, err
+  end
+  for _, connection in ipairs(connections) do
+    if connection.name == name then
+      return connection, nil
+    end
+  end
+  return nil, "no connection named " .. name
+end
+
 return M

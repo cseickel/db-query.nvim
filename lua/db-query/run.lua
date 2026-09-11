@@ -101,11 +101,12 @@ local function forget(self)
   end
 end
 
+--- A client killed by a signal exits with code 0, so the signal decides too.
 ---@param self dbquery.Run
----@param code integer
+---@param result vim.SystemCompleted
 ---@return dbquery.Status
-local function outcome(self, code)
-  if code == 0 then
+local function outcome(self, result)
+  if result.code == 0 and result.signal == 0 then
     return "ok"
   end
   return self.asked and "cancelled" or "failed"
@@ -157,7 +158,7 @@ end
 ---@param self dbquery.Run
 ---@param result vim.SystemCompleted
 local function finish(self, result)
-  local status = outcome(self, result.code)
+  local status = outcome(self, result)
   append(
     self.log,
     string.format(
