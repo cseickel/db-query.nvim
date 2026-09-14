@@ -26,7 +26,9 @@ Objects that make up a running query:
 Everything else is helper functions:
 
 - `selection.lua` extracts the query out of the buffer, which may be a range, the visual selection, or the whole buffer.
-- `sql.lua` reads enough of a statement to say whether it returns rows, and finds the statement around the cursor if that selection was requested.
+- `sql/init.lua`, required as `db-query.sql`, reads enough of a statement to say whether it returns rows, and finds the statement around the cursor if that selection was requested.
+- `sql/lex.lua` splits sql into tokens and tokens into statements. Everything that reads sql reads its tokens.
+- `sql/syntax.lua`, `sql/role.lua`, `sql/scope.lua`, `sql/columns.lua`, `sql/body.lua`, and `sql/context.lua` say what the cursor is in, for completion, hover, and signature help. Nothing calls them yet. "Reading sql" below describes them.
 - `connect.lua` decides which connection a sql buffer runs against, from its modeline, the picker, or the `g:db` the last pick set, and tests each new one before storing it.
 - `modeline.lua` reads and rewrites the `-- @db-query connection=[name]` comment.
 - `dadbod.lua` holds the calls into vim-dadbod and vim-dadbod-completion: resolving a written url, and pointing completion at a buffer's new `b:db`.
@@ -62,7 +64,7 @@ Everything else is helper functions:
 4. `Run.start` decides where output goes and starts the client:
 
     - `output.log(srcName)` returns the buffer's log under the cache directory, creating it if needed.
-    - `sql.rowKind(sql)` returns `"query"`, `"returning"`, or nil.
+    - `sql.rowKind(sql, scheme)` returns `"query"`, `"returning"`, or nil.
     - `client.target(resolved, kind, format)` returns the results file extension when the client writes that kind of rows to a file, and nil otherwise. With nil there is no results file, and a `-o` path draws a warning that nothing will be written to it.
     - `output.path(srcName, extension, chosen)` names the results file and creates it empty. `output.staging(extension)` names a whitespace-free file in the cache directory for a client that cannot write to the results path itself.
     - `client.command(spec)` returns the argv, env, stdin, and where the client records its server session, plus either `stdout`, a file the shell must catch stdout in, or `staged`, meaning the client wrote to the staging file.
@@ -97,9 +99,9 @@ Everything else is helper functions:
 
 Every run appends to the log. A run also writes a results file when `sql.rowKind` finds rows and `client.target` says the client files that kind.
 
-`sql.rowKind` looks at a single statement, so anything holding a semicolon after the trailing one returns nil. It reads the first keyword off a copy with the comments blanked out:
+`sql.rowKind` looks at a single statement. It reads the tokens `sql.lex` produces, so a `;` or a keyword inside a string, a comment, or a dollar-quoted body counts for nothing. Text holding a second statement returns nil. For a postgres connection, so does text holding a psql backslash command such as `\gset` or `\x`, because a psql command cannot go inside COPY. For other schemes a backslash is left alone, because mysql uses it to escape a quote inside a string. Otherwise the first word decides:
 
-- `select`, `with`, `table`, and `values` are `"query"`. A `with` that mentions `insert`, `update`, `delete`, or `merge` anywhere returns nil, because Postgres refuses a data-modifying CTE inside COPY.
+- `select`, `with`, `table`, and `values` are `"query"`. A `with` holding the word `insert`, `update`, `delete`, or `merge` anywhere returns nil, because Postgres refuses a data-modifying CTE inside COPY.
 - `insert`, `update`, `delete`, and `merge` that mention `returning` are `"returning"`.
 - Any other statement, such as `create table` or an `update` without RETURNING, returns nil. The client prints its command tag and row count to the log.
 
@@ -154,6 +156,25 @@ A `-o` path goes through `output.destination`: a relative path is resolved from 
 `output.owns(path)` returns whether the plugin should delete that file. It returns true when the file is under `output.directory()` and that directory is one the plugin clears up. The default cache location is always cleared. A custom `output_dir` set in config is cleared unless `output_cleanup` is off, and a `:DBOutputDir` path is never cleared. `Source:close` runs on the sql buffer's `BufWipeout` and deletes the log and every file in `self.files` that `output.owns`.
 
 `output.sweep()` runs at `setup` and deletes cache subdirectories whose pid is no longer running. That is what covers an nvim that was killed, since a file is otherwise deleted with the sql buffer that produced it.
+
+## Reading sql
+
+`sql/lex.lua` is the only module that scans sql text. `tokens` splits it the way postgres does: quoted identifiers, `E''` strings, dollar quotes, nested block comments, `::`, `$1` parameters, psql `:var` interpolation, and a psql backslash command as one token running to the end of its line. Every other module works on those tokens, so a `;` or a keyword inside a string, a comment, or a function body is never read as code. `terminators` marks what ends a statement: a `;` outside a `begin atomic` body, a psql command that sends the query (`\g` and its variants, `\watch`, `\crosstabview`), and a backslash line ending in `;`. `statements` splits at them. `statementAt` and `rowKind` in `sql/init.lua` are built on those two, which is why `:DBQueryStatement` on a `create function` selects the whole function, body included.
+
+The rest of `sql/` says what the cursor is in. `context.at(text, tokens, cursor)` returns a `dbquery.CursorContext`: the word under the cursor, the kind of name that belongs there, the clause, the function call and argument number, the insert target and position, and the relations in scope, innermost query block first. Nothing calls it yet. It is built in layers:
+
+- `syntax.lua` nests the statement's tokens by parentheses and brackets, and labels each item with its clause and its union block.
+- `role.lua` says what a parenthesized group is to its parent: a subquery, a call, an insert's column list or values row, the column list of a named table, or a filter, over, or within group clause.
+- `scope.lua` reads the relations of from, join, using, and write-target clauses with their aliases and alias column lists, the CTEs a `with` defines, and the table an insert writes to. A subquery or CTE carries the relations its select reads, so a `*` in its columns can be expanded.
+- `columns.lua` names the output columns of a select the way postgres does: an alias, the column of `t.col` or `x::type`, or the function of a call.
+- `body.lua` finds the `do` block or function body holding the cursor, and the parameters, declared variables, loop variables, and `new` and `old` in scope there. The body is then read as sql of its own.
+- `context.lua` walks outward from the group holding the cursor, collecting what each of those reports.
+
+The scanner reads clause structure and nothing more. A cast, an operator, or an expression is a run of opaque tokens.
+
+The text is usually half typed. A group still open at the cursor, such as `coalesce(t.`, is closed where the next clause keyword appears after the cursor, so the `from` that follows still puts its tables in scope. A group whose first word starts a query stays open, because clause keywords belong inside it.
+
+**Why a hand-written scanner.** tree-sitter-sql rejects `lateral`, `delete ... using`, `::type[]`, and `tablesample` even in complete statements, and half-typed text parses into ERROR nodes that lose the tables around the cursor. tree-sitter-postgres parses postgres, but using it from nvim needs a C compiler or a wasmtime build, and it replaces only the parse: which relations the cursor can see, what a CTE's columns are, and where `excluded` is in scope are hand-written rules either way.
 
 ## Adding a database
 

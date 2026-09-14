@@ -123,9 +123,9 @@ require("db-query").setup({
 | `:DBConnect`         | Pick the database for this buffer              |
 | `:DBOutputDir ~/out` | Set the output directory for the session       |
 
-`:DBQueryStatement` takes the lines between the semicolons on either side of the cursor. A semicolon inside a string literal ends the statement.
+`:DBQueryStatement` takes the lines of the statement under the cursor. A statement ends at a `;` outside a string, a comment, or a function body, at a psql command that sends the query, such as `\gset`, or at a psql command line ending in `;`.
 
-Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
+Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements, a postgres statement with a psql backslash command in it, or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
 
 `-f csv` writes the results file as delimited rows in place of the client's table. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). mysql and mariadb write tab-separated rows, so their file is `.tsv`.
 

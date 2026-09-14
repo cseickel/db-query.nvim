@@ -16,6 +16,7 @@ they need. Interested parties subscribe via onFinish().
 local client = require("db-query.client")
 local output = require("db-query.output")
 local sql = require("db-query.sql")
+local url = require("db-query.url")
 
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
@@ -214,7 +215,7 @@ function Run.start(ctx)
     return nil
   end
 
-  local kind = sql.rowKind(ctx.sql)
+  local kind = sql.rowKind(ctx.sql, url.scheme(ctx.resolved))
   local extension = client.target(ctx.resolved, kind, ctx.format)
 
   local path = nil
