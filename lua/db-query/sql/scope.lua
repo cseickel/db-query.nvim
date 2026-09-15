@@ -14,7 +14,7 @@ local syntax = require("db-query.sql.syntax")
 
 local M = {}
 
----@alias dbquery.RelationKind
+---@alias dbquery.ScopeRelationKind
 ---| "table"
 ---| "function" A set-returning function in from.
 ---| "subquery"
@@ -23,12 +23,12 @@ local M = {}
 ---| "variable" A function parameter or plpgsql variable.
 ---| "trigger_row" `new` or `old` in a trigger function.
 
----@class dbquery.Relation
----@field kind dbquery.RelationKind
+---@class dbquery.ScopeRelation
+---@field kind dbquery.ScopeRelationKind
 ---@field name string|nil Dotted name as written, for a table, function, or CTE.
 ---@field alias string|nil
 ---@field columns string[]|nil Columns the statement names itself, from an alias list or a select list. `*` stands for every column of `sources`.
----@field sources dbquery.Relation[]|nil For a subquery or CTE, the relations its select reads.
+---@field sources dbquery.ScopeRelation[]|nil For a subquery or CTE, the relations its select reads.
 
 ---@class dbquery.InsertTarget
 ---@field table string Dotted name as written.
@@ -57,7 +57,7 @@ end
 
 --- Returns the relations the first select of `group` reads.
 ---@param group dbquery.Group
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 local function sources(group)
   local clauses, blocks = syntax.clauses(group)
   local found = M.relations(group, clauses, blocks, 1)
@@ -118,7 +118,7 @@ end
 ---@param group dbquery.Group
 ---@param index integer
 ---@param clause dbquery.Clause
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 ---@return integer
 local function fromItem(group, index, clause)
   local items, dialect = group.items, group.dialect
@@ -184,7 +184,7 @@ end
 ---@param clauses dbquery.Clause[]
 ---@param blocks integer[]
 ---@param block integer
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 function M.relations(group, clauses, blocks, block)
   local items, dialect = group.items, group.dialect
   local found = {}
@@ -222,7 +222,7 @@ end
 --- Returns the common table expressions defined by the `with` clause of `items`.
 ---@param items dbquery.Token[]
 ---@param clauses dbquery.Clause[]
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 function M.ctes(items, clauses)
   local found, index = {}, 1
   while index <= #items do

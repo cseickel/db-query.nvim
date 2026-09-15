@@ -42,9 +42,23 @@ local CLAUSES = {
   { word = "using", within = set("delete_target"), clause = "from" },
 }
 
+---@type table<string, dbquery.GrammarSignature>
+local SIGNATURES = {
+  coalesce = { label = "coalesce(value, ...)", parameters = { "value" }, variadic = true },
+  nullif = { label = "nullif(value1, value2)", parameters = { "value1", "value2" }, variadic = false },
+  cast = { label = "cast(value as type)", parameters = {}, variadic = false },
+  extract = { label = "extract(field from source)", parameters = {}, variadic = false },
+  substring = { label = "substring(string from start for count)", parameters = {}, variadic = false },
+  trim = { label = "trim([leading | trailing | both] [characters] from string)", parameters = {}, variadic = false },
+  position = { label = "position(substring in string)", parameters = {}, variadic = false },
+  overlay = { label = "overlay(string placing replacement from start [for count])", parameters = {}, variadic = false },
+}
+
 ---@type dbquery.Dialect
 return {
   name = "standard",
+  folds = "lower",
+  signatures = SIGNATURES,
   lex = {
     strings = { ["'"] = false },
     escapeStrings = false,

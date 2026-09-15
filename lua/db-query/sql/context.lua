@@ -59,7 +59,7 @@ local M = {}
 ---@field call dbquery.Call|nil The innermost function call holding the cursor.
 ---@field insert dbquery.InsertPosition|nil
 ---@field columnsOf string|nil The table, for kind "columns_of".
----@field scope dbquery.Relation[] Innermost query block first.
+---@field scope dbquery.ScopeRelation[] Innermost query block first.
 
 --- Returns the table named by `alter table <name>` at the start of `items`.
 ---@param items dbquery.Token[]
@@ -78,7 +78,7 @@ end
 --- Returns the table a `create` or `alter` statement names after `on`, such as
 --- the table of `create policy p on t`.
 ---@param items dbquery.Token[]
----@return dbquery.Relation|nil
+---@return dbquery.ScopeRelation|nil
 local function ddlTable(items)
   if not (lex.isWord(items[1], "create") or lex.isWord(items[1], "alter")) then
     return nil
@@ -118,7 +118,7 @@ end
 --- sources of every subquery and CTE they reach. A CTE's own sources are left
 --- alone where they name the CTE itself, which in a query that is not
 --- recursive means the real table.
----@param relations dbquery.Relation[]
+---@param relations dbquery.ScopeRelation[]
 local function resolveCtes(relations)
   local ctes, seen = {}, {}
   local function collect(list)

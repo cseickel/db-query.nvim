@@ -10,6 +10,10 @@ local set = dialect.set
 
 return dialect.derive(standard, {
   name = "postgres",
+  signatures = vim.tbl_extend("force", standard.signatures, {
+    greatest = { label = "greatest(value, ...)", parameters = { "value" }, variadic = true },
+    least = { label = "least(value, ...)", parameters = { "value" }, variadic = true },
+  }),
   lex = {
     escapeStrings = true,
     nestedComments = true,

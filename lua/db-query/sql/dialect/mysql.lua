@@ -58,6 +58,11 @@ local COMMANDS = {
 
 return dialect.derive(standard, {
   name = "mysql",
+  folds = "none",
+  signatures = vim.tbl_extend("force", standard.signatures, {
+    greatest = { label = "greatest(value, ...)", parameters = { "value" }, variadic = true },
+    least = { label = "least(value, ...)", parameters = { "value" }, variadic = true },
+  }),
   commands = COMMANDS,
   lex = {
     strings = { ["'"] = true, ['"'] = true },

@@ -8,6 +8,7 @@ local postgres = require("db-query.sql.dialect.postgres")
 
 return dialect.derive(postgres, {
   name = "duckdb",
+  folds = "none",
   lex = {
     -- `$name` is a parameter only when no `$` follows, which would make it a dollar quote.
     parameters = { "^%$%d+", "^%?%d*", "^%$[%a_][%w_]*%f[^%w_$]" },

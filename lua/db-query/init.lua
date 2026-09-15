@@ -245,13 +245,26 @@ local function setup(opts)
 
   local group = vim.api.nvim_create_augroup("db-query", { clear = true })
 
+  -- The language server is attached here rather than through `vim.lsp.enable`,
+  -- which skips a buffer with a `buftype`, and the scratch buffers other
+  -- plugins open for sql are `nofile`.
   vim.api.nvim_create_autocmd("FileType", {
     group = group,
     pattern = FILETYPES,
     callback = function(event)
       connect.opened(event.buf)
+      if config.values.lsp then
+        require("db-query.lsp").attach(event.buf)
+      end
     end,
   })
+  if config.values.lsp then
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) and vim.tbl_contains(FILETYPES, vim.bo[buf].filetype) then
+        require("db-query.lsp").attach(buf)
+      end
+    end
+  end
 
   vim.api.nvim_create_autocmd("BufWritePost", {
     group = group,

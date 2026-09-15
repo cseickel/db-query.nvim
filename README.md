@@ -4,6 +4,8 @@ A SQL runner for Neovim, which utilizes command line clients to execute queries.
 
 Queries run through `psql`, `duckdb`, `sqlite3`, `mysql`, or `mariadb`. Everything the client prints goes to a log that fills in as the query runs. Rows go to a file of their own, which replaces the log on screen when the query finishes. `<C-c>` cancels.
 
+A language server built into the plugin completes the tables, columns, and functions of the buffer's database, and gives hover and signature help. See Completion below.
+
 ## Requirements
 
 Neovim 0.11 or newer.
@@ -28,7 +30,7 @@ The first time you run a query, db-query asks which database to use. The list op
 
 A connection is tested with `select 1` before the buffer takes it. The test shows the same bar and spinner a query does, labelled `testing connection <name>`, on the `@db-query` line when the file has one and otherwise at the cursor, and the cancel key stops it. One that fails, is cancelled, or gives no answer within 10 seconds, leaves the buffer with no connection and `b:db_name` reading `<name> CONNECTION ERROR`, and the next query opens the picker. A query you run while the test is under way is refused, and you run it again once the test answers. Picking a connection while a query runs cancels the query. sqlite and duckdb files are taken without a test.
 
-This was designed to fit within the [vim-dadbod](https://github.com/tpope/vim-dadbod) ecosystem, so if you use that then it will pick up your existing configured connections. If you have [vim-dadbod-completion](https://github.com/kristijanhusak/vim-dadbod-completion) installed, it will utilize the connection this plugin sets.
+This was designed to fit within the [vim-dadbod](https://github.com/tpope/vim-dadbod) ecosystem, so if you use that then it will pick up your existing configured connections. You do not need [vim-dadbod-completion](https://github.com/kristijanhusak/vim-dadbod-completion), because the plugin's language server completes tables and columns itself. If you have it installed, it is pointed at the connection this plugin sets.
 
 The list comes from [vim-dadbod-ui](https://github.com/kristijanhusak/vim-dadbod-ui)'s `connections.json` (in `g:db_ui_save_location`, or `~/.local/share/db_ui`), then from `g:dbs`. Set `connections` to a list, or a function returning one, to read from somewhere else instead:
 
@@ -54,7 +56,7 @@ This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables
 
 A `mysql://` or `mariadb://` URL can end in client options, which are passed to the client as they are in vim-dadbod. `mariadb://app@db.internal/warehouse?ssl-verify-server-cert=0` runs `mariadb --ssl-verify-server-cert=0`. Postgres URLs take options the same way, read by `psql` itself.
 
-A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and vim-dadbod-completion read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
+A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and the language server read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
 ## Naming the connection in the file
 
@@ -89,6 +91,9 @@ require("db-query").setup({
   -- one is running. You can change it, but not disable it.
   -- Omitting this setting will just revert it to the default.
   cancel = "<C-c>",
+
+  -- Attach the language server to sql buffers. See Completion below.
+  lsp = true,
 
   -- The format of the results file. "text" is the client's own table, written
   -- to a .txt file. "csv" is delimited rows, written to a .csv file (.tsv for
@@ -208,7 +213,7 @@ vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
 
 ## Parquet
 
-With `parquet = true`, opening a `.parquet` file runs a query through duckdb instead. The buffer keeps the original name with the extension changed to `.sql`. The duckdb instance is ephemeral and loads the parquet file as a view so that vim-dadbod-completion can read the schema. It does not import the data. The buffer stays empty until the view exists, and when duckdb cannot create it the query reads the file by its path instead.
+With `parquet = true`, opening a `.parquet` file runs a query through duckdb instead. The buffer keeps the original name with the extension changed to `.sql`. The duckdb instance is ephemeral and loads the parquet file as a view so that the catalog, and with it completion, sees its columns. It does not import the data. The buffer stays empty until the view exists, and when duckdb cannot create it the query reads the file by its path instead.
 
 This won't work with lazy loading, because the plugin has to be enabled to intercept the file:
 
@@ -220,9 +225,62 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
 }
 ```
 
+## Completion
+
+A language server named `db-query` runs inside nvim and attaches to every `sql`, `mysql`, and `plsql` buffer, scratch buffers included. It needs no install and no `vim.lsp.config` entry. Set `lsp = false` to turn it off.
+
+It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery or CTE. In `from` it offers tables and set-returning functions. Typing `.` or `(` triggers it. In an `insert`, it also offers items that write the column list and the values row:
+
+- after `insert into`, one item per table that writes `t (col, ...) values (...)`, with a placeholder per column holding the column's name and type
+- inside the column list, `all columns` while the list is empty, and each column not listed yet
+- inside an empty `values (`, one placeholder per listed column
+
+Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it.
+
+Completion will only suggest basic keywords until the catalog (tables, columns, function, etc) has been loaded for the database you are connected to. Depending on the size of your schema and speed of the database, this could be done in 1 second or 5 minutes. It does run in the background. It will cache a prior catalog from past sessions and use that while it refreshes, so you probably won't notice the delay after the first connection.
+
+With [nvim-cmp](https://github.com/hrsh7th/nvim-cmp), use the `nvim_lsp` source and, for signature help, [cmp-nvim-lsp-signature-help](https://github.com/hrsh7th/cmp-nvim-lsp-signature-help). nvim-cmp's default comparators sort by item kind and leave `sort_text` out, so add it ahead of `kind` for sql filetypes to keep columns in table order:
+
+```lua
+local cmp = require("cmp")
+local compare = cmp.config.compare
+cmp.setup.filetype({ "sql", "mysql", "plsql" }, {
+  sources = {
+    { name = "nvim_lsp" },
+    { name = "nvim_lsp_signature_help" },
+  },
+  sorting = {
+    comparators = {
+      compare.offset,
+      compare.exact,
+      compare.score,
+      compare.sort_text,
+      compare.kind,
+    },
+  },
+})
+```
+
+[blink.cmp](https://github.com/Saghen/blink.cmp) uses its `lsp` source and sorts by `sort_text` by default, so nothing changes. Set `signature = { enabled = true }` for signature help.
+
+Without a completion plugin, nvim's own completion works:
+
+```lua
+vim.api.nvim_create_autocmd("LspAttach", {
+  callback = function(event)
+    local client = vim.lsp.get_client_by_id(event.data.client_id)
+    if client and client.name == "db-query" then
+      vim.lsp.completion.enable(true, client.id, event.buf, { autotrigger = true })
+    end
+  end,
+})
+```
+
+`K` shows hover and `<C-s>` in insert mode shows signature help, which are nvim's default maps.
+
 ## Catalog
 
-The plugin reads the tables, columns, functions, and types of each database a buffer connects to, in the background, and saves them under `stdpath("cache")/db-query/catalog/`. The next session starts from the saved catalog and reads a fresh one behind it. Nothing in the plugin reads that catalog yet.
+The plugin reads the tables, columns, functions, and types of each database a buffer connects to, in the background, and saves them under `stdpath("cache")/db-query/catalog/`. The next session starts from the saved catalog and reads a fresh one behind it. The language server answers from it.
 
 The read starts when a connection passes its test. It runs again after any query holding a statement that starts with `create`, `alter`, `drop`, or `comment`, plus `rename` on mysql and mariadb and `import` on postgres, whether or not the query succeeded, and again on `:DBRefreshCatalog`. Its queries run read-only, several at once, and each is killed after `catalog.timeout` milliseconds, which is 5 minutes by default because some remote mariadb servers take minutes to answer. A read that fails leaves the catalog as it was and says why, and the next read waits for one of those three things. One catalog is kept per database, so buffers on the same url share it.
 

@@ -42,8 +42,17 @@ local M = {}
 --- or `GROUP` for a parenthesized group.
 ---@alias dbquery.PatternPart string|table<string, true>
 
+--- A function the sql grammar defines rather than the catalog, such as
+--- `extract(field from source)`.
+---@class dbquery.GrammarSignature
+---@field label string
+---@field parameters string[] Comma-separated arguments in call order. Empty for a form whose arguments keywords separate, which no argument position can point into.
+---@field variadic boolean The last parameter repeats.
+
 ---@class dbquery.Dialect
 ---@field name string
+---@field folds "lower"|"none" How the server reads an unquoted name: folded to lower case, or matched in any case.
+---@field signatures table<string, dbquery.GrammarSignature> Keyed by lowercase function name.
 ---@field lex dbquery.LexRules
 ---@field commands dbquery.Commands|nil The client's own commands, for a dialect read the way one client reads it.
 ---@field reserved table<string, true> Words that are never an alias.
@@ -58,6 +67,8 @@ local M = {}
 
 ---@class dbquery.DialectChanges
 ---@field name string
+---@field folds "lower"|"none"|nil
+---@field signatures table<string, dbquery.GrammarSignature>|nil Replaces the base dialect's, since a dialect may lack a form its base has.
 ---@field lex table|nil Rules of `dbquery.LexRules`, each replacing the base dialect's.
 ---@field commands dbquery.Commands|nil
 ---@field reserved table<string, true>|nil Added.
@@ -98,6 +109,8 @@ end
 function M.derive(base, changes)
   return {
     name = changes.name,
+    folds = changes.folds or base.folds,
+    signatures = changes.signatures or base.signatures,
     lex = vim.tbl_extend("force", base.lex, changes.lex or {}),
     commands = changes.commands or base.commands,
     reserved = union(base.reserved, changes.reserved),

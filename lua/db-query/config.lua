@@ -16,6 +16,7 @@ local M = {}
 ---@field output_dir string|nil Output directory (nil = cache).
 ---@field output_cleanup boolean Delete results files when their sql buffer is wiped.
 ---@field catalog dbquery.CatalogConfig
+---@field lsp boolean Attach the built-in language server to sql buffers.
 
 ---@class dbquery.CatalogConfig
 ---@field timeout integer Milliseconds each query of a built-in catalog function may take.
@@ -27,6 +28,7 @@ M.values = {
   cancel = "<C-c>",
   format = "text",
   output_cleanup = true,
+  lsp = true,
   catalog = { timeout = 300000, clients = {} },
 }
 

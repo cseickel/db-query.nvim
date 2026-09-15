@@ -17,7 +17,7 @@ local M = {}
 ---@class dbquery.Body
 ---@field text string The code between the dollar quotes.
 ---@field offset integer Bytes of the enclosing text before the body.
----@field variables dbquery.Relation[] Parameters, declared variables, loop variables, and `new` and `old`.
+---@field variables dbquery.ScopeRelation[] Parameters, declared variables, loop variables, and `new` and `old`.
 
 local MODES = { ["in"] = true, out = true, inout = true, variadic = true }
 
@@ -40,7 +40,7 @@ end
 ---@param tokens dbquery.Token[]
 ---@param start integer First token of the statement.
 ---@param index integer
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 local function parameters(tokens, start, index)
   local at = start
   while at < index and not (lex.isWord(tokens[at], "function") or lex.isWord(tokens[at], "procedure")) do
@@ -88,7 +88,7 @@ end
 --- Returns the variables a plpgsql body declares, and the variables of its
 --- `for <name> in` loops.
 ---@param tokens dbquery.Token[] Code tokens of the body.
----@return dbquery.Relation[]
+---@return dbquery.ScopeRelation[]
 local function declarations(tokens)
   local variables, declaring, fresh = {}, false, false
   for index, token in ipairs(tokens) do
