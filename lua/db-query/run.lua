@@ -169,6 +169,7 @@ function Run.start(ctx)
     kind = kind,
     path = path,
     staging = staging,
+    readonly = false,
   })
   if not command then
     return nil

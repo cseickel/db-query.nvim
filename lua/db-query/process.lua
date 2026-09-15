@@ -16,6 +16,7 @@ killed, because a detached process does not die with nvim.
 ---@field result vim.SystemCompleted|nil How the process exited, set when `status` leaves "running".
 ---@field askServer fun(): boolean Asks the server to cancel, returning false when it cannot be asked.
 ---@field asked boolean Cancel already requested.
+---@field timeout integer|nil Milliseconds before the process is killed, nil when it waits.
 ---@field subscribers fun(process: dbquery.Process, result: vim.SystemCompleted)[]
 local Process = {}
 Process.__index = Process
@@ -72,6 +73,7 @@ function Process.start(spawn)
     started = vim.uv.hrtime(),
     askServer = spawn.askServer,
     asked = false,
+    timeout = spawn.timeout,
     subscribers = {},
   }, Process)
 
@@ -121,6 +123,25 @@ function Process:onFinish(subscriber)
   else
     table.insert(self.subscribers, subscriber)
   end
+end
+
+--- Returns why a finished process did not succeed, or nil when it succeeded or
+--- is still running. vim.system exits a process it killed for its timeout with
+--- code 124.
+---@return string|nil
+function Process:reason()
+  if self.status == "ok" or self.status == "running" then
+    return nil
+  end
+  if self.status == "cancelled" then
+    return "cancelled"
+  end
+  local result = self.result
+  if result.code == 124 and self.timeout then
+    return "no answer in " .. self.timeout / 1000 .. " seconds"
+  end
+  local printed = vim.trim(result.stderr or "")
+  return printed ~= "" and printed or ("exit " .. result.code .. ", signal " .. result.signal)
 end
 
 --- Asks the server to cancel when it can be asked, and sends SIGINT to the

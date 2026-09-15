@@ -63,6 +63,7 @@ return {
     desc asc over filter within partition
   ]]),
   queries = set("select with values table insert update delete"),
+  definitions = set("create alter drop comment"),
   clauses = CLAUSES,
   joins = set("join inner left right full cross natural"),
   beforeRelation = set("from outer lateral only into update delete using insert"),

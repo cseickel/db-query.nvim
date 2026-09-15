@@ -32,8 +32,11 @@ local M = {}
 ---@field kind dbquery.RowKind|nil
 ---@field path string|nil Results file, set whenever `kind` is.
 ---@field staging string|nil Whitespace-free path a client may write to instead of `path`.
+---@field readonly boolean Keeps the statement from writing: a sqlite or duckdb file is opened read-only, and postgres runs it in a read-only transaction. mysql and mariadb run it in a read-only transaction too, which refuses row changes, but a `create`, `alter`, or `drop` commits that transaction and runs.
 
 ---@class dbquery.Client
+---@field name string Names the client in `catalog.clients`.
+---@field catalog dbquery.CatalogFetch Built-in way to read the database's catalog.
 ---@field rows table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
 ---@field delimited string Extension for csv format: csv or tsv.
 ---@field command fun(spec: dbquery.CommandSpec): dbquery.Command
@@ -77,12 +80,19 @@ function M.embedded(connection)
   return client ~= nil and client.embedded == true
 end
 
+--- Returns the client for `connection`'s scheme, or nil when none is known.
+---@param connection string
+---@return dbquery.Client|nil
+function M.of(connection)
+  return CLIENTS[url.scheme(connection)]
+end
+
 --- Returns the client for `connection`'s scheme, or nil after showing an error
 --- when no client is known for it.
 ---@param connection string
 ---@return dbquery.Client|nil
 local function known(connection)
-  local client = CLIENTS[url.scheme(connection)]
+  local client = M.of(connection)
   if not client then
     -- Show scheme, not full url, to avoid exposing expanded $VAR values.
     vim.notify("no client known for " .. url.scheme(connection), vim.log.levels.ERROR)
@@ -145,24 +155,33 @@ function M.cancel(connection, file)
   return true
 end
 
---- Starts `statement` in the "value" format, so its result is the stdout the
---- process finishes with. Shows an error and returns nil when no client is
+---@class dbquery.ValueSpec
+---@field connection string
+---@field statement string
+---@field timeout integer|nil Milliseconds before the client is killed, nil to wait for it.
+---@field readonly boolean
+
+--- Starts `spec.statement` in the "value" format, so its result is the stdout
+--- the process finishes with. Shows an error and returns nil when no client is
 --- known for the url. Returns nil and the reason when the client cannot start.
----@param connection string
----@param statement string
----@param timeout integer|nil Milliseconds before the client is killed, nil to wait for it.
+---@param spec dbquery.ValueSpec
 ---@return dbquery.Process|nil
 ---@return string|nil
-function M.value(connection, statement, timeout)
-  local command = M.command({ connection = connection, statement = statement, format = "value" })
+function M.value(spec)
+  local command = M.command({
+    connection = spec.connection,
+    statement = spec.statement,
+    format = "value",
+    readonly = spec.readonly,
+  })
   if not command then
     return nil
   end
   return Process.start({
     command = command,
-    timeout = timeout,
+    timeout = spec.timeout,
     askServer = function()
-      return command.sessionFile ~= nil and M.cancel(connection, command.sessionFile)
+      return command.sessionFile ~= nil and M.cancel(spec.connection, command.sessionFile)
     end,
   })
 end

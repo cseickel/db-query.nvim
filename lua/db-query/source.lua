@@ -6,10 +6,12 @@ runs one process at a time, a query or a connection test, and starting either
 cancels the one before it.
 ]]
 
+local catalog = require("db-query.catalog")
 local Indicator = require("db-query.indicator")
 local output = require("db-query.output")
 local Pane = require("db-query.pane")
 local Run = require("db-query.run")
+local sql = require("db-query.sql")
 
 ---@alias dbquery.OutputView "log"|"result"|"toggle"
 
@@ -169,6 +171,13 @@ function Source:execute(ctx)
 
   replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
   self.pane:display(run)
+
+  -- A script that failed or was cancelled may still have run its definitions.
+  if sql.defines(ctx.dialect, ctx.sql) then
+    run.process:onFinish(function()
+      catalog.refresh(ctx.resolved)
+    end)
+  end
 end
 
 --- Shows a connection test of `name`, replacing any running process, which is

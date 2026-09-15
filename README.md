@@ -104,6 +104,16 @@ require("db-query").setup({
   -- `output_dir` and leaving this alone turns it off, since a directory of
   -- your own is somewhere you put results you are keeping.
   output_cleanup = true,
+
+  -- How the catalog of each database is read. See Catalog below.
+  catalog = {
+    -- Milliseconds each query of a built-in catalog reader may take.
+    timeout = 30000,
+
+    -- Functions that read the catalog in place of the built-in reader, keyed
+    -- by client name: postgres, mysql, mariadb, sqlite, or duckdb.
+    clients = {},
+  },
 })
 ```
 
@@ -121,6 +131,7 @@ require("db-query").setup({
 | `:DBOutput log`      | Show the log                                   |
 | `:DBOutput result`   | Show the last query's rows                     |
 | `:DBConnect`         | Pick the database for this buffer              |
+| `:DBRefreshCatalog`  | Read this buffer's database catalog again      |
 | `:DBOutputDir ~/out` | Set the output directory for the session       |
 
 `:DBQueryStatement` takes the lines of the statement under the cursor. A statement ends at a `;` outside a string, a comment, or a function body, at a psql command that sends the query, such as `\gset`, or at a psql command line ending in `;`. The text is read by the rules of the buffer's database, so a `\'` inside a mysql string stays inside the string, and a `#` comment or a backtick name is read as one on mysql and mariadb.
@@ -207,6 +218,43 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
   opts = { parquet = true },
 }
 ```
+
+## Catalog
+
+The plugin reads the tables, columns, functions, and types of each database a buffer connects to, in the background, and keeps them for the session. Nothing in the plugin reads that catalog yet.
+
+The read starts when a connection passes its test. It runs again after any query holding a statement that starts with `create`, `alter`, `drop`, or `comment`, plus `rename` on mysql and mariadb and `import` on postgres, whether or not the query succeeded, and again on `:DBRefreshCatalog`. Its queries run read-only, several at once, and each is killed after `catalog.timeout` milliseconds. A read that fails leaves the catalog as it was and says why, and the next read waits for one of those three things. One catalog is kept per database, so buffers on the same url share it.
+
+`catalog.clients` names a function that reads the catalog in place of the built-in reader for one client. `mysql` and `mariadb` are separate names. The function gets a request and a `done` callback, and may call the built-in reader itself:
+
+```lua
+require("db-query").setup({
+  catalog = {
+    clients = {
+      postgres = function(request, done)
+        require("db-query.client.postgres").catalog(request, function(catalog, err)
+          if not catalog then
+            return done(nil, err)
+          end
+          catalog.functions = vim.tbl_filter(function(fn)
+            return fn.schema ~= "pg_catalog"
+          end, catalog.functions)
+          done(catalog)
+        end)
+      end,
+    },
+  },
+})
+```
+
+`request` holds:
+
+- `client`, the client's name.
+- `connection`, the resolved url, password included.
+- `timeout`, the `catalog.timeout` setting for a built-in reader, and nil for yours.
+- `query(statement, opts, callback)`, which runs `statement` read-only through the client and calls `callback(output, err)` with what it printed, one row per line with no header, or with why it failed. `opts` is nil or `{ timeout = milliseconds }`.
+
+Call `done(catalog)` once with a table of the shape `dbquery.Catalog` describes in `lua/db-query/catalog/shape.lua`, or `done(nil, err)` with why there is none. A catalog of another shape is refused with the field that is wrong.
 
 ## Contributing
 

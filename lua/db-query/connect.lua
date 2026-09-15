@@ -14,6 +14,7 @@ runs is refused, because `b:db` still holds the connection the test may
 replace.
 ]]
 
+local catalog = require("db-query.catalog")
 local client = require("db-query.client")
 local config = require("db-query.config")
 local connections = require("db-query.connections")
@@ -71,23 +72,19 @@ local function test(buf, connection, done)
   if not (resolved and dialect) then
     return done(false)
   end
-  local process, err = client.value(resolved, "select 1", TIMEOUT)
+  local process, err = client.value({
+    connection = resolved,
+    statement = "select 1",
+    timeout = TIMEOUT,
+    readonly = false,
+  })
   if not process then
     return done(false, err)
   end
 
   Source.of(buf):test(process, testedAt(buf, dialect), connection.name)
-  process:onFinish(function(_, result)
-    if process.status == "ok" then
-      done(true)
-    elseif process.status == "cancelled" then
-      done(false, "cancelled")
-    elseif result.code == 124 then
-      done(false, "no answer in " .. TIMEOUT / 1000 .. " seconds")
-    else
-      local printed = vim.trim(result.stderr or "")
-      done(false, printed ~= "" and printed or ("exit " .. result.code .. ", signal " .. result.signal))
-    end
+  process:onFinish(function()
+    done(process.status == "ok", process:reason())
   end)
 end
 
@@ -130,6 +127,10 @@ local function assign(buf, connection, done)
       vim.b[buf].db_name = connection.name
       vim.b[buf].db = connection.url
       dadbod.refetch(buf)
+      local resolved = dadbod.resolve(connection.url)
+      if resolved then
+        catalog.refresh(resolved)
+      end
     else
       unreachable(buf, connection.name)
       if reason then

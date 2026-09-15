@@ -118,6 +118,25 @@ function M.statementAt(dialect, lines, row)
   return { first, last }
 end
 
+--- Returns true when any statement in `sql` starts with one of the dialect's
+--- `definitions`, such as `create` or `drop`, and so may change the catalog.
+---@param dialect dbquery.Dialect
+---@param sql string
+---@return boolean
+function M.defines(dialect, sql)
+  for _, statement in ipairs(statements.split(dialect, lex.code(lex.tokens(dialect, sql)))) do
+    for _, token in ipairs(statement) do
+      if token.kind ~= "meta" then
+        if token.kind == "word" and dialect.definitions[token.lower] then
+          return true
+        end
+        break
+      end
+    end
+  end
+  return false
+end
+
 local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = true }
 
 local WRITES = { insert = true, update = true, delete = true, merge = true }

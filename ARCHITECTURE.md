@@ -24,10 +24,16 @@ Objects that make up a running query:
 - `indicator.lua` is the bar, spinner, label, clock, and cancel key drawn in the sql buffer while a process runs.
 - `source.lua` is the buffer queries are run from. It connects the run, indicator, and pane, holds the one process the buffer is running, remembers the files its runs have written, and deletes them when the buffer is wiped.
 
+The catalog of each database, read in the background. Nothing reads it yet, as with the cursor context the modules under `sql/` compute:
+
+- `catalog/init.lua`, required as `db-query.catalog`, keeps one catalog per database and reads it through the client's built-in `catalog` function or the one `catalog.clients` names. `get` returns what is known and `refresh` reads again. "Catalog" below describes it.
+- `catalog/shape.lua` defines `dbquery.Catalog` and checks that a catalog a function returned has that shape.
+- `catalog/rows.lua` holds what the built-in functions share: running several queries at once, reading one json object per line, grouping column rows into relations, and reading the labels out of an `enum('a', 'b')` type.
+
 Everything else is helper functions:
 
 - `selection.lua` captures the lines a query comes from, which may be a range, the visual selection, the whole buffer, or the buffer and cursor row for the statement at the cursor, and later turns them into the sql to run.
-- `sql/init.lua`, required as `db-query.sql`, reads enough of a statement to say whether it returns rows, finds the statement around the cursor if that selection was requested, and finds the mysql `delimiter` command in effect above it.
+- `sql/init.lua`, required as `db-query.sql`, reads enough of a statement to say whether it returns rows and whether it may change the catalog, finds the statement around the cursor if that selection was requested, and finds the mysql `delimiter` command in effect above it.
 - `sql/dialect/` holds one `dbquery.Dialect` per way of reading sql: `standard`, `postgres`, `psql`, `sqlite`, `duckdb`, `mysql`, and `mariadb`. Every module under `sql/` reads by the dialect it is given. "Dialects" below describes them.
 - `sql/lex.lua` splits sql into tokens by a dialect's rules. Everything that reads sql reads its tokens.
 - `sql/statements.lua` says where one statement ends and the next begins.
@@ -37,7 +43,7 @@ Everything else is helper functions:
 - `dadbod.lua` holds the calls into vim-dadbod and vim-dadbod-completion: resolving a written url, and pointing completion at a buffer's new `b:db`.
 - `connections.lua` provides the list of connections that the database chooser offers.
 - `url.lua` pulls the scheme, file path, password, and query parameters out of a dadbod url.
-- `client/init.lua`, required as `db-query.client`, maps each url scheme to its client, and through it turns a connection and a statement into a command line, says which kinds of rows the client can write to a file, and names the dialect it reads sql by. `client.value` starts a statement whose result comes back to lua, which the connection test and `parquet.lua` use. Each client is a file beside it: `client/postgres.lua`, `client/sqlite.lua`, `client/duckdb.lua`, and `client/mysql.lua`, which builds both mysql and mariadb.
+- `client/init.lua`, required as `db-query.client`, maps each url scheme to its client, and through it turns a connection and a statement into a command line, says which kinds of rows the client can write to a file, and names the dialect it reads sql by. `client.value` starts a statement whose result comes back to lua, which the connection test, the catalog, and `parquet.lua` use. Each client is a file beside it: `client/postgres.lua`, `client/sqlite.lua`, `client/duckdb.lua`, and `client/mysql.lua`, which builds both mysql and mariadb. Each holds the built-in function that reads its database's catalog.
 - `output.lua` names the log, the results file, and the staging file, and decides which files the plugin deletes.
 
 ## Example Execution
@@ -88,7 +94,7 @@ Everything else is helper functions:
 
 **Cancelling is a request.** `Process:cancel` queries the server through a second connection where there is one (`pg_cancel_backend`) and sends `SIGINT` where there is not, then leaves the process `running` until the client actually exits, when the status becomes `cancelled`. So a query that has been replaced is still running and can still finish. `Pane` compares `self.run == run` before touching the window, and `Pane:stop` disconnects it from a run it no longer shows.
 
-**Output never passes through lua.** Anything that reads a result file into a lua string reintroduces the memory cost this design exists to avoid. The one exception is `client.value`, which runs a statement in the `value` format and leaves its stdout on the process for the caller. Its result is a few bytes, the connection test's `select 1` and the parquet view's `create view`, and never rows.
+**Query rows go to files, never through lua.** Collecting a large result set into a lua string through `vim.system` ran nvim out of memory, which shows as `E41`. So `run.lua` has the client write its rows to a file and never reads that file. `client.value` runs a statement in the `value` format and leaves its stdout on the process for the caller, and is used only for output known to be small: the connection test's `select 1`, the parquet view's `create view`, and the catalog queries, whose output on the largest database seen is about 2 MB.
 
 **The client's output is not parsed.** What is in the log is what the client printed, between the header `announce` writes and the footer `finish` writes. The results file holds what the client wrote and nothing else.
 
@@ -134,7 +140,7 @@ A password is written in either of two places, the credentials before the last `
 
 Two grammars are in play, and mixing them lets a password through. psql gets its url whole, so libpq is what parses it: no fragment, `&` as the only separator, percent-escapes and nothing else. `url.withoutPassword` reads the query that way and leaves every parameter it keeps byte for byte, so what psql receives is what was written minus the password. mysql and mariadb take flags instead, so `arguments` in `client/mysql.lua` splits the url up with `url.query`, which follows dadbod: a fragment goes with the query string, `&` and `;` both separate, `+` in a value is a space, `?compress` with no value becomes `--compress=1`, and a parameter with an empty name is dropped. Each parameter that comes back becomes `--key=value` on the command line. Both paths recognize the `password` name decoded, so `?%70assword=` cannot walk a password onto the command line. sqlite and duckdb urls hold a file path, which `url.filePath` returns whole.
 
-`connect.lua` decides what goes in `b:db`. A buffer takes its connection from its modeline when it has one, and otherwise from `g:db`, which only the picker sets. A connection from the modeline or the picker is tested before it is stored, by running `select 1` through `client.value` with a 10 second timeout, so nvim stays responsive while an unreachable host is tried. `Source:test` shows the test with an indicator labelled `testing connection <name>`, on the modeline row when the buffer has one, otherwise on the statement at the cursor, read by the connection's dialect, and otherwise on the cursor's row. The indicator's cancel key cancels the test, and a cancelled test fails the way one the server refused does. One that answers goes in `b:db` and `b:db_name`, and `dadbod.refetch` calls `vim_dadbod_completion#fetch`. That plugin records a buffer's database at `FileType`, when a modeline buffer's `b:db` is still empty and it falls back to `g:db`, and keeps it. Its `fetch` reads `w:db`, `t:db`, `b:db`, and `g:db` from the current window and buffer rather than the buffer it is given, so `refetch` runs it inside `nvim_buf_call`. One that fails clears `b:db` and sets `b:db_name` to `<name> CONNECTION ERROR`. `g:db` is copied into new buffers untested, because only a connection that answered is ever put there. A client marked `embedded` in its file under `client/`, sqlite3 or duckdb, passes without a test, because opening the file would create it when it is missing and fail when another duckdb process holds its lock.
+`connect.lua` decides what goes in `b:db`. A buffer takes its connection from its modeline when it has one, and otherwise from `g:db`, which only the picker sets. A connection from the modeline or the picker is tested before it is stored, by running `select 1` through `client.value` with a 10 second timeout, so nvim stays responsive while an unreachable host is tried. `Source:test` shows the test with an indicator labelled `testing connection <name>`, on the modeline row when the buffer has one, otherwise on the statement at the cursor, read by the connection's dialect, and otherwise on the cursor's row. The indicator's cancel key cancels the test, and a cancelled test fails the way one the server refused does. One that answers goes in `b:db` and `b:db_name`, `dadbod.refetch` calls `vim_dadbod_completion#fetch`, and `catalog.refresh` starts reading the database's catalog. That plugin records a buffer's database at `FileType`, when a modeline buffer's `b:db` is still empty and it falls back to `g:db`, and keeps it. Its `fetch` reads `w:db`, `t:db`, `b:db`, and `g:db` from the current window and buffer rather than the buffer it is given, so `refetch` runs it inside `nvim_buf_call`. One that fails clears `b:db`, sets `b:db_name` to `<name> CONNECTION ERROR`, and shows `Process:reason`, which is `cancelled`, `no answer in 10 seconds` when the timeout killed the client, what the client printed to stderr, or its exit code and signal when it printed nothing. `g:db` is copied into new buffers untested, because only a connection that answered is ever put there. A client marked `embedded` in its file under `client/`, sqlite3 or duckdb, passes without a test, because opening the file would create it when it is missing and fail when another duckdb process holds its lock.
 
 Each buffer keeps only its latest test, so a slow one that finishes after the user chose something else is dropped: `Source:test` cancels the process of the test before it, and `assign` checks that its test is still the buffer's latest before it touches `b:db` or reports a failure, so a replaced test is cancelled without a notification. `follow` cancels a pending test when it drops it, which happens when the modeline names a connection missing from the list or goes back to the one already in `b:db`. Until the latest one finishes, `b:db` still holds the connection it may replace, so `execute` refuses a query in that time. Queuing the query instead would let several pile up behind one test, and when that test failed each of them would open its own picker.
 
@@ -143,6 +149,47 @@ Each buffer keeps only its latest test, so a slow one that finishes after the us
 The modeline is read on `FileType` and `BufWritePost`. The `FileType` handler reads it before it would copy `g:db`, so a buffer with a modeline never holds `g:db`'s url. `:DBConnect` in a buffer whose modeline names another connection rewrites the modeline after a confirm, and leaves `g:db` alone.
 
 `connections.list` offers the `connections` setting when there is one, and otherwise vim-dadbod-ui's `connections.json` followed by `g:dbs`. Names already used are skipped, so neither source hides the other's entries.
+
+## Catalog
+
+`catalog/init.lua` keeps one `dbquery.CatalogEntry` per database, keyed by the url without its password, or by the scheme and file path for sqlite and duckdb, so two buffers on the same database share one catalog and a password change does not make a second one. An entry holds the last catalog read, the queries of the read under way, and a generation counter.
+
+`catalog.get(connection)` returns the entry's catalog, or nil when none has been read. It starts a read only when the database has no entry at all, so a read that failed is not repeated on every call: the entry exists with no catalog until something calls `refresh`.
+
+`catalog.refresh(connection)` starts a read and replaces the one under way. It cancels that read's queries, and bumps the generation, so a result or a query callback from the replaced read is dropped when it arrives. For a sqlite or duckdb file that does not exist, it stores an empty catalog without a read, because opening a missing file read-only fails and the database holds nothing until something creates it. Otherwise it builds a `dbquery.CatalogRequest` and calls the catalog function with it and a `done` callback:
+
+- `client`, the client's `name`.
+- `connection`, the resolved url.
+- `timeout`, the `catalog.timeout` setting for a built-in function, and nil for one from `catalog.clients`, which sets its own.
+- `query(statement, opts, callback)`, which runs `statement` through `client.value` with `readonly = true` and `opts.timeout`, records the process on the entry so a later `refresh` can cancel it, and calls `callback` with the process's stdout when its status is `ok` and otherwise with nil and `Process:reason`. After the read is replaced or finished, `query` does nothing.
+
+`done(catalog, err)` counts only the first time and only for the current generation. It cancels any query still running. The read fails when `err` is set, when `catalog` is nil, or when `shape.problem(catalog)` finds a field of the wrong type. A failed read keeps the catalog from before it and notifies with the problem and `:DBRefreshCatalog retries`. An error thrown by the catalog function, or by a query callback, which runs long after the function returned, is caught and fails the read the same way.
+
+Three things call `refresh`:
+
+- `connect.lua`, when a connection test answers. A sqlite or duckdb connection answers without a test, so its catalog is read as soon as the buffer takes it.
+- `Source:execute`, when the process finishes, for a query where `sql.defines` finds a statement starting with one of the dialect's `definitions`, such as `create` or `drop`. It runs whatever the exit status, because a script that failed or was cancelled may have run its definitions before it stopped.
+- `:DBRefreshCatalog`, which is `require("db-query").refreshCatalog(buf)`, for the buffer's `b:db`.
+
+### The shape
+
+`dbquery.Catalog`, in `catalog/shape.lua`, is what every catalog function returns:
+
+- `searchPath`, the schemas an unqualified name is looked for in, in order. Each is `{ database?, schema }`.
+- `relations`, one per table, view, materialized view, foreign table, or virtual table, with `columns` in the relation's column order. A column has its `type`, `nullable`, `default`, `generated` (`identity`, `stored`, `virtual`, or nil), `hidden`, the `labels` of an enum column, and its `comment`.
+- `functions`, one per overload, with `args` in declared order, each with a `mode` (`in`, `out`, `inout`, `variadic`, or `table`) and whether a call may leave it out, `returnsSet` when the function can stand in `from`, and its `result` type.
+- `types`, with the `labels` of an enum.
+
+Names are qualified the way the sql writes them. `schema` is the qualifier directly left of a name, and `database` is the one left of `schema`, which only duckdb has. A sqlite function has no schema.
+
+### The built-in functions
+
+Each client file holds a `catalog` function that reads the catalog through `rows.collect`, which runs its queries at once, each with `request.timeout`, and calls back with the decoded rows of all of them or the first error. Every query prints one json object per row, so no value is long enough for a server to truncate the way mariadb's `group_concat_max_len` truncates an aggregated document. A relation's columns come one per row, and `rows.relations` groups adjacent rows with the same database, schema, and name.
+
+- postgres reads relations from `pg_class`, `pg_attribute`, and `pg_attrdef`, leaving out partitions, since a query names the table they belong to, and the `pg_toast` and `pg_temp` schemas. Functions come from `pg_proc`, with the argument names, modes, and types, `pronargdefaults` marking the last passed arguments as having a default, and `proretset`. Types come from `pg_type` with the labels from `pg_enum`, leaving out array types and the row type every table gets. The search path is `current_schemas(true)`.
+- mysql and mariadb read relations from `information_schema.tables` and `columns`. A column's `generated` comes from `extra`, `INVISIBLE` there makes it hidden, and enum labels are parsed out of `column_type`. Functions come from `routines` and `parameters`, which hold stored routines only, since the server's own functions are in no table. A function and a procedure may share a name, and with it a specific name, so parameters are matched by routine type too. The search path is `database()`.
+- sqlite reads relations from `pragma_table_list` joined to `pragma_table_xinfo`, leaving out shadow tables, `sqlite_` tables, and a relation `pragma_table_list` reports with no columns, which is a view whose table was dropped and which would fail the whole query. `hidden` there is 1 for a virtual table's hidden column, 2 for a virtual generated column, and 3 for a stored one. Functions come from `pragma_function_list`, which gives a name, a kind, and an argument count, so the arguments have no names or types and a negative count is one variadic argument. The search path is `temp`, then `main`, then the attached databases in attachment order.
+- duckdb reads relations from `duckdb_columns`, `duckdb_tables`, and `duckdb_views`. `duckdb_columns` does not say which columns are generated, so each is looked for in the table's own `create` statement. Functions come from `duckdb_functions`, leaving out pragma functions, with a table function or table macro as `returnsSet`. Types come from `duckdb_types`, and since duckdb gives an enum's labels one type at a time, a second query unions one `enum_range` select per enum. The search path is the `search_path` setting, or else the current database's `main`, followed by `system.main` and `system.pg_catalog`.
 
 ## Output files
 
@@ -193,6 +240,7 @@ A `dbquery.Dialect`, defined in `lua/db-query/sql/dialect/init.lua`, is data and
 - `commands`, present only for a dialect read the way one client reads it: `at`, which finds a client command starting at a byte, the pattern of a client variable, `sends`, which says whether a command sends the query typed before it, and `delimiter`, which returns the statement delimiter a command sets.
 - `reserved`, the words that are never an alias.
 - `queries`, the words that start a statement which returns or writes rows.
+- `definitions`, the words that start a statement which changes the catalog: `create`, `alter`, `drop`, and `comment` in `standard`, plus `import` in `postgres` and `rename` in `mysql`.
 - `clauses`, rules of the form `{ word, after, within, test, clause }`. The first rule that applies to a word labels it with its clause.
 - `joins`, the words that start a join, and `beforeRelation`, the other words a table name may follow, such as `from` or `into`.
 - `callable`, the reserved words that name a function when `(` follows. Such a call never starts a clause or a query, which is what keeps mysql's `replace(col, 'x', 'y')` in a select list from being read as a `replace` statement.
@@ -220,6 +268,10 @@ Add a file under `lua/db-query/client/` that returns a `dbquery.Client`, and map
 ```lua
 ---@type dbquery.Client
 return {
+  name = "example",
+  catalog = function(request, done)
+    -- calls done with a dbquery.Catalog
+  end,
   rows = { query = true, returning = true },
   delimited = "csv",
   dialect = require("db-query.sql.dialect.standard"),
@@ -229,6 +281,8 @@ return {
   end,
 }
 ```
+
+`name` is what `catalog.clients` names the client by. `catalog` reads the database's catalog, as "Catalog" describes: it gets a `dbquery.CatalogRequest`, runs its queries through `request.query`, and calls `done` once with a `dbquery.Catalog` or with why there is none. `catalog/rows.lua` has the helpers the built-in functions share.
 
 `rows` names the row kinds the client writes to a file, keyed by `dbquery.RowKind`. A kind missing here goes to the log. `delimited` is the extension for csv format, `csv` or `tsv`, whichever the client actually writes. Set `embedded = true` when the database is a file the client opens itself, which skips the `select 1` test a connection gets before a buffer takes it.
 
@@ -244,6 +298,7 @@ Two schemes can share one client. `postgres` and `postgresql` both map to `clien
 - `kind`, the row kind, or nil when the run has no results file.
 - `path`, the results file, set whenever `kind` is.
 - `staging`, a whitespace-free path in the cache directory the client may write to in place of `path`.
+- `readonly`, true when the statement must not write, which only the catalog's queries ask for.
 
 It returns a `dbquery.Command`:
 
@@ -255,6 +310,8 @@ It returns a `dbquery.Command`:
 
 When `spec.path` is nil, the command must make the client print its own transcript to stdout, since everything it prints goes to the log. When `spec.path` is set, the command must put the rows in that file and nothing else, either by telling the client to write there, by writing to `spec.staging` and returning `staged = true`, or by returning `stdout = spec.path`.
 
-When `format` is `"value"`, `spec.path` is nil and the command must make the client print the statement's result alone to stdout, unaligned, with no header, echo, or timing, because `client.value` hands that stdout back to lua. psql runs with `-A -t -q`, and its script still records the backend pid in `sessionFile` so the test can be cancelled server-side. mysql and mariadb run with `--batch --skip-column-names --raw`, sqlite3 with `-batch -noheader -list`, and duckdb with `-noheader -list`.
+When `format` is `"value"`, `spec.path` is nil and the command must make the client print the statement's result alone to stdout, unaligned, with no header, echo, or timing, because `client.value` hands that stdout back to lua. `client.value` takes a `dbquery.ValueSpec`, which is the connection, the statement, a timeout, and `readonly`. psql runs with `-A -t -q`, and its script still records the backend pid in `sessionFile` so the test can be cancelled server-side. mysql and mariadb run with `--batch --skip-column-names --raw`, sqlite3 with `-batch -noheader -list`, and duckdb with `-noheader -list`. A catalog query selects one json object per row, so in this format each line of stdout is one object for `catalog/rows.lua` to decode.
+
+When `readonly` is set, the command keeps the statement from writing. sqlite3 takes `-readonly`. duckdb takes `-readonly` for a file, and never for an in-memory database, which refuses the flag and has no file to protect. psql wraps the statement in `BEGIN READ ONLY` and `ROLLBACK`. mysql and mariadb wrap it in `start transaction read only` and `rollback`, which refuses a row change, but a `create`, `alter`, or `drop` commits that transaction and runs.
 
 Add `cancel` only if the database has a server that can be asked to stop a query. It takes the connection and a session id and returns the argv that cancels. To get that session id, `command` must also return `sessionFile`, a path the client writes its own server-side id to. `client.cancel` reads the number out of that file. Without both, `Process:cancel` falls back to sending `SIGINT` to the client, which is the right thing for an embedded database like duckdb or sqlite3 that has no server to ask.

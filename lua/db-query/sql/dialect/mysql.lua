@@ -71,6 +71,7 @@ return dialect.derive(standard, {
     regexp rlike div
   ]]),
   queries = set("replace"),
+  definitions = set("rename"),
   clauses = {
     -- `into` is optional after insert and replace, and modifiers may come first.
     { word = "insert", clause = "insert_target", test = atStart },

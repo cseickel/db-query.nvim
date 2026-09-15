@@ -15,6 +15,11 @@ local M = {}
 ---@field format dbquery.Format Default output format.
 ---@field output_dir string|nil Output directory (nil = cache).
 ---@field output_cleanup boolean Delete results files when their sql buffer is wiped.
+---@field catalog dbquery.CatalogConfig
+
+---@class dbquery.CatalogConfig
+---@field timeout integer Milliseconds each query of a built-in catalog function may take.
+---@field clients table<string, dbquery.CatalogFetch> Catalog functions replacing the built-in, keyed by client name: postgres, mysql, mariadb, sqlite, or duckdb. mysql and mariadb are separate clients, each replaced on its own.
 
 ---@type dbquery.Config
 M.values = {
@@ -22,12 +27,15 @@ M.values = {
   cancel = "<C-c>",
   format = "text",
   output_cleanup = true,
+  catalog = { timeout = 30000, clients = {} },
 }
 
 ---@param opts dbquery.Config|nil
 function M.set(opts)
   local given = opts or {}
+  local catalog = vim.tbl_extend("force", M.values.catalog, given.catalog or {})
   M.values = vim.tbl_extend("force", M.values, given)
+  M.values.catalog = catalog
   -- Default: auto-cleanup only when no custom output_dir is set.
   if given.output_cleanup == nil then
     M.values.output_cleanup = M.values.output_dir == nil

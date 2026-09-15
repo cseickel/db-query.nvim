@@ -22,6 +22,7 @@ return dialect.derive(standard, {
     language copy loop merge matched nulls first last
   ]]),
   queries = set("merge"),
+  definitions = set("import"),
   beforeRelation = set("merge"),
   clauses = {
     { word = "perform", clause = "select" },

@@ -37,11 +37,11 @@ local function open(path, opened)
   local name = vim.fn.fnamemodify(path, ":t:r")
   local byPath = { "select *", "from " .. literal(path), "limit 1000;" }
 
-  local process, err = client.value(URL, string.format(
-    "create or replace view %s as select * from %s;",
-    identifier(name),
-    literal(path)
-  ))
+  local process, err = client.value({
+    connection = URL,
+    statement = string.format("create or replace view %s as select * from %s;", identifier(name), literal(path)),
+    readonly = false,
+  })
   if not process then
     if err then
       vim.notify("db-query: " .. err, vim.log.levels.ERROR)

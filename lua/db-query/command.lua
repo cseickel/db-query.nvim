@@ -27,7 +27,8 @@ end
 ---@field format dbquery.Format
 ---@field output string|true|nil Path for output, true to prompt, nil for auto-generated.
 
---- Parses command arguments. Returns nil and shows an error on invalid input.
+--- Parses command arguments. Returns nil and shows an error for a flag other
+--- than `-f` and `-o`, and for `-f` given anything but text or csv.
 ---@param args string[]
 ---@return dbquery.Arguments|nil
 local function parse(args)
@@ -105,6 +106,10 @@ function M.setup()
   vim.api.nvim_create_user_command("DBConnect", function()
     require("db-query").connect()
   end, { desc = "Choose the database this buffer connects to" })
+
+  vim.api.nvim_create_user_command("DBRefreshCatalog", function()
+    require("db-query").refreshCatalog()
+  end, { desc = "Read the tables, columns, and functions of this buffer's database again" })
 
   vim.api.nvim_create_user_command("DBOutput", function(command)
     local view = command.args ~= "" and command.args or "toggle"

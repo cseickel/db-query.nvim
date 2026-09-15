@@ -48,6 +48,7 @@ local M = {}
 ---@field commands dbquery.Commands|nil The client's own commands, for a dialect read the way one client reads it.
 ---@field reserved table<string, true> Words that are never an alias.
 ---@field queries table<string, true> Words that start a statement which returns or writes rows.
+---@field definitions table<string, true> Words that start a statement which changes the catalog.
 ---@field clauses dbquery.ClauseRule[] Tried in order, and the first that applies labels the word.
 ---@field joins table<string, true> Words that start a join.
 ---@field beforeRelation table<string, true> Words other than joins that a table name may follow, such as `from` or `into`.
@@ -61,6 +62,7 @@ local M = {}
 ---@field commands dbquery.Commands|nil
 ---@field reserved table<string, true>|nil Added.
 ---@field queries table<string, true>|nil Added.
+---@field definitions table<string, true>|nil Added.
 ---@field clauses dbquery.ClauseRule[]|nil Tried before the base dialect's.
 ---@field joins table<string, true>|nil Added.
 ---@field beforeRelation table<string, true>|nil Added.
@@ -100,6 +102,7 @@ function M.derive(base, changes)
     commands = changes.commands or base.commands,
     reserved = union(base.reserved, changes.reserved),
     queries = union(base.queries, changes.queries),
+    definitions = union(base.definitions, changes.definitions),
     clauses = vim.list_extend(vim.list_extend({}, changes.clauses or {}), base.clauses),
     joins = union(base.joins, changes.joins),
     beforeRelation = union(base.beforeRelation, changes.beforeRelation),

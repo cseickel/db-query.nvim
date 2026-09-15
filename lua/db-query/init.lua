@@ -6,6 +6,7 @@ connection's dialect, and passes it all to the buffer's Source. ARCHITECTURE.md
 covers the flow from there.
 ]]
 
+local catalog = require("db-query.catalog")
 local client = require("db-query.client")
 local command = require("db-query.command")
 local config = require("db-query.config")
@@ -120,6 +121,16 @@ function M.execute(opts)
   else
     run(opts.output)
   end
+end
+
+--- Reads the catalog of `buf`'s connection again, in the background.
+---@param buf integer|nil Defaults to the current buffer.
+function M.refreshCatalog(buf)
+  local resolved = dadbod.resolve(vim.b[buf or vim.api.nvim_get_current_buf()].db)
+  if not resolved then
+    return vim.notify("db-query: this buffer has no connection", vim.log.levels.WARN)
+  end
+  catalog.refresh(resolved)
 end
 
 --- Sets the output directory for this session. Files written there are not
