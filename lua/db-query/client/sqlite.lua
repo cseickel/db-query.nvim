@@ -13,6 +13,9 @@ return {
 
   command = function(spec)
     local file = url.filePath(spec.connection)
+    if spec.format == "value" then
+      return { argv = { "sqlite3", "-batch", "-noheader", "-list", file, spec.statement } }
+    end
     if not spec.path then
       return { argv = { "sqlite3", file, spec.statement } }
     end

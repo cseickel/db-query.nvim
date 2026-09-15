@@ -1,9 +1,9 @@
 --[[
-Visual indicator while a query runs.
+Visual indicator while a process runs: a query, or a connection test.
 
-A bar marks the lines being executed, with a spinner and timer on a virtual
-line below. The cancel key is bound while the query runs. All state is buffer-
-local, so each buffer can run one query at a time.
+A bar marks the lines the process is about, with a spinner, what it is doing,
+and a timer on a virtual line below. The cancel key is bound while it runs.
+All state is buffer-local, so each buffer shows one process at a time.
 
 `status()` provides the same spinner for a winbar or statusline, which the user
 would have to configure themselves.
@@ -11,13 +11,20 @@ would have to configure themselves.
 
 local config = require("db-query.config")
 
+--- Where an indicator draws, and what it says the process is doing.
+---@class dbquery.Place
+---@field buf integer
+---@field span [integer, integer] First and last line the bar marks (0-based).
+---@field label string Such as "running query".
+
 ---@class dbquery.Indicator
 ---@field buf integer
----@field first integer First executed line (0-based).
----@field last integer Last executed line (0-based).
+---@field first integer First marked line (0-based).
+---@field last integer Last marked line (0-based).
+---@field label string
 ---@field key string Cancel keybinding.
 ---@field width integer Display width of the last line.
----@field run dbquery.Run
+---@field process dbquery.Process
 ---@field frame integer Current spinner frame.
 ---@field timer uv.uv_timer_t|nil Nil after stop().
 local Indicator = {}
@@ -55,7 +62,7 @@ function Indicator:textWidth()
   return vim.fn.strdisplaywidth(line or "")
 end
 
---- Draws the bar in the sign column beside the executed lines.
+--- Draws the bar in the sign column beside the marked lines.
 function Indicator:drawBar()
   local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
   vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, math.min(self.first, bottom), 0, {
@@ -75,7 +82,8 @@ local function textColumn(buf)
   return info and info.textoff or 1
 end
 
---- Draws the spinner, timer, and cancel hint on a virtual line below the query.
+--- Draws the spinner, label, timer, and cancel hint on a virtual line below
+--- the marked lines.
 function Indicator:drawSpinner()
   local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
   local placed = vim.api.nvim_buf_get_extmark_by_id(self.buf, NAMESPACE, SPINNER, {})
@@ -84,7 +92,7 @@ function Indicator:drawSpinner()
   local indent = textColumn(self.buf)
   local text = BAR
     .. string.rep(" ", indent - 1)
-    .. string.format("%s  %.1fs    %s to cancel", FRAMES[self.frame], self.run:elapsed(), self.key)
+    .. string.format("%s  %s  %.1fs    %s to cancel", FRAMES[self.frame], self.label, self.process:elapsed(), self.key)
   text = text .. string.rep(" ", indent + self.width - vim.fn.strdisplaywidth(text))
 
   vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, at, 0, {
@@ -94,17 +102,18 @@ function Indicator:drawSpinner()
   })
 end
 
---- Returns spinner and elapsed time for winbar/statusline, or empty string.
+--- Returns the spinner, label, and elapsed time for a winbar or statusline, or
+--- an empty string once the process has finished.
 ---@return string
 function Indicator:status()
-  if self.run.status ~= "running" then
+  if self.process.status ~= "running" then
     return ""
   end
-  return string.format("%s %.1fs", FRAMES[self.frame], self.run:elapsed())
+  return string.format("%s %s %.1fs", FRAMES[self.frame], self.label, self.process:elapsed())
 end
 
 --- Advances the spinner and triggers a redraw. Skipped if the indicator has
---- stopped (handles late timer callbacks after the query ends).
+--- stopped, which a timer callback scheduled before the process ended can be.
 function Indicator:tick()
   if not self.timer then
     return
@@ -120,8 +129,8 @@ end
 ---
 --- The nil timer makes this idempotent, which matters because a replaced
 --- indicator is stopped when its successor is attached and stopped again when
---- its own run finally finishes. Without the guard the second call would delete
---- the successor's keymap and clear its extmarks.
+--- its own process finally finishes. Without the guard the second call would
+--- delete the successor's keymap and clear its extmarks.
 function Indicator:stop()
   if not self.timer then
     return
@@ -137,25 +146,27 @@ function Indicator:stop()
   vim.api.nvim__redraw({ statusline = true, winbar = true })
 end
 
---- Creates an indicator for `run`, drawing the bar and spinner and binding the
---- cancel key. Stops automatically when the run finishes.
----@param run dbquery.Run
+--- Creates an indicator for `process` at `place`, drawing the bar and spinner
+--- and binding the cancel key. Stops automatically when the process finishes.
+---@param process dbquery.Process
+---@param place dbquery.Place
 ---@return dbquery.Indicator
-function Indicator.attach(run)
+function Indicator.attach(process, place)
   local self = setmetatable({
-    buf = run.ctx.buf,
-    first = run.ctx.span[1],
-    last = run.ctx.span[2],
+    buf = place.buf,
+    first = place.span[1],
+    last = place.span[2],
+    label = place.label,
     key = config.values.cancel,
-    run = run,
+    process = process,
     frame = 1,
     timer = vim.uv.new_timer(),
   }, Indicator)
   self.width = self:textWidth()
 
   vim.keymap.set(MODES, self.key, function()
-    self.run:cancel()
-  end, { buffer = self.buf, desc = "cancel the running query" })
+    self.process:cancel()
+  end, { buffer = self.buf, desc = "cancel " .. place.label })
 
   self:drawBar()
   self:drawSpinner()
@@ -166,7 +177,7 @@ function Indicator.attach(run)
       self:tick()
     end)
   )
-  run:onFinish(function()
+  process:onFinish(function()
     self:stop()
   end)
   return self

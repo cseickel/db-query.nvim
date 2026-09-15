@@ -19,6 +19,8 @@ local config = require("db-query.config")
 local connections = require("db-query.connections")
 local dadbod = require("db-query.dadbod")
 local modeline = require("db-query.modeline")
+local Source = require("db-query.source")
+local sql = require("db-query.sql")
 
 local M = {}
 
@@ -38,53 +40,63 @@ local namedUrl = nil
 ---@type table<integer, dbquery.Attempt>
 local attempts = {}
 
---- Runs `select 1` against `connection` without blocking, and calls `done` on
---- the main loop with whether it answered. A failure is shown with what the
---- client printed, and a server that says nothing within TIMEOUT is a failure.
+--- Returns the lines the indicator marks while `buf` tests a connection: the
+--- modeline, or else the statement at the cursor, or else the cursor's line.
+---@param buf integer
+---@param dialect dbquery.Dialect
+---@return [integer, integer]
+local function testedAt(buf, dialect)
+  local line = modeline.find(buf)
+  if line then
+    return { line.row, line.row }
+  end
+  local win = vim.fn.win_findbuf(buf)[1]
+  local row = win and vim.api.nvim_win_get_cursor(win)[1] - 1 or 0
+  return sql.statementAt(dialect, vim.api.nvim_buf_get_lines(buf, 0, -1, false), row) or { row, row }
+end
+
+--- Runs `select 1` against `connection` without blocking, shown in `buf` by
+--- an indicator that can cancel it, and calls `done` on the main loop with
+--- whether it answered and, when it did not, why. A server that says nothing
+--- within TIMEOUT fails, and so does a cancelled test.
+---@param buf integer
 ---@param connection dbquery.Connection
----@param done fun(answered: boolean)
-local function test(connection, done)
+---@param done fun(answered: boolean, reason: string|nil)
+local function test(buf, connection, done)
   local resolved = dadbod.resolve(connection.url)
   if resolved and client.embedded(resolved) then
     return done(true)
   end
-  local command = resolved
-    and client.command({ connection = resolved, statement = "select 1", format = "text" })
-  if not command then
+  local dialect = resolved and client.dialect(resolved)
+  if not (resolved and dialect) then
     return done(false)
   end
-
-  ---@param reason string
-  local function failed(reason)
-    vim.notify(
-      "db-query: cannot connect to " .. connection.name .. ": " .. reason,
-      vim.log.levels.ERROR
-    )
-    done(false)
+  local process, err = client.value(resolved, "select 1", TIMEOUT)
+  if not process then
+    return done(false, err)
   end
 
-  local started, err = pcall(vim.system, command.argv, {
-    text = true,
-    env = command.env,
-    stdin = command.stdin,
-    timeout = TIMEOUT,
-  }, function(result)
-    if command.sessionFile then
-      os.remove(command.sessionFile)
+  Source.of(buf):test(process, testedAt(buf, dialect), connection.name)
+  process:onFinish(function(_, result)
+    if process.status == "ok" then
+      done(true)
+    elseif process.status == "cancelled" then
+      done(false, "cancelled")
+    elseif result.code == 124 then
+      done(false, "no answer in " .. TIMEOUT / 1000 .. " seconds")
+    else
+      local printed = vim.trim(result.stderr or "")
+      done(false, printed ~= "" and printed or ("exit " .. result.code .. ", signal " .. result.signal))
     end
-    vim.schedule(function()
-      if result.code == 0 and result.signal == 0 then
-        done(true)
-      elseif result.code == 124 then
-        failed("no answer in " .. TIMEOUT / 1000 .. " seconds")
-      else
-        local printed = vim.trim(result.stderr or "")
-        failed(printed ~= "" and printed or ("exit " .. result.code .. ", signal " .. result.signal))
-      end
-    end)
   end)
-  if not started then
-    failed(tostring(err))
+end
+
+--- Forgets the test pending for `buf`, cancelling it.
+---@param buf integer
+local function abandon(buf)
+  if attempts[buf] then
+    attempts[buf] = nil
+    Source.of(buf):cancel()
   end
 end
 
@@ -105,7 +117,7 @@ local function assign(buf, connection, done)
   local attempt = { connection = connection }
   attempts[buf] = attempt
 
-  test(connection, function(answered)
+  test(buf, connection, function(answered, reason)
     if attempts[buf] ~= attempt then
       return
     end
@@ -120,6 +132,9 @@ local function assign(buf, connection, done)
       dadbod.refetch(buf)
     else
       unreachable(buf, connection.name)
+      if reason then
+        vim.notify("db-query: cannot connect to " .. connection.name .. ": " .. reason, vim.log.levels.ERROR)
+      end
     end
     if done then
       done(answered)
@@ -158,7 +173,7 @@ function M.follow(buf)
 
   local connection, err = connections.named(config.values.connections, line.connection)
   if not connection then
-    attempts[buf] = nil
+    abandon(buf)
     unreachable(buf, line.connection)
     vim.notify("db-query: " .. err, vim.log.levels.ERROR)
     return true
@@ -169,7 +184,7 @@ function M.follow(buf)
     return true
   end
   if vim.b[buf].db == connection.url and vim.b[buf].db_name == connection.name then
-    attempts[buf] = nil
+    abandon(buf)
   else
     assign(buf, connection)
   end

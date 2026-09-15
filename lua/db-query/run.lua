@@ -8,16 +8,15 @@ Everything the client prints goes to the log, which every run of a source
 buffer appends to. Rows go to a separate file, which only exists when the
 statement returns any.
 
-A Run holds the process, its files, and its status, along with the request it
+A Run holds its files and the process writing them, along with the request it
 came from as `run.ctx`, which is where the indicator and the pane read what
-they need. Interested parties subscribe via onFinish().
+they need.
 ]]
 
 local client = require("db-query.client")
 local output = require("db-query.output")
+local Process = require("db-query.process")
 local sql = require("db-query.sql")
-
----@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
 ---@class dbquery.Run
 ---@field id integer Distinguishes runs sharing a log.
@@ -25,33 +24,12 @@ local sql = require("db-query.sql")
 ---@field log string Log file, appended to by every run of this buffer.
 ---@field path string|nil Results file, when the statement returns rows.
 ---@field staged string|nil Path the client wrote rows to, moved onto `path`.
----@field status dbquery.Status
----@field started integer hrtime nanoseconds.
----@field job vim.SystemObj
----@field sessionFile string|nil Backend pid file for server-side cancel.
----@field asked boolean Cancel already requested.
----@field subscribers fun(run: dbquery.Run)[]
+---@field process dbquery.Process
 local Run = {}
 Run.__index = Run
 
----@type dbquery.Run[]
-local live = {}
-
 --- Counts runs, so each one is named in the log it shares with the others.
 local started = 0
-
-local GROUP = vim.api.nvim_create_augroup("db-query.run", { clear = true })
-
--- Kill running clients on exit, because detached processes don't die with nvim.
-vim.api.nvim_create_autocmd("VimLeavePre", {
-  group = GROUP,
-  callback = function()
-    for _, run in ipairs(live) do
-      run.job:kill("sigterm")
-    end
-    live = {}
-  end,
-})
 
 ---@param argument string
 ---@return string
@@ -84,32 +62,6 @@ local function writingTo(argv, log, rows)
     return { "sh", "-c", line .. " >" .. quoted(rows) .. " 2>>" .. quoted(log) }
   end
   return { "sh", "-c", line .. " >>" .. quoted(log) .. " 2>&1" }
-end
-
----@return number
-function Run:elapsed()
-  return (vim.uv.hrtime() - self.started) / 1e9
-end
-
----@param self dbquery.Run
-local function forget(self)
-  for index, run in ipairs(live) do
-    if run == self then
-      table.remove(live, index)
-      return
-    end
-  end
-end
-
---- A client killed by a signal exits with code 0, so the signal decides too.
----@param self dbquery.Run
----@param result vim.SystemCompleted
----@return dbquery.Status
-local function outcome(self, result)
-  if result.code == 0 and result.signal == 0 then
-    return "ok"
-  end
-  return self.asked and "cancelled" or "failed"
 end
 
 ---@param path string
@@ -149,25 +101,16 @@ local function announce(self)
   append(self.log, table.concat(lines, "\n"))
 end
 
---- Handles process exit: writes the footer, puts the rows where they were
---- asked for, updates status, notifies subscribers.
+--- Writes the footer and puts the rows where they were asked for.
 ---
 --- A query that did not finish leaves its results file behind rather than
 --- deleting it, because two runs pointed at the same `-o` path share it and
 --- the one that failed must not take the other's output with it.
 ---@param self dbquery.Run
----@param result vim.SystemCompleted
-local function finish(self, result)
-  local status = outcome(self, result)
-  append(
-    self.log,
-    string.format(
-      "\n[%d %s in %.3fs]\n",
-      self.id,
-      status == "ok" and "finished" or status,
-      self:elapsed()
-    )
-  )
+local function finish(self)
+  local status = self.process.status
+  local label = status == "ok" and "finished" or status
+  append(self.log, string.format("\n[%d %s in %.3fs]\n", self.id, label, self.process:elapsed()))
 
   if self.staged then
     if status == "ok" and self.path then
@@ -175,21 +118,6 @@ local function finish(self, result)
     end
     os.remove(self.staged)
   end
-
-  vim.schedule(function()
-    self.status = status
-    forget(self)
-    if self.sessionFile then
-      os.remove(self.sessionFile)
-    end
-
-    for _, subscriber in ipairs(self.subscribers) do
-      local ok, err = pcall(subscriber, self)
-      if not ok then
-        vim.notify("db-query: " .. tostring(err), vim.log.levels.ERROR)
-      end
-    end
-  end)
 end
 
 --- What one query was asked to do, fixed when the user ran it. Every component
@@ -207,8 +135,8 @@ end
 ---@field outputPath string|nil User-specified output path.
 
 --- Starts the client process. Returns nil when the log cannot be created,
---- when the user declines to write over the results file, or when no client
---- is known for the url.
+--- when the user declines to write over the results file, when no client is
+--- known for the url, or when the process cannot start.
 ---@param ctx dbquery.Context
 ---@return dbquery.Run|nil
 function Run.start(ctx)
@@ -253,48 +181,25 @@ function Run.start(ctx)
     log = log,
     path = path,
     staged = command.staged and staging or nil,
-    status = "running",
-    started = vim.uv.hrtime(),
-    sessionFile = command.sessionFile,
-    asked = false,
-    subscribers = {},
   }, Run)
   announce(self)
 
-  self.job = vim.system(writingTo(command.argv, self.log, command.stdout), {
-    env = command.env,
-    stdin = command.stdin,
-    -- Own process group so cancel signals don't hit nvim.
-    detach = true,
-  }, function(result)
-    finish(self, result)
+  local process, err = Process.start({
+    argv = writingTo(command.argv, log, command.stdout),
+    command = command,
+    askServer = function()
+      return command.sessionFile ~= nil and client.cancel(ctx.resolved, command.sessionFile)
+    end,
+  })
+  if not process then
+    vim.notify("db-query: " .. tostring(err), vim.log.levels.ERROR)
+    return nil
+  end
+  self.process = process
+  process:onFinish(function()
+    finish(self)
   end)
-
-  table.insert(live, self)
   return self
-end
-
---- Calls `subscriber` when the run finishes, or at once when it already has.
----@param subscriber fun(run: dbquery.Run)
-function Run:onFinish(subscriber)
-  if self.status == "running" then
-    table.insert(self.subscribers, subscriber)
-  else
-    subscriber(self)
-  end
-end
-
---- Asks the server to cancel the query when the client recorded its session,
---- and sends SIGINT to the client otherwise. The run stays `running` until
---- the client exits.
-function Run:cancel()
-  if self.asked or self.status ~= "running" then
-    return
-  end
-  self.asked = true
-  if not (self.sessionFile and client.cancel(self.ctx.resolved, self.sessionFile)) then
-    self.job:kill("sigint")
-  end
 end
 
 return Run

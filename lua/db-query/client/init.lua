@@ -7,9 +7,15 @@ client writes wherever it can. Each client is a file in this directory, keyed
 here by the url schemes that reach it.
 ]]
 
+local Process = require("db-query.process")
 local url = require("db-query.url")
 
 local M = {}
+
+--- How the client prints: "text" and "csv" as the user asked, or "value" for
+--- the statement's result alone, unaligned and with no header, echo, or
+--- timing, for output read back into lua.
+---@alias dbquery.CommandFormat dbquery.Format|"value"
 
 ---@class dbquery.Command
 ---@field argv string[]
@@ -22,7 +28,7 @@ local M = {}
 ---@class dbquery.CommandSpec
 ---@field connection string
 ---@field statement string
----@field format dbquery.Format
+---@field format dbquery.CommandFormat
 ---@field kind dbquery.RowKind|nil
 ---@field path string|nil Results file, set whenever `kind` is.
 ---@field staging string|nil Whitespace-free path a client may write to instead of `path`.
@@ -139,35 +145,26 @@ function M.cancel(connection, file)
   return true
 end
 
---- Runs `statement` synchronously and returns the output, blocking nvim until
---- the client exits. Returns nil and shows an error on failure.
+--- Starts `statement` in the "value" format, so its result is the stdout the
+--- process finishes with. Shows an error and returns nil when no client is
+--- known for the url. Returns nil and the reason when the client cannot start.
 ---@param connection string
 ---@param statement string
+---@param timeout integer|nil Milliseconds before the client is killed, nil to wait for it.
+---@return dbquery.Process|nil
 ---@return string|nil
-function M.run(connection, statement)
-  local command = M.command({
-    connection = connection,
-    statement = statement,
-    format = "text",
-  })
+function M.value(connection, statement, timeout)
+  local command = M.command({ connection = connection, statement = statement, format = "value" })
   if not command then
     return nil
   end
-
-  local result = vim.system(command.argv, {
-    text = true,
-    env = command.env,
-    stdin = command.stdin,
-  }):wait()
-  if command.sessionFile then
-    os.remove(command.sessionFile)
-  end
-
-  if result.code ~= 0 then
-    vim.notify(vim.trim(result.stderr or "query failed"), vim.log.levels.ERROR)
-    return nil
-  end
-  return result.stdout or ""
+  return Process.start({
+    command = command,
+    timeout = timeout,
+    askServer = function()
+      return command.sessionFile ~= nil and M.cancel(connection, command.sessionFile)
+    end,
+  })
 end
 
 return M

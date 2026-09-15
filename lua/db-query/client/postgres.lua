@@ -42,7 +42,17 @@ return {
     local argv = { "psql", without, "-w", "--no-psqlrc", "-v", "ON_ERROR_STOP=1" }
     local script
 
-    if spec.path then
+    if spec.format == "value" then
+      vim.list_extend(argv, { "-A", "-t", "-q", "-f", "-" })
+      script = {
+        sendTo(sessionFile),
+        "SELECT pg_backend_pid();",
+        sendTo(nil),
+        spec.statement,
+        ";",
+        "",
+      }
+    elseif spec.path then
       vim.list_extend(argv, { "-f", "-" })
       script = {
         sendTo(sessionFile),

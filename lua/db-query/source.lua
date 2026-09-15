@@ -1,8 +1,9 @@
 --[[
-Coordinates queries from a sql buffer.
+Coordinates what runs from a sql buffer.
 
 A Source ties together a Run, Pane, and Indicator for one buffer. Each buffer
-can have one active query at a time.
+runs one process at a time, a query or a connection test, and starting either
+cancels the one before it.
 ]]
 
 local Indicator = require("db-query.indicator")
@@ -15,7 +16,8 @@ local Run = require("db-query.run")
 ---@class dbquery.Source
 ---@field buf integer
 ---@field pane dbquery.Pane
----@field run dbquery.Run|nil
+---@field run dbquery.Run|nil The last query, whose files the pane shows.
+---@field process dbquery.Process|nil The last process started, a query's or a connection test's.
 ---@field indicator dbquery.Indicator|nil
 ---@field files string[] Result files this buffer's queries have written.
 local Source = {}
@@ -57,8 +59,8 @@ local function showing(buf)
   return nil
 end
 
---- Returns the Source `buf` belongs to, as either the sql buffer or the output
---- its pane is showing, or nil when it belongs to none.
+--- Returns the Source for `buf`, a sql buffer or the output file a pane is
+--- showing, or nil for any other buffer.
 ---@param buf integer
 ---@return dbquery.Source|nil
 function Source.owning(buf)
@@ -68,7 +70,8 @@ function Source.owning(buf)
   return sources[buf] or showing(buf)
 end
 
---- Returns spinner status for `buf` (as source or output pane), or empty string.
+--- Returns the indicator's status for `buf`, as the sql buffer or the output
+--- its pane shows, or an empty string when nothing is running.
 ---@param buf integer
 ---@return string
 function Source.status(buf)
@@ -79,11 +82,24 @@ function Source.status(buf)
   return self.indicator:status()
 end
 
---- Cancels the active query, if any.
+--- Cancels the running process, if any.
 function Source:cancel()
-  if self.run then
-    self.run:cancel()
+  if self.process then
+    self.process:cancel()
   end
+end
+
+--- Cancels the process running before `process` and shows `process` at `place`.
+---@param self dbquery.Source
+---@param process dbquery.Process
+---@param place dbquery.Place
+local function replace(self, process, place)
+  self:cancel()
+  if self.indicator then
+    self.indicator:stop()
+  end
+  self.process = process
+  self.indicator = Indicator.attach(process, place)
 end
 
 --- Puts the log or the last query's result in the pane, reopening the window
@@ -101,15 +117,15 @@ function Source:output(view)
     return self.pane:show(self.run, self.run.log, true)
   end
 
-  if not (self.run.status == "ok" and self.run.path) then
+  if not (self.run.process.status == "ok" and self.run.path) then
     return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
   end
   self.pane:show(self.run, self.run.path, false)
 end
 
---- Cleans up when the source buffer is wiped. Cancels any running query, stops
---- the indicator, and deletes the files this buffer's queries wrote. Leaves
---- existing output windows open.
+--- Cleans up when the source buffer is wiped. Cancels any running process,
+--- stops the indicator, and deletes the files this buffer's queries wrote.
+--- Leaves existing output windows open.
 ---
 --- Deleting here rather than when an output window closes is what lets you
 --- move between the log and the result as often as you like.
@@ -131,13 +147,13 @@ function Source:close()
   sources[self.buf] = nil
 end
 
---- Runs `ctx.sql`, replacing any active query. The previous query is cancelled
---- but may still be finishing when this one starts.
+--- Runs `ctx.sql`, replacing any running process. The one it replaces is
+--- cancelled but may still be finishing when this one starts.
 ---
---- The replacement has to exist before the previous query is cancelled.
+--- The replacement has to exist before the previous process is cancelled.
 --- `Run.start` returns nil for an unknown url scheme, an output path it cannot
 --- write, and an overwrite the user declined, and none of those are a reason to
---- stop the query already running.
+--- stop what is already running.
 ---@param ctx dbquery.Context
 function Source:execute(ctx)
   local run = Run.start(ctx)
@@ -145,20 +161,23 @@ function Source:execute(ctx)
     return
   end
 
-  self:cancel()
-  if self.indicator then
-    self.indicator:stop()
-  end
-
   -- Kept after it finishes, so :DBOutput can still find both files.
-  -- Run:cancel ignores a run that is no longer running.
   self.run = run
   if run.path then
     table.insert(self.files, run.path)
   end
 
-  self.indicator = Indicator.attach(run)
+  replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
   self.pane:display(run)
+end
+
+--- Shows a connection test of `name`, replacing any running process, which is
+--- cancelled. The indicator marks `span`.
+---@param process dbquery.Process
+---@param span [integer, integer]
+---@param name string
+function Source:test(process, span, name)
+  replace(self, process, { buf = self.buf, span = span, label = "testing connection " .. name })
 end
 
 return Source

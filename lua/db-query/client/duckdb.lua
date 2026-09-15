@@ -15,6 +15,9 @@ return {
 
   command = function(spec)
     local argv = { "duckdb" }
+    if spec.format == "value" then
+      vim.list_extend(argv, { "-noheader", "-list" })
+    end
     local file = url.filePath(spec.connection)
     if file ~= "" then
       table.insert(argv, file)

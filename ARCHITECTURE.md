@@ -18,10 +18,11 @@ Entry points:
 
 Objects that make up a running query:
 
-- `run.lua` is the query in flight: the process, the log and results file it is writing, and how it ended.
+- `process.lua` is the client process: how it was started, how it ended, who is told when it does, and how to cancel it. A query and a connection test are each one of these.
+- `run.lua` is the query in flight: the log and results file it is writing, and the process writing them.
 - `pane.lua` is the window showing one of those files.
-- `indicator.lua` is the bar, spinner, clock, and cancel key drawn in the sql buffer.
-- `source.lua` is the buffer queries are run from. It connects the run, indicator, and pane, remembers the files its runs have written, and deletes them when the buffer is wiped.
+- `indicator.lua` is the bar, spinner, label, clock, and cancel key drawn in the sql buffer while a process runs.
+- `source.lua` is the buffer queries are run from. It connects the run, indicator, and pane, holds the one process the buffer is running, remembers the files its runs have written, and deletes them when the buffer is wiped.
 
 Everything else is helper functions:
 
@@ -36,7 +37,7 @@ Everything else is helper functions:
 - `dadbod.lua` holds the calls into vim-dadbod and vim-dadbod-completion: resolving a written url, and pointing completion at a buffer's new `b:db`.
 - `connections.lua` provides the list of connections that the database chooser offers.
 - `url.lua` pulls the scheme, file path, password, and query parameters out of a dadbod url.
-- `client/init.lua`, required as `db-query.client`, maps each url scheme to its client, and through it turns a connection and a statement into a command line, says which kinds of rows the client can write to a file, and names the dialect it reads sql by. Each client is a file beside it: `client/postgres.lua`, `client/sqlite.lua`, `client/duckdb.lua`, and `client/mysql.lua`, which builds both mysql and mariadb.
+- `client/init.lua`, required as `db-query.client`, maps each url scheme to its client, and through it turns a connection and a statement into a command line, says which kinds of rows the client can write to a file, and names the dialect it reads sql by. `client.value` starts a statement whose result comes back to lua, which the connection test and `parquet.lua` use. Each client is a file beside it: `client/postgres.lua`, `client/sqlite.lua`, `client/duckdb.lua`, and `client/mysql.lua`, which builds both mysql and mariadb.
 - `output.lua` names the log, the results file, and the staging file, and decides which files the plugin deletes.
 
 ## Example Execution
@@ -45,8 +46,9 @@ Everything else is helper functions:
   :DBQuery ──┐
              ├──► init.execute ──► Source.of(buf):execute ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┐
   a keymap ──┘         │                    │                                            ╎
-                       ▼                    ├──► Run        cli client process           ╎
-                   db#resolve               │               Run:onFinish() ◄╌╌subscribe╌╌┤
+                       ▼                    ├──► Run        log and results file         ╎
+                   db#resolve               │    └──► Process   cli client process       ╎
+                                            │            Process:onFinish() ◄╌╌subscribe╌╌┤
                                             ├──► Indicator  spinner / timing display ╌╌╌╌┤
                                             └──► Pane       window with log, then rows ╌╌┘
 ```
@@ -62,7 +64,7 @@ Everything else is helper functions:
     - `client.dialect(resolved)` returns the dialect the connection's client reads sql by, and `selection.text(capture, dialect)` returns the sql and its `span`, the first and last line it came from. The statement at the cursor is found here rather than at capture, because where a statement ends depends on the dialect: a `\'` inside a mysql string keeps the string open, and in postgres it closes the string. When the buffer lines above the sql leave a mysql `delimiter` other than `;` in effect, the command that set it is put ahead of the sql, so the client ends the statement where the buffer does. When the statement comes back empty, which happens when the cursor sits between statements, the query is refused with "no query to run".
     - `Source.of(buf):execute(ctx)` starts the work. The `dbquery.Context` holds the request as it stood when the user ran it, the dialect included, and every part of the run reads what it needs from `run.ctx` rather than being handed it.
 
-3. `Source:execute` cancels whatever this buffer was running and stops its indicator, calls `Run.start`, records the results file in `self.files`, then attaches an `Indicator` and calls `Pane:display`. Both of those subscribe to the run.
+3. `Source:execute` calls `Run.start` and stops there when it returns nil, records the results file in `self.files`, then replaces what the buffer was running: it cancels the previous process, stops its indicator, attaches an `Indicator` to the new process, and calls `Pane:display`. The indicator and the pane subscribe to the process after the run's own subscriber, so the footer is in the log before the pane reads it.
 
 4. `Run.start` decides where output goes and starts the client:
 
@@ -72,21 +74,21 @@ Everything else is helper functions:
     - `output.path(srcName, extension, chosen)` names the results file and creates it empty. `output.staging(extension)` names a file in the cache directory, with no whitespace in its path, for a client that cannot write to the results path itself.
     - `client.command(spec)` returns the argv, env, stdin, and where the client records its server session, plus either `stdout`, a file the shell must catch stdout in, or `staged`, meaning the client wrote to the staging file.
     - `announce` appends a header to the log, so the pane has something to show before the client prints anything.
-    - `writingTo` wraps the argv in `sh -c`. Both streams append to the log, unless the command named a `stdout` file, in which case stdout goes there and only stderr reaches the log. `vim.system` runs it detached.
+    - `writingTo` wraps the argv in `sh -c`. Both streams append to the log, unless the command named a `stdout` file, in which case stdout goes there and only stderr reaches the log. `Process.start` runs it through `vim.system`, detached, and the run subscribes `finish` to the process before anything else can.
 
-5. When the client exits, `finish` appends the `[1 finished in 1.234s]` footer to the log, moves a staged file onto the results path when the run succeeded, then schedules the status change and calls every subscriber. Each subscriber is called in a `pcall`, so that one throwing cannot stop the rest. If `Pane` threw while opening the window, `Indicator` would never be told to stop and the spinner would run forever.
+5. When the client exits, `Process` schedules onto the main loop, sets `result` and `status`, removes the session file, and calls every subscriber in the order they subscribed. `status` is `ok` when the exit code is 0 and no signal ended the client, `cancelled` when a cancel was asked, and `failed` otherwise. Each subscriber is called in a `pcall`, so that one throwing cannot stop the rest. The run's `finish` appends the `[1 finished in 1.234s]` footer to the log and moves a staged file onto the results path when the run succeeded.
 
-6. `Indicator:stop` removes the bar and the cancel key. `Pane` opens the results file when the run succeeded and produced one, and otherwise reloads the log so its footer shows.
+6. `Indicator:stop` removes the bar and the cancel key. `Pane` opens the results file when the process's status is `ok` and the run produced one, and otherwise reloads the log so its footer shows.
 
 ## Design Decisions
 
-**A buffer runs one query at a time.** Starting a second query cancels the first. The reason is `indicator.lua`: the bar, the extmarks, and the cancel key are buffer-local, so a second query would draw over the first and take its key. `source.lua` is where this rule is kept.
+**A buffer runs one process at a time**, a query or a connection test, and starting either cancels the one before it. The reason is `indicator.lua`: the bar, the extmarks, and the cancel key are buffer-local, so a second process would draw over the first and take its key. `source.lua` is where this rule is kept. A query asked for while a test is pending never reaches it, because `init.execute` refuses the query, as "Connections" describes.
 
-**`run.lua` reads no buffers and opens no windows.** A Run holds a process and two file paths. `Run:onFinish` registers a callback, and a Run with no callbacks is fine. `parquet.lua` runs its `create view` through `client.run` with nothing drawn.
+**`process.lua` and `run.lua` read no buffers and open no windows.** A Process holds the job and how it ended, `Process:onFinish` registers a callback, and a Process with no callbacks is fine. A Run adds the log and results file. `parquet.lua` runs its `create view` through `client.value` with nothing drawn.
 
-**Cancelling is a request.** `Run:cancel` queries the server through a second connection where there is one (`pg_cancel_backend`) and sends `SIGINT` where there is not, then leaves the run `running` until the client actually exits and reports the cancellation itself. So a query that has been replaced is still running and can still finish. `Pane` compares `self.run == run` before touching the window, and `Pane:stop` disconnects it from a run it no longer shows.
+**Cancelling is a request.** `Process:cancel` queries the server through a second connection where there is one (`pg_cancel_backend`) and sends `SIGINT` where there is not, then leaves the process `running` until the client actually exits, when the status becomes `cancelled`. So a query that has been replaced is still running and can still finish. `Pane` compares `self.run == run` before touching the window, and `Pane:stop` disconnects it from a run it no longer shows.
 
-**Output never passes through lua.** Anything that reads a result file into a lua string reintroduces the memory cost this design exists to avoid.
+**Output never passes through lua.** Anything that reads a result file into a lua string reintroduces the memory cost this design exists to avoid. The one exception is `client.value`, which runs a statement in the `value` format and leaves its stdout on the process for the caller. Its result is a few bytes, the connection test's `select 1` and the parquet view's `create view`, and never rows.
 
 **The client's output is not parsed.** What is in the log is what the client printed, between the header `announce` writes and the footer `finish` writes. The results file holds what the client wrote and nothing else.
 
@@ -132,9 +134,9 @@ A password is written in either of two places, the credentials before the last `
 
 Two grammars are in play, and mixing them lets a password through. psql gets its url whole, so libpq is what parses it: no fragment, `&` as the only separator, percent-escapes and nothing else. `url.withoutPassword` reads the query that way and leaves every parameter it keeps byte for byte, so what psql receives is what was written minus the password. mysql and mariadb take flags instead, so `arguments` in `client/mysql.lua` splits the url up with `url.query`, which follows dadbod: a fragment goes with the query string, `&` and `;` both separate, `+` in a value is a space, `?compress` with no value becomes `--compress=1`, and a parameter with an empty name is dropped. Each parameter that comes back becomes `--key=value` on the command line. Both paths recognize the `password` name decoded, so `?%70assword=` cannot walk a password onto the command line. sqlite and duckdb urls hold a file path, which `url.filePath` returns whole.
 
-`connect.lua` decides what goes in `b:db`. A buffer takes its connection from its modeline when it has one, and otherwise from `g:db`, which only the picker sets. A connection from the modeline or the picker is tested before it is stored, by running `select 1` through `client.command` on `vim.system` with a 10 second timeout, so nvim stays responsive while an unreachable host is tried. One that answers goes in `b:db` and `b:db_name`, and `dadbod.refetch` calls `vim_dadbod_completion#fetch`. That plugin records a buffer's database at `FileType`, when a modeline buffer's `b:db` is still empty and it falls back to `g:db`, and keeps it. Its `fetch` reads `w:db`, `t:db`, `b:db`, and `g:db` from the current window and buffer rather than the buffer it is given, so `refetch` runs it inside `nvim_buf_call`. One that fails clears `b:db` and sets `b:db_name` to `<name> CONNECTION ERROR`. `g:db` is copied into new buffers untested, because only a connection that answered is ever put there. A client marked `embedded` in its file under `client/`, sqlite3 or duckdb, passes without a test, because opening the file would create it when it is missing and fail when another duckdb process holds its lock.
+`connect.lua` decides what goes in `b:db`. A buffer takes its connection from its modeline when it has one, and otherwise from `g:db`, which only the picker sets. A connection from the modeline or the picker is tested before it is stored, by running `select 1` through `client.value` with a 10 second timeout, so nvim stays responsive while an unreachable host is tried. `Source:test` shows the test with an indicator labelled `testing connection <name>`, on the modeline row when the buffer has one, otherwise on the statement at the cursor, read by the connection's dialect, and otherwise on the cursor's row. The indicator's cancel key cancels the test, and a cancelled test fails the way one the server refused does. One that answers goes in `b:db` and `b:db_name`, and `dadbod.refetch` calls `vim_dadbod_completion#fetch`. That plugin records a buffer's database at `FileType`, when a modeline buffer's `b:db` is still empty and it falls back to `g:db`, and keeps it. Its `fetch` reads `w:db`, `t:db`, `b:db`, and `g:db` from the current window and buffer rather than the buffer it is given, so `refetch` runs it inside `nvim_buf_call`. One that fails clears `b:db` and sets `b:db_name` to `<name> CONNECTION ERROR`. `g:db` is copied into new buffers untested, because only a connection that answered is ever put there. A client marked `embedded` in its file under `client/`, sqlite3 or duckdb, passes without a test, because opening the file would create it when it is missing and fail when another duckdb process holds its lock.
 
-Each buffer keeps only its latest test, so a slow one that finishes after the user chose something else is dropped. Until the latest one finishes, `b:db` still holds the connection it may replace, so `execute` refuses a query in that time. Queuing the query instead would let several pile up behind one test, and when that test failed each of them would open its own picker.
+Each buffer keeps only its latest test, so a slow one that finishes after the user chose something else is dropped: `Source:test` cancels the process of the test before it, and `assign` checks that its test is still the buffer's latest before it touches `b:db` or reports a failure, so a replaced test is cancelled without a notification. `follow` cancels a pending test when it drops it, which happens when the modeline names a connection missing from the list or goes back to the one already in `b:db`. Until the latest one finishes, `b:db` still holds the connection it may replace, so `execute` refuses a query in that time. Queuing the query instead would let several pile up behind one test, and when that test failed each of them would open its own picker.
 
 `dadbod.resolve` returns nil for an empty `b:db` rather than handing it to `db#resolve`, which would resolve it to `w:db`, `t:db`, `g:db`, or `$DATABASE_URL`. A buffer whose modeline connection failed has an empty `b:db`, and a query from it has to open the picker rather than run against a database the modeline never named.
 
@@ -238,7 +240,7 @@ Two schemes can share one client. `postgres` and `postgresql` both map to `clien
 
 - `connection`, the resolved url.
 - `statement`, the sql.
-- `format`, `"text"` or `"csv"`.
+- `format`, `"text"`, `"csv"`, or `"value"`.
 - `kind`, the row kind, or nil when the run has no results file.
 - `path`, the results file, set whenever `kind` is.
 - `staging`, a whitespace-free path in the cache directory the client may write to in place of `path`.
@@ -253,4 +255,6 @@ It returns a `dbquery.Command`:
 
 When `spec.path` is nil, the command must make the client print its own transcript to stdout, since everything it prints goes to the log. When `spec.path` is set, the command must put the rows in that file and nothing else, either by telling the client to write there, by writing to `spec.staging` and returning `staged = true`, or by returning `stdout = spec.path`.
 
-Add `cancel` only if the database has a server that can be asked to stop a query. It takes the connection and a session id and returns the argv that cancels. To get that session id, `command` must also return `sessionFile`, a path the client writes its own server-side id to. `client.cancel` reads the number out of that file. Without both, `Run:cancel` falls back to sending `SIGINT` to the client, which is the right thing for an embedded database like duckdb or sqlite3 that has no server to ask.
+When `format` is `"value"`, `spec.path` is nil and the command must make the client print the statement's result alone to stdout, unaligned, with no header, echo, or timing, because `client.value` hands that stdout back to lua. psql runs with `-A -t -q`, and its script still records the backend pid in `sessionFile` so the test can be cancelled server-side. mysql and mariadb run with `--batch --skip-column-names --raw`, sqlite3 with `-batch -noheader -list`, and duckdb with `-noheader -list`.
+
+Add `cancel` only if the database has a server that can be asked to stop a query. It takes the connection and a session id and returns the argv that cancels. To get that session id, `command` must also return `sessionFile`, a path the client writes its own server-side id to. `client.cancel` reads the number out of that file. Without both, `Process:cancel` falls back to sending `SIGINT` to the client, which is the right thing for an embedded database like duckdb or sqlite3 that has no server to ask.

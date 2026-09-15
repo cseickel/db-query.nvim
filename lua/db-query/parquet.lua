@@ -28,38 +28,37 @@ local function identifier(name)
   return '"' .. name:gsub('"', '""') .. '"'
 end
 
---- Creates a view for `path` in the shared database. Returns nil on failure.
+--- Creates a view for `path` in the shared database, then calls `opened` with
+--- the url and lines of the query against it. When the view cannot be created,
+--- the query reads the file by its path instead.
 ---@param path string
----@return string|nil name
-local function define(path)
+---@param opened fun(url: string, lines: string[])
+local function open(path, opened)
   local name = vim.fn.fnamemodify(path, ":t:r")
-  local sql = string.format(
+  local byPath = { "select *", "from " .. literal(path), "limit 1000;" }
+
+  local process, err = client.value(URL, string.format(
     "create or replace view %s as select * from %s;",
     identifier(name),
     literal(path)
-  )
-  if client.run(URL, sql) == nil then
-    return nil
+  ))
+  if not process then
+    if err then
+      vim.notify("db-query: " .. err, vim.log.levels.ERROR)
+    end
+    -- Scheduled, because the query opens a window, which BufReadCmd forbids.
+    return vim.schedule(function()
+      opened("duckdb:", byPath)
+    end)
   end
-  return name
-end
 
---- Returns the initial query for `path`. Falls back to querying by path if
---- view creation fails.
----@param path string
----@return { url: string, lines: string[] }
-local function opening(path)
-  local name = define(path)
-  if not name then
-    return {
-      url = "duckdb:",
-      lines = { "select *", "from " .. literal(path), "limit 1000;" },
-    }
-  end
-  return {
-    url = URL,
-    lines = { "select *", "from " .. identifier(name), "limit 1000;" },
-  }
+  process:onFinish(function(_, result)
+    if process.status ~= "ok" then
+      vim.notify("db-query: " .. vim.trim(result.stderr or "create view failed"), vim.log.levels.ERROR)
+      return opened("duckdb:", byPath)
+    end
+    opened(URL, { "select *", "from " .. identifier(name), "limit 1000;" })
+  end)
 end
 
 ---@param group integer
@@ -69,24 +68,23 @@ function M.setup(group)
     pattern = "*.parquet",
     callback = function(event)
       local path = vim.fn.fnamemodify(event.match, ":p")
+      local buf = event.buf
 
       vim.fn.mkdir(SCRATCH, "p")
-      vim.api.nvim_buf_set_name(
-        event.buf,
-        string.format("%s/%s.sql", SCRATCH, vim.fn.fnamemodify(path, ":t:r"))
-      )
+      vim.api.nvim_buf_set_name(buf, string.format("%s/%s.sql", SCRATCH, vim.fn.fnamemodify(path, ":t:r")))
 
-      local opened = opening(path)
-      vim.api.nvim_buf_set_lines(event.buf, 0, -1, false, opened.lines)
-      -- Before the filetype, whose autocmd gives a buffer with no b:db the g:db
-      -- connection and its name.
-      vim.b[event.buf].db = opened.url
-      vim.bo[event.buf].filetype = "sql"
-      vim.bo[event.buf].modified = false
+      open(path, function(url, lines)
+        if not vim.api.nvim_buf_is_loaded(buf) then
+          return
+        end
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        -- Before the filetype, whose autocmd gives a buffer with no b:db the g:db
+        -- connection and its name.
+        vim.b[buf].db = url
+        vim.bo[buf].filetype = "sql"
+        vim.bo[buf].modified = false
 
-      -- Scheduled because execute opens a window during BufReadCmd.
-      vim.schedule(function()
-        if vim.api.nvim_get_current_buf() == event.buf then
+        if vim.api.nvim_get_current_buf() == buf then
           require("db-query").execute({ format = "csv" })
         end
       end)

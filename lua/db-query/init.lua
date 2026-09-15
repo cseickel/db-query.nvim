@@ -157,8 +157,9 @@ function M.output(view)
   source:output(view)
 end
 
---- Returns the spinner and elapsed time for a winbar or statusline, or an
---- empty string when no query is running in `buf`.
+--- Returns the spinner, what is running, and elapsed time for a winbar or
+--- statusline, or an empty string when no query or connection test is running
+--- in `buf`.
 ---
 ---     vim.o.winbar = "%{%v:lua.require'db-query'.status()%}"
 ---

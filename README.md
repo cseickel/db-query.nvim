@@ -26,7 +26,7 @@ With lazy.nvim:
 
 The first time you run a query, db-query asks which database to use. The list opens through `vim.ui.select`, so you get whatever picker you have configured. Your choice is stored on the buffer until you change it, and new `.sql` buffers reuse the last connection. Use `:DBConnect` to point a buffer at a different database.
 
-A connection is tested with `select 1` before the buffer takes it. One that fails, or gives no answer within 10 seconds, leaves the buffer with no connection and `b:db_name` reading `<name> CONNECTION ERROR`, and the next query opens the picker. A query you run while the test is under way is refused, and you run it again once the test answers. sqlite and duckdb files are taken without a test.
+A connection is tested with `select 1` before the buffer takes it. The test shows the same bar and spinner a query does, labelled `testing connection <name>`, on the `@db-query` line when the file has one and otherwise at the cursor, and the cancel key stops it. One that fails, is cancelled, or gives no answer within 10 seconds, leaves the buffer with no connection and `b:db_name` reading `<name> CONNECTION ERROR`, and the next query opens the picker. A query you run while the test is under way is refused, and you run it again once the test answers. Picking a connection while a query runs cancels the query. sqlite and duckdb files are taken without a test.
 
 This was designed to fit within the [vim-dadbod](https://github.com/tpope/vim-dadbod) ecosystem, so if you use that then it will pick up your existing configured connections. If you have [vim-dadbod-completion](https://github.com/kristijanhusak/vim-dadbod-completion) installed, it will utilize the connection this plugin sets.
 
@@ -85,8 +85,8 @@ require("db-query").setup({
   -- Open a `.parquet` file as a duckdb query against it.
   parquet = false,
 
-  -- The key that stops a running query, bound only while one is running. You
-  -- can change it, but not disable it.
+  -- The key that stops a running query or connection test, bound only while
+  -- one is running. You can change it, but not disable it.
   -- Omitting this setting will just revert it to the default.
   cancel = "<C-c>",
 
@@ -147,7 +147,7 @@ Set `output_dir` in `setup` to write results somewhere else. That turns `output_
 
 ## Keys
 
-The only key the plugin binds by default is `cancel`, and only while a query is running. Here are some example bindings:
+The only key the plugin binds by default is `cancel`, and only while a query or a connection test is running. Here are some example bindings:
 
 ```lua
 vim.keymap.set("n", "<M-x>", function()
@@ -173,9 +173,9 @@ end, { desc = "switch between the log and the rows" })
 
 ## While a query runs
 
-A bar marks the lines that are running, continuing onto a line beneath them with a spinner, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
+A bar marks the lines that are running, continuing onto a line beneath them with a spinner, `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
-You can call `status(buf)` to get the same spinner and timer in your winbar or statusline:
+You can call `status(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested:
 
 ```lua
 local text = require("db-query").status(vim.api.nvim_get_current_buf())
@@ -196,7 +196,7 @@ vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
 
 ## Parquet
 
-With `parquet = true`, opening a `.parquet` file runs a query through duckdb instead. The buffer keeps the original name with the extension changed to `.sql`. The duckdb instance is ephemeral and loads the parquet file as a view so that vim-dadbod-completion can read the schema. It does not import the data.
+With `parquet = true`, opening a `.parquet` file runs a query through duckdb instead. The buffer keeps the original name with the extension changed to `.sql`. The duckdb instance is ephemeral and loads the parquet file as a view so that vim-dadbod-completion can read the schema. It does not import the data. The buffer stays empty until the view exists, and when duckdb cannot create it the query reads the file by its path instead.
 
 This won't work with lazy loading, because the plugin has to be enabled to intercept the file:
 

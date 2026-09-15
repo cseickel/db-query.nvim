@@ -74,7 +74,9 @@ local function client(binary)
       local connects = arguments(spec.connection)
       local argv = { binary }
       -- --batch prints tab-separated rows in place of the ascii table.
-      if spec.format == "csv" and spec.path then
+      if spec.format == "value" then
+        vim.list_extend(argv, { "--batch", "--skip-column-names", "--raw" })
+      elseif spec.format == "csv" and spec.path then
         table.insert(argv, "--batch")
       end
       vim.list_extend(argv, connects.argv)

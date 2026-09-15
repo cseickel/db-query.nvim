@@ -156,12 +156,12 @@ function Pane:display(run)
   self.timer = vim.uv.new_timer()
   self.timer:start(REFRESH, REFRESH, vim.schedule_wrap(refresh))
 
-  run:onFinish(function()
+  run.process:onFinish(function()
     if self.run ~= run then
       return
     end
     self:unfollow()
-    if run.status == "ok" and run.path then
+    if run.process.status == "ok" and run.path then
       self:show(run, run.path, false)
     else
       self:show(run, run.log, true)
