@@ -25,7 +25,6 @@ local config = require("db-query.config")
 ---@field key string Cancel keybinding.
 ---@field width integer Display width of the last line.
 ---@field process dbquery.Process
----@field frame integer Current spinner frame.
 ---@field timer uv.uv_timer_t|nil Nil after stop().
 local Indicator = {}
 Indicator.__index = Indicator
@@ -40,6 +39,22 @@ local NAMESPACE = vim.api.nvim_create_namespace("db_query_indicator")
 local SPINNER = 1
 local RANGE = 2
 local FRAME_TIME = 80
+Indicator.FRAME_TIME = FRAME_TIME
+
+---@param seconds number
+---@return string
+local function frameAt(seconds)
+  return FRAMES[math.floor(seconds * 1000 / FRAME_TIME) % #FRAMES + 1]
+end
+
+--- Returns the spinner, `label`, and `seconds` for a winbar or statusline, with
+--- any `%` in the label doubled, since the statusline reads `%` as a format item.
+---@param label string
+---@param seconds number
+---@return string
+function Indicator.format(label, seconds)
+  return string.format("%s %s %.1fs", frameAt(seconds), label:gsub("%%", "%%%%"), seconds)
+end
 
 local UNDERLINE = "DbQueryIndicatorUnderline"
 
@@ -92,7 +107,7 @@ function Indicator:drawSpinner()
   local indent = textColumn(self.buf)
   local text = BAR
     .. string.rep(" ", indent - 1)
-    .. string.format("%s  %s  %.1fs    %s to cancel", FRAMES[self.frame], self.label, self.process:elapsed(), self.key)
+    .. string.format("%s  %s  %.1fs    %s to cancel", frameAt(self.process:elapsed()), self.label, self.process:elapsed(), self.key)
   text = text .. string.rep(" ", indent + self.width - vim.fn.strdisplaywidth(text))
 
   vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, at, 0, {
@@ -109,7 +124,7 @@ function Indicator:status()
   if self.process.status ~= "running" then
     return ""
   end
-  return string.format("%s %s %.1fs", FRAMES[self.frame], self.label, self.process:elapsed())
+  return Indicator.format(self.label, self.process:elapsed())
 end
 
 --- Advances the spinner and triggers a redraw. Skipped if the indicator has
@@ -118,7 +133,6 @@ function Indicator:tick()
   if not self.timer then
     return
   end
-  self.frame = self.frame % #FRAMES + 1
   if vim.api.nvim_buf_is_loaded(self.buf) then
     self:drawSpinner()
   end
@@ -159,7 +173,6 @@ function Indicator.attach(process, place)
     label = place.label,
     key = config.values.cancel,
     process = process,
-    frame = 1,
     timer = vim.uv.new_timer(),
   }, Indicator)
   self.width = self:textWidth()

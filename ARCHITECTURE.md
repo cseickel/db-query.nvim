@@ -12,8 +12,8 @@ Config:
 
 Entry points:
 
-- `init.lua` is the public API: `setup`, `execute`, `connect`, `output`, `outputDir`, and `status`. Keymaps can call it directly.
-- `command.lua` registers `:DBQuery`, `:DBQueryStatement`, `:DBConnect`, `:DBOutput`, and `:DBOutputDir`, and parses their `-f` and `-o` arguments into what `init.lua` takes.
+- `init.lua` is the public API: `setup`, `execute`, `connect`, `output`, `outputDir`, `refreshCatalog`, `cancelCatalog`, and `status`. Keymaps can call it directly.
+- `command.lua` registers `:DBQuery`, `:DBQueryStatement`, `:DBConnect`, `:DBOutput`, `:DBOutputDir`, and `:DBRefreshCatalog`, and parses their `-f` and `-o` arguments into what `init.lua` takes.
 - `parquet.lua` turns a `*.parquet` being opened into a duckdb query against it.
 
 Objects that make up a running query:
@@ -21,12 +21,12 @@ Objects that make up a running query:
 - `process.lua` is the client process: how it was started, how it ended, who is told when it does, and how to cancel it. A query and a connection test are each one of these.
 - `run.lua` is the query in flight: the log and results file it is writing, and the process writing them.
 - `pane.lua` is the window showing one of those files.
-- `indicator.lua` is the bar, spinner, label, clock, and cancel key drawn in the sql buffer while a process runs.
+- `indicator.lua` is the bar, spinner, label, clock, and cancel key drawn in the sql buffer while a process runs. `Indicator.format` is the spinner, label, and clock as one line for a winbar or statusline, which a catalog read shows through it too.
 - `source.lua` is the buffer queries are run from. It connects the run, indicator, and pane, holds the one process the buffer is running, remembers the files its runs have written, and deletes them when the buffer is wiped.
 
 The catalog of each database, read in the background. Nothing reads it yet, as with the cursor context the modules under `sql/` compute:
 
-- `catalog/init.lua`, required as `db-query.catalog`, keeps one catalog per database and reads it through the client's built-in `catalog` function or the one `catalog.clients` names. `get` returns what is known and `refresh` reads again. "Catalog" below describes it.
+- `catalog/init.lua`, required as `db-query.catalog`, keeps one catalog per database, starting from the one the last session saved to disk, and reads it through the client's built-in `catalog` function or the one `catalog.clients` names. `get` returns what is known, `refresh` reads again, `cancel` stops a read, and `reading` says how long one has been running. "Catalog" below describes it.
 - `catalog/shape.lua` defines `dbquery.Catalog` and checks that a catalog a function returned has that shape.
 - `catalog/rows.lua` holds what the built-in functions share: running several queries at once, reading one json object per line, grouping column rows into relations, and reading the labels out of an `enum('a', 'b')` type.
 
@@ -44,7 +44,7 @@ Everything else is helper functions:
 - `connections.lua` provides the list of connections that the database chooser offers.
 - `url.lua` pulls the scheme, file path, password, and query parameters out of a dadbod url.
 - `client/init.lua`, required as `db-query.client`, maps each url scheme to its client, and through it turns a connection and a statement into a command line, says which kinds of rows the client can write to a file, and names the dialect it reads sql by. `client.value` starts a statement whose result comes back to lua, which the connection test, the catalog, and `parquet.lua` use. Each client is a file beside it: `client/postgres.lua`, `client/sqlite.lua`, `client/duckdb.lua`, and `client/mysql.lua`, which builds both mysql and mariadb. Each holds the built-in function that reads its database's catalog.
-- `output.lua` names the log, the results file, and the staging file, and decides which files the plugin deletes.
+- `output.lua` names the log, the results file, the staging file, and the file a database's catalog is saved in, and decides which files the plugin deletes.
 
 ## Example Execution
 
@@ -94,7 +94,7 @@ Everything else is helper functions:
 
 **Cancelling is a request.** `Process:cancel` queries the server through a second connection where there is one (`pg_cancel_backend`) and sends `SIGINT` where there is not, then leaves the process `running` until the client actually exits, when the status becomes `cancelled`. So a query that has been replaced is still running and can still finish. `Pane` compares `self.run == run` before touching the window, and `Pane:stop` disconnects it from a run it no longer shows.
 
-**Query rows go to files, never through lua.** Collecting a large result set into a lua string through `vim.system` ran nvim out of memory, which shows as `E41`. So `run.lua` has the client write its rows to a file and never reads that file. `client.value` runs a statement in the `value` format and leaves its stdout on the process for the caller, and is used only for output known to be small: the connection test's `select 1`, the parquet view's `create view`, and the catalog queries, whose output on the largest database seen is about 2 MB.
+**Query rows go to files, never through lua.** Collecting a large result set into a lua string through `vim.system` ran nvim out of memory, which shows as `E41`. So `run.lua` has the client write its rows to a file and never reads that file. `client.value` runs a statement in the `value` format and leaves its stdout on the process for the caller, and is used only for output known to be small: the connection test's `select 1`, the parquet view's `create view`, and the catalog queries, whose output on the largest database seen is about 6 MB.
 
 **The client's output is not parsed.** What is in the log is what the client printed, between the header `announce` writes and the footer `finish` writes. The results file holds what the client wrote and nothing else.
 
@@ -152,24 +152,42 @@ The modeline is read on `FileType` and `BufWritePost`. The `FileType` handler re
 
 ## Catalog
 
-`catalog/init.lua` keeps one `dbquery.CatalogEntry` per database, keyed by the url without its password, or by the scheme and file path for sqlite and duckdb, so two buffers on the same database share one catalog and a password change does not make a second one. An entry holds the last catalog read, the queries of the read under way, and a generation counter.
+`catalog/init.lua` keeps one `dbquery.CatalogEntry` per database, keyed by the url without its password, or by the scheme and file path for sqlite and duckdb, so two buffers on the same database share one catalog and a password change does not make a second one. An entry holds the last catalog read, the queries of the read under way, when that read started, and a generation counter.
 
-`catalog.get(connection)` returns the entry's catalog, or nil when none has been read. It starts a read only when the database has no entry at all, so a read that failed is not repeated on every call: the entry exists with no catalog until something calls `refresh`.
+`catalog.get(connection)` returns the entry's catalog, or nil when none has been read. The first call for a database creates its entry, holding the catalog the last session saved for that key, and starts a read, so a saved catalog is there at once and a fresh one replaces it when the read finishes. No later call starts a read, so a read that failed is not repeated on every call: the entry keeps what it has until something calls `refresh`.
 
-`catalog.refresh(connection)` starts a read and replaces the one under way. It cancels that read's queries, and bumps the generation, so a result or a query callback from the replaced read is dropped when it arrives. For a sqlite or duckdb file that does not exist, it stores an empty catalog without a read, because opening a missing file read-only fails and the database holds nothing until something creates it. Otherwise it builds a `dbquery.CatalogRequest` and calls the catalog function with it and a `done` callback:
+`catalog.refresh(connection)` starts a read and replaces the one under way. It cancels that read's queries, and bumps the generation, so a result or a query callback from the replaced read is dropped when it arrives. For a sqlite or duckdb file that does not exist, it stores an empty catalog without a read, because opening a missing file read-only fails and the database holds nothing until something creates it. Otherwise it records the start time on the entry, builds a `dbquery.CatalogRequest`, and calls the catalog function with it and a `done` callback:
 
 - `client`, the client's `name`.
 - `connection`, the resolved url.
 - `timeout`, the `catalog.timeout` setting for a built-in function, and nil for one from `catalog.clients`, which sets its own.
 - `query(statement, opts, callback)`, which runs `statement` through `client.value` with `readonly = true` and `opts.timeout`, records the process on the entry so a later `refresh` can cancel it, and calls `callback` with the process's stdout when its status is `ok` and otherwise with nil and `Process:reason`. After the read is replaced or finished, `query` does nothing.
 
-`done(catalog, err)` counts only the first time and only for the current generation. It cancels any query still running. The read fails when `err` is set, when `catalog` is nil, or when `shape.problem(catalog)` finds a field of the wrong type. A failed read keeps the catalog from before it and notifies with the problem and `:DBRefreshCatalog retries`. An error thrown by the catalog function, or by a query callback, which runs long after the function returned, is caught and fails the read the same way.
+`done(catalog, err)` counts only the first time and only for the current generation. It cancels any query still running. The read fails when `err` is set, when `catalog` is nil, or when `shape.problem(catalog)` finds a field of the wrong type. A failed read keeps the catalog from before it and notifies with the key, the problem, and `:DBRefreshCatalog retries`. A read that succeeds stores the catalog, notifies with the key and the seconds it took, and saves the file described under "The saved file". An error thrown by the catalog function, or by a query callback, which runs long after the function returned, is caught and fails the read the same way. A function from `catalog.clients` may call `done` from a libuv callback, where `vim.notify` and the `vim.fn` calls `save` makes are refused, so `done` reschedules itself onto the main loop when `vim.in_fast_event()` says so.
+
+`catalog.timeout` reaches a built-in function as `request.timeout`, and the function passes it to each of its queries. That is the only place it applies. A function from `catalog.clients` gets `request.timeout = nil` and sets its own through `opts.timeout`, so one that never calls `done` leaves the read running until `refresh` or `cancel` ends it. That is intended: the read is hung, and the spinner says so.
 
 Three things call `refresh`:
 
 - `connect.lua`, when a connection test answers. A sqlite or duckdb connection answers without a test, so its catalog is read as soon as the buffer takes it.
 - `Source:execute`, when the process finishes, for a query where `sql.defines` finds a statement starting with one of the dialect's `definitions`, such as `create` or `drop`. It runs whatever the exit status, because a script that failed or was cancelled may have run its definitions before it stopped.
 - `:DBRefreshCatalog`, which is `require("db-query").refreshCatalog(buf)`, for the buffer's `b:db`.
+
+`catalog.cancel(connection)`, which `:DBRefreshCatalog cancel` reaches through `require("db-query").cancelCatalog(buf)`, stops the read under way for the buffer's database: it cancels the read's queries, bumps the generation so a `done` that arrives later is dropped, clears the start time, and notifies. The catalog from before the read stays. With no read running it warns and changes nothing.
+
+### Showing a read
+
+While `entry.started` is set on any entry, a module timer in `catalog/init.lua` redraws every statusline and winbar each `Indicator.FRAME_TIME`, 80 ms, and stops when the last read ends. A read still running `NOTICE_AFTER` milliseconds, 2 seconds, after it started notifies with `reading the catalog of <key>`.
+
+`catalog.reading(connection)` returns the seconds the read of that database has been running, or nil. It takes a function returning the resolved url rather than the url itself, and calls it only when some read is running, because a statusline evaluates on every redraw and `db#resolve` is a vimscript call. `init.status(buf)` builds on it: a query or connection test in the buffer shows first, through `Source.status`, and otherwise the read of the buffer's database shows as `reading catalog <b:db_name>` with the clock. `status` keeps the resolved url of each `b:db` it has seen in a module table, so a redraw resolves each written url once. `Indicator.format(label, seconds)` produces that line, and `Indicator:status` uses the same function for a process, so both double any `%` in the label, which the statusline would otherwise read as a format item. The spinner frame comes from the elapsed time, so a statusline and a virtual line for the same seconds show the same frame.
+
+### The saved file
+
+`output.catalog(key)` returns `stdpath("cache")/db-query/catalog/<sha256 of key>.json`, creating the directory with mode `0700`, since the file lists every table, column, and comment of a database. The key is the entry's key, so the file name holds no password and the same database from two sessions maps to one file.
+
+The file is a `dbquery.SavedCatalog`, `{ version, catalog }`. `VERSION` in `catalog/init.lua` is 1, and every change to `dbquery.Catalog` raises it. `load(key)` runs when an entry is first created and returns the saved catalog or nil, and with nil the entry starts with no catalog. It returns nil for a file that is not json, has no numeric `version`, or has a version above `VERSION`. A version below `VERSION` is stepped up one at a time through `UPGRADES`, a table keyed by the version a step upgrades from. A version with no step, or a step returning nil, throws the file away, which is the path for a shape change that needs data only a fresh read has. The upgraded catalog then has to pass `shape.problem`, like a catalog a function returned. `UPGRADES` is empty while `VERSION` is 1.
+
+`save(key, catalog)` encodes the file in a `pcall`, writes it to `<path>.<pid>`, checks the write and the close, and renames it onto `<path>`, so two nvims saving the same database at once never leave a mixed file, and a save that fails at any step removes its partial file, leaves the old saved file, and notifies with the error. `output.sweep()` at `setup` removes a `<hash>.json.<pid>` whose pid is no longer running, for an nvim killed mid-save.
 
 ### The shape
 
@@ -207,7 +225,9 @@ A `-o` path goes through `output.destination`: a relative path is resolved from 
 
 `output.owns(path)` returns whether the plugin should delete that file. It returns true when the file is under `output.directory()` and that directory is one the plugin clears up. The default directory under the cache is always cleared. A custom `output_dir` set in config is cleared unless `output_cleanup` is off, and a `:DBOutputDir` path is never cleared. `Source:close` runs on the sql buffer's `BufWipeout` and deletes the log and every file in `self.files` that `output.owns`.
 
-`output.sweep()` runs at `setup` and deletes cache subdirectories whose pid is no longer running. That is what covers an nvim that was killed, since a file is otherwise deleted with the sql buffer that produced it.
+`output.sweep()` runs at `setup` and deletes cache subdirectories whose pid is no longer running, and the partly written catalog files under `catalog/` whose pid suffix is not running. That is what covers an nvim that was killed, since a file is otherwise deleted with the sql buffer that produced it.
+
+Saved catalogs live in `stdpath("cache") .. "/db-query/catalog/"`, outside any pid directory, so they survive the sweep and the next session finds them. "The saved file" under "Catalog" describes them.
 
 ## Reading sql
 

@@ -12,6 +12,7 @@ local command = require("db-query.command")
 local config = require("db-query.config")
 local connect = require("db-query.connect")
 local dadbod = require("db-query.dadbod")
+local Indicator = require("db-query.indicator")
 local output = require("db-query.output")
 local selection = require("db-query.selection")
 local Source = require("db-query.source")
@@ -19,6 +20,12 @@ local Source = require("db-query.source")
 local M = {}
 
 local FILETYPES = { "sql", "mysql", "plsql" }
+
+--- Cache of `dadbod.resolve` results, keyed by the written `b:db`, holding
+--- false when the url resolved to nothing. A statusline calls `status` on every
+--- redraw, and the cache keeps each redraw from calling `db#resolve` again.
+---@type table<string, string|false>
+local resolvedStatus = {}
 
 ---@class dbquery.ExecuteOptions : dbquery.Selection
 ---@field format dbquery.Format|nil Output format (default: config value).
@@ -123,14 +130,28 @@ function M.execute(opts)
   end
 end
 
---- Reads the catalog of `buf`'s connection again, in the background.
+--- Calls `act` with the resolved url of `buf`'s connection, or warns that it
+--- has none.
 ---@param buf integer|nil Defaults to the current buffer.
-function M.refreshCatalog(buf)
+---@param act fun(resolved: string)
+local function withConnection(buf, act)
   local resolved = dadbod.resolve(vim.b[buf or vim.api.nvim_get_current_buf()].db)
   if not resolved then
     return vim.notify("db-query: this buffer has no connection", vim.log.levels.WARN)
   end
-  catalog.refresh(resolved)
+  act(resolved)
+end
+
+--- Reads the catalog of `buf`'s connection again, in the background.
+---@param buf integer|nil Defaults to the current buffer.
+function M.refreshCatalog(buf)
+  withConnection(buf, catalog.refresh)
+end
+
+--- Stops the read of the catalog of `buf`'s connection.
+---@param buf integer|nil Defaults to the current buffer.
+function M.cancelCatalog(buf)
+  withConnection(buf, catalog.cancel)
 end
 
 --- Sets the output directory for this session. Files written there are not
@@ -169,15 +190,33 @@ function M.output(view)
 end
 
 --- Returns the spinner, what is running, and elapsed time for a winbar or
---- statusline, or an empty string when no query or connection test is running
---- in `buf`.
+--- statusline, or an empty string when nothing is running for `buf`. A query
+--- or connection test in `buf` shows ahead of a read of its database's catalog.
 ---
 ---     vim.o.winbar = "%{%v:lua.require'db-query'.status()%}"
 ---
 ---@param buf integer|nil Defaults to the current buffer.
 ---@return string
 function M.status(buf)
-  return Source.status(buf or vim.api.nvim_get_current_buf())
+  buf = buf or vim.api.nvim_get_current_buf()
+  local running = Source.status(buf)
+  if running ~= "" then
+    return running
+  end
+  local seconds = catalog.reading(function()
+    local written = vim.b[buf].db
+    if type(written) ~= "string" then
+      return nil
+    end
+    if resolvedStatus[written] == nil then
+      resolvedStatus[written] = dadbod.resolve(written) or false
+    end
+    return resolvedStatus[written] or nil
+  end)
+  if not seconds then
+    return ""
+  end
+  return Indicator.format(vim.trim("reading catalog " .. (vim.b[buf].db_name or "")), seconds)
 end
 
 ---@param opts dbquery.Config|nil

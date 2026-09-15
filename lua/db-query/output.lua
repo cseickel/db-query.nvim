@@ -2,8 +2,10 @@
 Output file paths and cleanup.
 
 Row data goes to the output directory, which the user chooses. Logs go to a
-subdirectory of nvim's cache named by nvim's pid, and never anywhere else. On
-startup, sweep() removes directories for nvims that have exited.
+subdirectory of nvim's cache named by nvim's pid, and never anywhere else.
+Saved catalogs go to the `catalog` subdirectory of the same cache, shared by
+every nvim. On startup, sweep() removes directories for nvims that have exited
+and the partly written catalogs they left.
 
 The `output_dir` config and `:DBOutputDir` command set the output directory.
 Files in a user-specified directory are not auto-deleted.
@@ -15,6 +17,7 @@ local M = {}
 
 local ROOT = vim.fn.stdpath("cache") .. "/db-query"
 local MINE = ROOT .. "/" .. vim.fn.getpid()
+local CATALOG = ROOT .. "/catalog"
 
 ---@type string|nil
 local asked = nil
@@ -134,7 +137,8 @@ function M.owns(path)
   return clearing() and vim.startswith(path, M.directory() .. "/")
 end
 
---- Returns `full` with `extension`, replacing any existing output extension.
+--- Returns `full` ending in `extension`. When `full` already ends in csv, tsv,
+--- txt, or log, that extension is replaced rather than stacked.
 ---@param full string
 ---@param extension string
 ---@return string
@@ -208,7 +212,18 @@ local function alive(pid)
   return called and result == 0
 end
 
---- Deletes output directories for nvims that have exited.
+--- Returns the file a database's catalog is saved in between sessions, named
+--- by a hash of `key`. The directory is created readable by this user alone,
+--- since a catalog names every table and column of a database.
+---@param key string
+---@return string
+function M.catalog(key)
+  pcall(vim.fn.mkdir, CATALOG, "p", 448)
+  return CATALOG .. "/" .. vim.fn.sha256(key) .. ".json"
+end
+
+--- Deletes output directories for nvims that have exited, and the partly
+--- written catalogs they left, named `<hash>.json.<pid>`.
 function M.sweep()
   if vim.fn.isdirectory(ROOT) == 0 then
     return
@@ -217,6 +232,15 @@ function M.sweep()
     local pid = tonumber(name)
     if kind == "directory" and pid and not alive(pid) then
       vim.fn.delete(ROOT .. "/" .. name, "rf")
+    end
+  end
+  if vim.fn.isdirectory(CATALOG) == 0 then
+    return
+  end
+  for name in vim.fs.dir(CATALOG) do
+    local pid = tonumber(name:match("%.json%.(%d+)$"))
+    if pid and not alive(pid) then
+      os.remove(CATALOG .. "/" .. name)
     end
   end
 end

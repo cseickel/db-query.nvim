@@ -27,7 +27,7 @@ M.values = {
   cancel = "<C-c>",
   format = "text",
   output_cleanup = true,
-  catalog = { timeout = 30000, clients = {} },
+  catalog = { timeout = 300000, clients = {} },
 }
 
 ---@param opts dbquery.Config|nil

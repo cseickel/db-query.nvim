@@ -108,7 +108,7 @@ require("db-query").setup({
   -- How the catalog of each database is read. See Catalog below.
   catalog = {
     -- Milliseconds each query of a built-in catalog reader may take.
-    timeout = 30000,
+    timeout = 300000,
 
     -- Functions that read the catalog in place of the built-in reader, keyed
     -- by client name: postgres, mysql, mariadb, sqlite, or duckdb.
@@ -119,20 +119,21 @@ require("db-query").setup({
 
 ## Commands
 
-| Command              |                                                |
-|----------------------|------------------------------------------------|
-| `:DBQuery`           | Run the buffer                                 |
-| `:DBQueryStatement`  | Run the statement the cursor is in             |
-| `:'<,'>DBQuery`      | Run the selection                              |
-| `:1,20DBQuery`       | Run lines 1 to 20                              |
-| `:DBQuery -f csv`    | Write the rows as CSV instead                  |
-| `:DBQuery -o report` | Name the results file yourself                 |
-| `:DBOutput`          | Switch the output window between log and rows  |
-| `:DBOutput log`      | Show the log                                   |
-| `:DBOutput result`   | Show the last query's rows                     |
-| `:DBConnect`         | Pick the database for this buffer              |
-| `:DBRefreshCatalog`  | Read this buffer's database catalog again      |
-| `:DBOutputDir ~/out` | Set the output directory for the session       |
+| Command                    |                                                |
+|----------------------------|------------------------------------------------|
+| `:DBQuery`                 | Run the buffer                                 |
+| `:DBQueryStatement`        | Run the statement the cursor is in             |
+| `:'<,'>DBQuery`            | Run the selection                              |
+| `:1,20DBQuery`             | Run lines 1 to 20                              |
+| `:DBQuery -f csv`          | Write the rows as CSV instead                  |
+| `:DBQuery -o report`       | Name the results file yourself                 |
+| `:DBOutput`                | Switch the output window between log and rows  |
+| `:DBOutput log`            | Show the log                                   |
+| `:DBOutput result`         | Show the last query's rows                     |
+| `:DBConnect`               | Pick the database for this buffer              |
+| `:DBRefreshCatalog`        | Read this buffer's database catalog again      |
+| `:DBRefreshCatalog cancel` | Stop the read of that catalog                  |
+| `:DBOutputDir ~/out`       | Set the output directory for the session       |
 
 `:DBQueryStatement` takes the lines of the statement under the cursor. A statement ends at a `;` outside a string, a comment, or a function body, at a psql command that sends the query, such as `\gset`, or at a psql command line ending in `;`. The text is read by the rules of the buffer's database, so a `\'` inside a mysql string stays inside the string, and a `#` comment or a backtick name is read as one on mysql and mariadb.
 
@@ -186,7 +187,7 @@ end, { desc = "switch between the log and the rows" })
 
 A bar marks the lines that are running, continuing onto a line beneath them with a spinner, `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
-You can call `status(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested:
+You can call `status(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested, and `reading catalog <name>` while the catalog of the buffer's database is read and nothing else is running in that buffer:
 
 ```lua
 local text = require("db-query").status(vim.api.nvim_get_current_buf())
@@ -221,9 +222,13 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
 
 ## Catalog
 
-The plugin reads the tables, columns, functions, and types of each database a buffer connects to, in the background, and keeps them for the session. Nothing in the plugin reads that catalog yet.
+The plugin reads the tables, columns, functions, and types of each database a buffer connects to, in the background, and saves them under `stdpath("cache")/db-query/catalog/`. The next session starts from the saved catalog and reads a fresh one behind it. Nothing in the plugin reads that catalog yet.
 
-The read starts when a connection passes its test. It runs again after any query holding a statement that starts with `create`, `alter`, `drop`, or `comment`, plus `rename` on mysql and mariadb and `import` on postgres, whether or not the query succeeded, and again on `:DBRefreshCatalog`. Its queries run read-only, several at once, and each is killed after `catalog.timeout` milliseconds. A read that fails leaves the catalog as it was and says why, and the next read waits for one of those three things. One catalog is kept per database, so buffers on the same url share it.
+The read starts when a connection passes its test. It runs again after any query holding a statement that starts with `create`, `alter`, `drop`, or `comment`, plus `rename` on mysql and mariadb and `import` on postgres, whether or not the query succeeded, and again on `:DBRefreshCatalog`. Its queries run read-only, several at once, and each is killed after `catalog.timeout` milliseconds, which is 5 minutes by default because some remote mariadb servers take minutes to answer. A read that fails leaves the catalog as it was and says why, and the next read waits for one of those three things. One catalog is kept per database, so buffers on the same url share it.
+
+While a read runs, `status(buf)` shows `reading catalog <name>` with a clock in every buffer on that database. A read still running after 2 seconds says so in a notification, and one that finishes says how long it took. `:DBRefreshCatalog cancel` stops the read and keeps the catalog you had.
+
+The saved file is named by a hash of the url without its password, or of the file path for sqlite and duckdb, in a directory only your user can read, since it lists every table and column. A file saved by an older version of the plugin is upgraded when the change allows it, and read fresh from the database when it does not.
 
 `catalog.clients` names a function that reads the catalog in place of the built-in reader for one client. `mysql` and `mariadb` are separate names. The function gets a request and a `done` callback, and may call the built-in reader itself:
 
@@ -254,7 +259,7 @@ require("db-query").setup({
 - `timeout`, the `catalog.timeout` setting for a built-in reader, and nil for yours.
 - `query(statement, opts, callback)`, which runs `statement` read-only through the client and calls `callback(output, err)` with what it printed, one row per line with no header, or with why it failed. `opts` is nil or `{ timeout = milliseconds }`.
 
-Call `done(catalog)` once with a table of the shape `dbquery.Catalog` describes in `lua/db-query/catalog/shape.lua`, or `done(nil, err)` with why there is none. A catalog of another shape is refused with the field that is wrong.
+Call `done(catalog)` once with a table of the shape `dbquery.Catalog` describes in `lua/db-query/catalog/shape.lua`, or `done(nil, err)` with why there is none. A catalog of another shape is refused with the field that is wrong. `catalog.timeout` does not apply to your function, so the timeouts you pass to `query` are the only ones, and a function that never calls `done` keeps the read running until `:DBRefreshCatalog` or `:DBRefreshCatalog cancel` ends it.
 
 ## Contributing
 

@@ -2,7 +2,8 @@
 User commands and their argument parsing.
 
 `:DBQuery` and `:DBQueryStatement` share argument handling, differing only in
-which lines they run. The rest take no arguments.
+which lines they run. `:DBOutput`, `:DBOutputDir`, and `:DBRefreshCatalog` take
+one optional word, and `:DBConnect` takes nothing.
 
 The callbacks require `db-query` at call time to avoid a circular dependency:
 this module is loaded during init.lua, before init.lua finishes.
@@ -107,9 +108,21 @@ function M.setup()
     require("db-query").connect()
   end, { desc = "Choose the database this buffer connects to" })
 
-  vim.api.nvim_create_user_command("DBRefreshCatalog", function()
-    require("db-query").refreshCatalog()
-  end, { desc = "Read the tables, columns, and functions of this buffer's database again" })
+  vim.api.nvim_create_user_command("DBRefreshCatalog", function(command)
+    if command.args == "" then
+      return require("db-query").refreshCatalog()
+    end
+    if command.args == "cancel" then
+      return require("db-query").cancelCatalog()
+    end
+    vim.notify("db-query: DBRefreshCatalog takes nothing, or cancel", vim.log.levels.ERROR)
+  end, {
+    nargs = "?",
+    complete = function(lead)
+      return matching(lead, { "cancel" })
+    end,
+    desc = "Read the tables, columns, and functions of this buffer's database again, or cancel the read",
+  })
 
   vim.api.nvim_create_user_command("DBOutput", function(command)
     local view = command.args ~= "" and command.args or "toggle"
