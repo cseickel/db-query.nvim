@@ -15,12 +15,13 @@ local body = require("db-query.sql.body")
 local lex = require("db-query.sql.lex")
 local role = require("db-query.sql.role")
 local scope = require("db-query.sql.scope")
+local statements = require("db-query.sql.statements")
 local syntax = require("db-query.sql.syntax")
 
 local M = {}
 
 ---@alias dbquery.CursorKind
----| "none" Inside a string, comment, psql command line, or dollar quote that is not a body.
+---| "none" Inside a string, comment, client command, or dollar quote that is not a body.
 ---| "keyword" Where the next word is a keyword, such as after a table's alias.
 ---| "relation" Where a table goes.
 ---| "column" Where an expression goes.
@@ -42,6 +43,12 @@ local M = {}
 ---@field list "columns"|"values"
 ---@field position integer Which entry of the list the cursor is in, counting from 1.
 ---@field columns string[]|nil The insert's column list, when one is written.
+
+--- Sql text and its tokens, read by the rules of one dialect.
+---@class dbquery.Document
+---@field dialect dbquery.Dialect
+---@field text string Usually a whole buffer.
+---@field tokens dbquery.Token[] Every token of `text`, so text lexed once serves every request against it.
 
 ---@class dbquery.CursorContext
 ---@field kind dbquery.CursorKind
@@ -85,14 +92,15 @@ local function ddlTable(items)
 end
 
 --- Returns the kind of name that belongs at `index` of a statement or query block.
----@param items dbquery.Token[]
+---@param group dbquery.Group
 ---@param index integer
 ---@param clause dbquery.Clause
 ---@return dbquery.CursorKind
-local function kindIn(items, index, clause)
+local function kindIn(group, index, clause)
+  local items = group.items
   if scope.namesRelations(clause) then
     local at = index - 1
-    while at >= 1 and not scope.startsFromItem(items[at]) and not lex.isWord(items[at], "on") do
+    while at >= 1 and not scope.startsFromItem(group.dialect, items[at]) and not lex.isWord(items[at], "on") do
       at = at - 1
     end
     if at >= 1 and lex.isWord(items[at], "on") then
@@ -147,17 +155,19 @@ end
 
 --- Returns the code tokens of the statement holding `cursor`, with a cursor
 --- token in place of the identifier under it, and that identifier. Inside a
---- `begin atomic` body, the statement is the body's own statement.
+--- block such as a `begin atomic` body, the statement is the body's own
+--- statement.
+---@param dialect dbquery.Dialect
 ---@param tokens dbquery.Token[] Every token of the text.
 ---@param cursor integer
 ---@return dbquery.Token[] statement
 ---@return dbquery.Word word
-local function cursorStatement(tokens, cursor)
-  local marker = { kind = "cursor", first = cursor, last = cursor - 1, text = "", lower = "", open = false }
+local function cursorStatement(dialect, tokens, cursor)
+  local marker = syntax.marker("cursor", cursor)
   local word = { text = "", first = cursor, last = cursor - 1 }
   local placed, withMarker = false, {}
-  -- psql commands stay until the statements are split, because some of them
-  -- end a statement.
+  -- Client commands stay until the statements are split, because some of
+  -- them end a statement.
   for _, token in ipairs(tokens) do
     local under = lex.isIdentifier(token) and token.first < cursor and cursor <= token.last + 1
     if not placed and (under or token.first >= cursor) then
@@ -175,9 +185,9 @@ local function cursorStatement(tokens, cursor)
     withMarker[#withMarker + 1] = marker
   end
 
-  for _, statement in ipairs(lex.statements(withMarker)) do
+  for _, statement in ipairs(statements.split(dialect, withMarker)) do
     if vim.list_contains(statement, marker) then
-      return body.innerStatement(lex.code(statement), marker), word
+      return body.innerStatement(dialect, lex.code(statement), marker), word
     end
   end
   error("the cursor token belongs to no statement")
@@ -185,12 +195,12 @@ end
 
 --- Returns the context at `cursor`, which is outside every string, comment,
 --- and dollar quote.
----@param tokens dbquery.Token[]
+---@param document dbquery.Document
 ---@param cursor integer
 ---@return dbquery.CursorContext
-local function analyze(tokens, cursor)
-  local statement, word = cursorStatement(tokens, cursor)
-  local root, cursorGroup, cursorIndex = syntax.groups(statement)
+local function analyze(document, cursor)
+  local statement, word = cursorStatement(document.dialect, document.tokens, cursor)
+  local root, cursorGroup, cursorIndex = syntax.groups(document.dialect, statement)
   local context = { kind = "column", word = word, prefix = word.text:sub(1, cursor - word.first), scope = {} }
 
   local group, index = cursorGroup, cursorIndex
@@ -207,13 +217,13 @@ local function analyze(tokens, cursor)
       elseif what.role == "columns_of" then
         context.kind, context.columnsOf = "columns_of", what.table
       elseif what.role == "statement" or what.role == "query" or what.role == "clause" then
-        context.clause = syntax.clauses(items)[index]
+        context.clause = syntax.clauses(group)[index]
         local altered = context.clause == "start" and alteredTable(items)
         local columnWord = lex.isWord(previous, "column") or lex.isWord(previous, "drop") or lex.isWord(previous, "rename")
         if altered and columnWord then
           context.kind, context.columnsOf = "columns_of", altered
         else
-          context.kind = kindIn(items, index, context.clause)
+          context.kind = kindIn(group, index, context.clause)
         end
       end
       if previous and previous.kind == "." and lex.isIdentifier(items[index - 2]) then
@@ -226,8 +236,8 @@ local function analyze(tokens, cursor)
     end
 
     if what.role == "statement" or what.role == "query" then
-      local clauses, blocks = syntax.clauses(items)
-      vim.list_extend(context.scope, scope.relations(items, clauses, blocks, blocks[index]))
+      local clauses, blocks = syntax.clauses(group)
+      vim.list_extend(context.scope, scope.relations(group, clauses, blocks, blocks[index]))
       local target = scope.insertTarget(group)
       local conflict = false
       for at = 1, index do
@@ -251,15 +261,16 @@ local function analyze(tokens, cursor)
   return context
 end
 
---- Returns the context at byte offset `cursor` of `text`.
----@param text string Sql, usually a whole buffer.
----@param tokens dbquery.Token[] `sql.lex.tokens(text)`, which the caller may keep between requests.
+--- Returns the context at byte offset `cursor` of `document`.
+---@param document dbquery.Document
 ---@param cursor integer Byte offset the cursor is before, counting from 1.
 ---@return dbquery.CursorContext
-function M.at(text, tokens, cursor)
-  local inside = body.at(text, tokens, cursor)
+function M.at(document, cursor)
+  local inside = body.at(document, cursor)
   if inside then
-    local context = M.at(inside.text, lex.tokens(inside.text), cursor - inside.offset)
+    local dialect = document.dialect
+    local nested = { dialect = dialect, text = inside.text, tokens = lex.tokens(dialect, inside.text) }
+    local context = M.at(nested, cursor - inside.offset)
     context.word.first = context.word.first + inside.offset
     context.word.last = context.word.last + inside.offset
     if context.kind ~= "none" then
@@ -267,10 +278,10 @@ function M.at(text, tokens, cursor)
     end
     return context
   end
-  if body.inLiteral(tokens, cursor) then
+  if body.inLiteral(document.tokens, cursor) then
     return { kind = "none", word = { text = "", first = cursor, last = cursor - 1 }, prefix = "", scope = {} }
   end
-  return analyze(tokens, cursor)
+  return analyze(document, cursor)
 end
 
 return M

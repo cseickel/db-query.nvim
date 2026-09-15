@@ -3,13 +3,14 @@ Code nested inside a statement.
 
 - `at` finds the `do` block or function body holding the cursor, and the
   parameters and variables in scope there.
-- `inLiteral` says whether the cursor is inside a string, a comment, a psql
-  command line, or a dollar quote.
-- `innerStatement` narrows a `begin atomic` function to the statement of its
-  body holding the cursor.
+- `inLiteral` says whether the cursor is inside a string, a comment, a client
+  command, or a dollar quote.
+- `innerStatement` narrows a statement with a block, such as a `begin atomic`
+  function, to the statement of its body holding the cursor.
 ]]
 
 local lex = require("db-query.sql.lex")
+local statements = require("db-query.sql.statements")
 
 local M = {}
 
@@ -21,11 +22,12 @@ local M = {}
 local MODES = { ["in"] = true, out = true, inout = true, variadic = true }
 
 --- Returns the index of the first token of the statement holding `tokens[index]`.
+---@param dialect dbquery.Dialect
 ---@param tokens dbquery.Token[]
 ---@param index integer
 ---@return integer
-local function statementStart(tokens, index)
-  local terminators = lex.terminators(tokens)
+local function statementStart(dialect, tokens, index)
+  local terminators = statements.terminators(dialect, tokens)
   for at = index - 1, 1, -1 do
     if terminators[tokens[at]] then
       return at + 1
@@ -85,10 +87,9 @@ end
 
 --- Returns the variables a plpgsql body declares, and the variables of its
 --- `for <name> in` loops.
----@param text string
+---@param tokens dbquery.Token[] Code tokens of the body.
 ---@return dbquery.Relation[]
-local function declarations(text)
-  local tokens = lex.code(lex.tokens(text))
+local function declarations(tokens)
   local variables, declaring, fresh = {}, false, false
   for index, token in ipairs(tokens) do
     if lex.isWord(token, "for") and lex.isIdentifier(tokens[index + 1]) and lex.isWord(tokens[index + 2], "in") then
@@ -113,11 +114,11 @@ end
 --- Returns the body of the `do` block or function holding `cursor`, or nil
 --- when the cursor is not in one. A body is a dollar quote preceded, comments
 --- aside, by `do` or `as`.
----@param text string
----@param tokens dbquery.Token[] Every token of `text`.
+---@param document dbquery.Document
 ---@param cursor integer
 ---@return dbquery.Body|nil
-function M.at(text, tokens, cursor)
+function M.at(document, cursor)
+  local text, tokens, dialect = document.text, document.tokens, document.dialect
   for index, token in ipairs(tokens) do
     local tag = token.kind == "dollar" and lex.dollarTag(text, token.first)
     if tag and token.first < cursor and cursor <= token.last + 1 then
@@ -135,9 +136,9 @@ function M.at(text, tokens, cursor)
       end
 
       local inner = text:sub(first, last)
-      local start = statementStart(tokens, index)
+      local start = statementStart(dialect, tokens, index)
       local variables = parameters(tokens, start, index)
-      vim.list_extend(variables, declarations(inner))
+      vim.list_extend(variables, declarations(lex.code(lex.tokens(dialect, inner))))
       for at = start, index - 1 do
         if lex.isWord(tokens[at], "returns") and lex.isWord(tokens[at + 1], "trigger") then
           variables[#variables + 1] = { kind = "trigger_row", alias = "new" }
@@ -151,8 +152,8 @@ function M.at(text, tokens, cursor)
   return nil
 end
 
---- Returns true when `cursor` is inside a string, comment, psql command line,
---- or dollar quote.
+--- Returns true when `cursor` is inside a string, comment, client command, or
+--- dollar quote.
 ---@param tokens dbquery.Token[]
 ---@param cursor integer
 ---@return boolean
@@ -166,26 +167,28 @@ function M.inLiteral(tokens, cursor)
   return false
 end
 
---- Returns the statement of a `begin atomic` body holding `marker`, or
---- `statement` itself when the marker is outside such a body.
+--- Returns the statement of a block's body holding `marker`, or `statement`
+--- itself when the marker is outside every block.
+---@param dialect dbquery.Dialect
 ---@param statement dbquery.Token[]
 ---@param marker dbquery.Token
 ---@return dbquery.Token[]
-function M.innerStatement(statement, marker)
+function M.innerStatement(dialect, statement, marker)
   local markerIndex = 1
   for index, token in ipairs(statement) do
     if token == marker then
       markerIndex = index
     end
   end
-  if markerIndex == 1 or lex.atomicDepths(statement)[markerIndex - 1] == 0 then
+  if markerIndex == 1 or statements.blockDepths(dialect, statement)[markerIndex - 1] == 0 then
     return statement
   end
 
   local first, last = 1, #statement
   for index = markerIndex - 1, 1, -1 do
-    if statement[index].kind == ";" or lex.isWord(statement[index], "atomic") then
-      first = index + 1
+    local opener = statements.opensBlock(dialect, statement, index)
+    if statement[index].kind == ";" or opener then
+      first = index + (opener or 1)
       break
     end
   end

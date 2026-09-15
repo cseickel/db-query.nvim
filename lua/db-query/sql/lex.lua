@@ -1,30 +1,31 @@
 --[[
-Splitting sql text into tokens, and tokens into statements.
+Splitting sql text into tokens.
 
-- `tokens` reads postgres syntax: quoted identifiers, E'' strings, dollar
-  quotes, nested block comments, `::`, `$1` parameters, psql `:var`
-  interpolation, and psql backslash lines.
-- `terminators` finds the tokens that end a statement, and `statements` splits
-  at them, keeping a `begin atomic` body in the statement that declares it.
+`tokens` reads the text by the rules of a `dbquery.Dialect`: its strings,
+quoted identifiers, comments, parameters, and client commands. Every dialect
+produces the same token kinds, so nothing after the lexer depends on how the
+text was quoted.
 ]]
 
 local M = {}
 
 ---@alias dbquery.TokenKind
 ---| "word"
----| "quoted" A double-quoted identifier.
+---| "quoted" A quoted identifier.
 ---| "string"
 ---| "dollar" A dollar-quoted string.
 ---| "comment"
----| "meta" A psql backslash command, which runs to the end of its line.
----| "param" A `$1` parameter.
+---| "meta" A client command, such as psql's `\gset` or mysql's `delimiter //`.
+---| "param" A parameter or variable, such as `$1` or `@total`.
 ---| "number"
 ---| "cast" The `::` operator.
----| "psql" A psql `:var`, `:'var'` or `:"var"` interpolation.
+---| "variable" A client variable, such as psql's `:name`.
 ---| "operator"
----| "(" | ")" | "[" | "]" | "," | ";" | "."
----| "cursor" Placed where the cursor is, by `sql.context`.
----| "group" A parenthesized group, built by `syntax.groups`.
+---| "(" | ")" | "[" | "]" | "," | "."
+---| ";" Ends a statement: a `;`, or the delimiter a client command set in its place.
+---| "separator" A `;` while a client command has set another delimiter, so the client sends it with the statement.
+---| "cursor" Marks where the cursor is, and holds no text.
+---| "group" A nested parenthesized group, whose items are in `token.group`.
 ---| "other"
 
 ---@class dbquery.Token
@@ -33,11 +34,15 @@ local M = {}
 ---@field last integer Byte offset of the last character.
 ---@field text string
 ---@field lower string
----@field open boolean The text ends inside this string, quoted identifier, dollar quote, comment, or psql command line. False for every other token.
+---@field open boolean The text ends inside this string, quoted identifier, dollar quote, comment, or client command. False for every other token.
+---@field reserved boolean A word the dialect never reads as an alias. False for every other token.
 
-local BACKSLASH, NEWLINE, SINGLE, DOUBLE = "\\", "\n", "'", '"'
+local BACKSLASH, NEWLINE, SINGLE = "\\", "\n", "'"
 local OPERATOR = "[%+%-%*/<>=~!@#%%%^&|`%?]"
 local PUNCTUATION = "[%(%)%[%],;%.]"
+
+--- Token kinds that end where a client-set delimiter starts, as in mysql's `end//`.
+local UNQUOTED = { word = true, number = true, param = true, operator = true }
 
 --- Returns the `$tag$` of a dollar quote opened at `index`, or nil when no
 --- dollar quote opens there.
@@ -48,15 +53,53 @@ function M.dollarTag(text, index)
   return text:match("^%$[%a_]?[%w_]*%$", index)
 end
 
+---@param patterns string[]
+---@param text string
+---@param index integer
+---@return string|nil
+local function matching(patterns, text, index)
+  for _, pattern in ipairs(patterns) do
+    local found = text:match(pattern, index)
+    if found then
+      return found
+    end
+  end
+  return nil
+end
+
 --- Returns every token in `text`, comments included.
+---@param dialect dbquery.Dialect
 ---@param text string
 ---@return dbquery.Token[]
-function M.tokens(text)
+function M.tokens(dialect, text)
+  local rules, commands = dialect.lex, dialect.commands
   local tokens, index, size = {}, 1, #text
+  local delimiter, lineStart = ";", true
 
   local function add(kind, first, last, open)
     local raw = text:sub(first, last)
-    tokens[#tokens + 1] = { kind = kind, first = first, last = last, text = raw, lower = raw:lower(), open = open == true }
+    local lower = raw:lower()
+    tokens[#tokens + 1] = {
+      kind = kind,
+      first = first,
+      last = last,
+      text = raw,
+      lower = lower,
+      open = open == true,
+      reserved = kind == "word" and dialect.reserved[lower] == true,
+    }
+    lineStart = raw:sub(-1) == NEWLINE
+  end
+
+  ---@param at integer
+  ---@return boolean
+  local function lineComment(at)
+    for _, pattern in ipairs(rules.lineComments) do
+      if text:find(pattern, at) then
+        return true
+      end
+    end
+    return false
   end
 
   --- Returns the index of the `quote` that closes the run of text starting at
@@ -83,24 +126,32 @@ function M.tokens(text)
     return nil
   end
 
-  while index <= size do
-    local char, pair = text:sub(index, index), text:sub(index, index + 1)
+  --- Returns the kind, last byte, and open flag of the token starting at
+  --- `index`, which is not whitespace.
+  ---@param char string The character at `index`.
+  ---@return dbquery.TokenKind kind
+  ---@return integer last
+  ---@return boolean open
+  local function scan(char)
+    local pair = text:sub(index, index + 1)
 
-    if char:match("%s") then
-      index = index + 1
-    elseif pair == "--" then
-      local stop = text:find(NEWLINE, index, true)
-      add("comment", index, stop or size, stop == nil)
-      index = (stop or size) + 1
-    elseif char == BACKSLASH then
-      local stop = text:find(NEWLINE, index, true)
-      add("meta", index, stop or size, stop == nil)
-      index = (stop or size) + 1
-    elseif pair == "/*" then
+    if delimiter ~= ";" and text:sub(index, index + #delimiter - 1) == delimiter then
+      return ";", index + #delimiter - 1, false
+    end
+    if lineComment(index) then
+      local last = text:find(NEWLINE, index, true) or size
+      return "comment", last, text:sub(last, last) ~= NEWLINE
+    end
+    local command = commands and commands.at(text, index, lineStart)
+    if command then
+      delimiter = commands.delimiter and commands.delimiter(text:sub(index, command)) or delimiter
+      return "meta", command, command == size and text:sub(command, command) ~= NEWLINE
+    end
+    if pair == "/*" then
       local depth, at = 1, index + 2
       while at <= size and depth > 0 do
         local two = text:sub(at, at + 1)
-        if two == "/*" then
+        if two == "/*" and rules.nestedComments then
           depth, at = depth + 1, at + 2
         elseif two == "*/" then
           depth, at = depth - 1, at + 2
@@ -108,66 +159,69 @@ function M.tokens(text)
           at = at + 1
         end
       end
-      add("comment", index, at - 1, depth > 0)
-      index = at
-    elseif char == SINGLE or (char:lower() == "e" and text:sub(index + 1, index + 1) == SINGLE) then
-      local escapes = char ~= SINGLE
-      local stop = closing(SINGLE, escapes and index + 2 or index + 1, escapes, false)
-      add("string", index, stop or size, stop == nil)
-      index = (stop or size) + 1
-    elseif char == DOUBLE then
-      local stop = closing(DOUBLE, index + 1, false, true)
-      if stop then
-        add("quoted", index, stop)
-        index = stop + 1
-      else
-        -- An identifier still being typed ends at whitespace rather than
-        -- swallowing the rest of the statement.
-        local _, last = text:find("^[^%s]*", index + 1)
-        add("quoted", index, last, true)
-        index = last + 1
-      end
-    elseif text:match("^%$%d", index) then
-      local _, last = text:find("^%$%d+", index)
-      add("param", index, last)
-      index = last + 1
-    elseif M.dollarTag(text, index) then
-      local tag = M.dollarTag(text, index)
+      return "comment", at - 1, depth > 0
+    end
+    local escaped = rules.escapeStrings and char:lower() == "e" and text:sub(index + 1, index + 1) == SINGLE
+    if rules.strings[char] ~= nil or escaped then
+      local stop = closing(escaped and SINGLE or char, escaped and index + 2 or index + 1, escaped or rules.strings[char], false)
+      return "string", stop or size, stop == nil
+    end
+    if rules.identifiers[char] then
+      local stop = closing(rules.identifiers[char], index + 1, false, true)
+      -- An identifier still being typed ends at whitespace rather than
+      -- swallowing the rest of the statement.
+      return "quoted", stop or select(2, text:find("^[^%s]*", index + 1)), stop == nil
+    end
+    local parameter = matching(rules.parameters, text, index)
+    if parameter then
+      return "param", index + #parameter - 1, false
+    end
+    local tag = rules.dollarQuotes and M.dollarTag(text, index)
+    if tag then
       local close = text:find(tag, index + #tag, true)
-      local last = close and close + #tag - 1 or size
-      add("dollar", index, last, close == nil)
-      index = last + 1
-    elseif char:match("[%a_]") then
-      local _, last = text:find("^[%w_$]*", index + 1)
-      add("word", index, last)
-      index = last + 1
-    elseif char:match("%d") then
-      local _, last = text:find("^[%d%.eE]*", index + 1)
-      add("number", index, last)
-      index = last + 1
-    elseif pair == "::" then
-      add("cast", index, index + 1)
-      index = index + 2
-    elseif char == ":" and text:match("^:['\"]?[%a_]", index) then
-      local _, last = text:find("^:['\"]?[%w_]+['\"]?", index)
-      add("psql", index, last)
-      index = last + 1
-    elseif char:match(PUNCTUATION) then
-      add(char, index, index)
-      index = index + 1
-    elseif char:match(OPERATOR) then
-      local _, last = text:find("^" .. OPERATOR .. "*", index + 1)
-      -- Postgres ends an operator where a comment starts.
-      local run = text:sub(index, last)
-      local comment = math.min(run:find("--", 2, true) or math.huge, run:find("/*", 2, true) or math.huge)
-      if comment ~= math.huge then
-        last = index + comment - 2
+      return "dollar", close and close + #tag - 1 or size, close == nil
+    end
+    if char:match("[%a_]") then
+      return "word", select(2, text:find("^[%w_$]*", index + 1)), false
+    end
+    if char:match("%d") then
+      return "number", select(2, text:find("^[%d%.eE]*", index + 1)), false
+    end
+    if rules.casts and pair == "::" then
+      return "cast", index + 1, false
+    end
+    local variable = commands and commands.variables and text:match(commands.variables, index)
+    if variable then
+      return "variable", index + #variable - 1, false
+    end
+    if char:match(PUNCTUATION) then
+      return (char == ";" and delimiter ~= ";") and "separator" or char, index, false
+    end
+    if char:match(OPERATOR) then
+      local last = select(2, text:find("^" .. OPERATOR .. "*", index + 1))
+      for at = index + 1, last do
+        if lineComment(at) or text:sub(at, at + 1) == "/*" then
+          return "operator", at - 1, false
+        end
       end
-      add("operator", index, last)
-      index = last + 1
-    else
-      add("other", index, index)
+      return "operator", last, false
+    end
+    return "other", index, false
+  end
+
+  while index <= size do
+    local char = text:sub(index, index)
+    if char:match("%s") then
+      lineStart = lineStart or char == NEWLINE
       index = index + 1
+    else
+      local kind, last, open = scan(char)
+      if UNQUOTED[kind] and delimiter ~= ";" then
+        local found = text:sub(index, last):find(delimiter, 2, true)
+        last = found and index + found - 2 or last
+      end
+      add(kind, index, last, open)
+      index = last + 1
     end
   end
   return tokens
@@ -187,7 +241,7 @@ function M.isIdentifier(token)
   return token ~= nil and (token.kind == "word" or token.kind == "quoted")
 end
 
---- Returns `tokens` without comments and psql backslash commands.
+--- Returns `tokens` without comments and client commands.
 ---@param tokens dbquery.Token[]
 ---@return dbquery.Token[]
 function M.code(tokens)
@@ -198,79 +252,6 @@ function M.code(tokens)
     end
   end
   return kept
-end
-
---- Returns how many `begin atomic` bodies are open after each token.
----
---- A `case` left open is forgotten at the next `;`, so a half-typed `case`
---- cannot take the `end` of a later body.
----@param tokens dbquery.Token[]
----@return integer[]
-function M.atomicDepths(tokens)
-  local depths, atomic, cases = {}, 0, 0
-  for index, token in ipairs(tokens) do
-    if M.isWord(token, "begin") and M.isWord(tokens[index + 1], "atomic") then
-      atomic = atomic + 1
-    elseif M.isWord(token, "case") then
-      cases = cases + 1
-    elseif M.isWord(token, "end") then
-      if cases > 0 then
-        cases = cases - 1
-      elseif atomic > 0 then
-        atomic = atomic - 1
-      end
-    elseif token.kind == ";" then
-      cases = 0
-    end
-    depths[index] = atomic
-  end
-  return depths
-end
-
---- psql commands that send the query typed before them, as `;` does.
-local SENDS = { g = true, gx = true, gset = true, gexec = true, gdesc = true, watch = true, crosstabview = true }
-
----@param token dbquery.Token
----@return boolean
-local function sendsQuery(token)
-  if token.kind ~= "meta" then
-    return false
-  end
-  return SENDS[token.lower:match("^\\(%a+)")] == true or token.text:match(";%s*$") ~= nil
-end
-
---- Returns the tokens that end a statement, as a set: each `;` outside a
---- `begin atomic` body, each psql command line that ends in `;`, and each psql
---- command that sends the query, such as `\gset`.
----@param tokens dbquery.Token[]
----@return table<dbquery.Token, true>
-function M.terminators(tokens)
-  local found, depths = {}, M.atomicDepths(tokens)
-  for index, token in ipairs(tokens) do
-    if (token.kind == ";" and depths[index] == 0) or sendsQuery(token) then
-      found[token] = true
-    end
-  end
-  return found
-end
-
---- Splits `tokens` at their terminators. A `;` belongs to no statement, and a
---- psql command line stays in the statement it ends. Every statement is
---- returned, including empty ones.
----@param tokens dbquery.Token[]
----@return dbquery.Token[][]
-function M.statements(tokens)
-  local ends = M.terminators(tokens)
-  local statements = { {} }
-  for _, token in ipairs(tokens) do
-    if token.kind ~= ";" or not ends[token] then
-      table.insert(statements[#statements], token)
-    end
-    if ends[token] then
-      statements[#statements + 1] = {}
-    end
-  end
-  return statements
 end
 
 return M

@@ -5,12 +5,13 @@ Determines whether a statement returns rows, and if so whether it can be
 wrapped in COPY. A statement that returns no rows writes nothing but its
 transcript, which belongs in the log.
 
-Every function here reads tokens from `sql.lex`, so a semicolon or keyword
-inside a string, a comment, or a dollar-quoted body is never mistaken for
-code.
+Every function here reads tokens from `sql.lex` by the rules of the dialect it
+is given, so a semicolon or keyword inside a string, a comment, or a
+dollar-quoted body is never mistaken for code.
 ]]
 
 local lex = require("db-query.sql.lex")
+local statements = require("db-query.sql.statements")
 
 local M = {}
 
@@ -18,15 +19,38 @@ local M = {}
 
 --- Removes the statement's trailing semicolon, which is a syntax error inside
 --- `COPY (...)`. A comment after the semicolon stays.
+---@param dialect dbquery.Dialect
 ---@param sql string
 ---@return string
-function M.stripTerminator(sql)
-  local code = lex.code(lex.tokens(sql))
+function M.stripTerminator(dialect, sql)
+  local code = lex.code(lex.tokens(dialect, sql))
   local last = code[#code]
   if not (last and last.kind == ";") then
     return sql
   end
-  return sql:sub(1, last.first - 1) .. sql:sub(last.first + 1)
+  return sql:sub(1, last.first - 1) .. sql:sub(last.last + 1)
+end
+
+--- Returns the last `delimiter` line in `lines`, such as mysql's
+--- `delimiter //`. Returns nil when the lines set no delimiter, or set it back
+--- to `;`. Sql taken from below those lines needs this line sent ahead of it,
+--- so the client ends its statements where the buffer does.
+---@param dialect dbquery.Dialect
+---@param lines string[]
+---@return string|nil
+function M.delimiterCommand(dialect, lines)
+  local delimiter = dialect.commands and dialect.commands.delimiter
+  if not delimiter then
+    return nil
+  end
+  local command = nil
+  for _, token in ipairs(lex.tokens(dialect, table.concat(lines, "\n"))) do
+    local set = token.kind == "meta" and delimiter(token.text)
+    if set then
+      command = set ~= ";" and vim.trim(token.text) or nil
+    end
+  end
+  return command
 end
 
 ---@param line string|nil
@@ -36,13 +60,14 @@ local function blank(line)
 end
 
 --- Returns the line span of the statement containing `row`, or nil for blank
---- lines. A line holding a terminator, as `lex.terminators` defines one, is
---- the last line of its statement, so statements sharing a line are returned
---- together.
+--- lines. A line holding a terminator, as `statements.terminators` defines
+--- one, is the last line of its statement, so statements sharing a line are
+--- returned together.
+---@param dialect dbquery.Dialect
 ---@param lines string[]
 ---@param row integer 0-based line number.
 ---@return [integer, integer]|nil
-function M.statementAt(lines, row)
+function M.statementAt(dialect, lines, row)
   local starts, offset = {}, 1
   for index, line in ipairs(lines) do
     starts[index] = offset
@@ -50,12 +75,12 @@ function M.statementAt(lines, row)
   end
 
   local tokens = {}
-  for _, token in ipairs(lex.tokens(table.concat(lines, "\n"))) do
+  for _, token in ipairs(lex.tokens(dialect, table.concat(lines, "\n"))) do
     if token.kind ~= "comment" then
       tokens[#tokens + 1] = token
     end
   end
-  local terminators = lex.terminators(tokens)
+  local terminators = statements.terminators(dialect, tokens)
   local ends, line = {}, 1
   for _, token in ipairs(tokens) do
     if terminators[token] then
@@ -102,21 +127,22 @@ local WRITES = { insert = true, update = true, delete = true, merge = true }
 --- "query" is a select, with, table, or values statement, which COPY accepts as
 --- its argument. "returning" is an insert, update, delete, or merge with a
 --- RETURNING clause, which some clients cannot write to a file. Text holding
---- more than one statement, or a psql backslash command, returns nil.
+--- more than one statement, or a client command such as psql's `\gset`,
+--- returns nil, because a client command cannot go inside COPY. A mysql
+--- `delimiter //` line is skipped, because the delimiter changes nothing
+--- about the rows.
+---@param dialect dbquery.Dialect
 ---@param sql string
----@param scheme string The connection's url scheme. A backslash starts a psql command only for postgres, and is an escape inside a mysql string.
 ---@return dbquery.RowKind|nil
-function M.rowKind(sql, scheme)
-  if scheme == "postgres" or scheme == "postgresql" then
-    for _, token in ipairs(lex.tokens(sql)) do
-      -- A psql command cannot go inside COPY, so the script runs as written.
-      if token.kind == "meta" then
-        return nil
-      end
+function M.rowKind(dialect, sql)
+  local setsDelimiter = dialect.commands and dialect.commands.delimiter
+  for _, token in ipairs(lex.tokens(dialect, sql)) do
+    if token.kind == "meta" and not (setsDelimiter and setsDelimiter(token.text)) then
+      return nil
     end
   end
-  local code = lex.code(lex.tokens(M.stripTerminator(sql)))
-  if #lex.statements(code) > 1 then
+  local code = lex.code(lex.tokens(dialect, M.stripTerminator(dialect, sql)))
+  if #statements.split(dialect, code) > 1 then
     return nil
   end
 

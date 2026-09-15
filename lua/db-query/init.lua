@@ -1,10 +1,12 @@
 --[[
 Entry point for running queries from a sql buffer.
 
-This module reads the sql, resolves the connection, and passes both to the
-buffer's Source. ARCHITECTURE.md covers the flow from there.
+This module captures the sql, resolves the connection, reads the sql by the
+connection's dialect, and passes it all to the buffer's Source. ARCHITECTURE.md
+covers the flow from there.
 ]]
 
+local client = require("db-query.client")
 local command = require("db-query.command")
 local config = require("db-query.config")
 local connect = require("db-query.connect")
@@ -34,11 +36,10 @@ end
 ---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}
-  --- The sql and source lines are captured before any prompt opens, because
-  --- opening a prompt exits visual mode and the user may move the cursor while
-  --- a prompt is open.
-  local statement, span = selection.text(opts)
-  if statement == "" then
+  -- The lines are captured before any prompt opens, because opening a prompt
+  -- exits visual mode, and the cursor may move while a prompt is open.
+  local capture = selection.capture(opts)
+  if selection.blank(capture) then
     return vim.notify("db-query: no query to run", vim.log.levels.WARN)
   end
 
@@ -50,21 +51,30 @@ function M.execute(opts)
     if not vim.api.nvim_buf_is_loaded(buf) then
       return
     end
-    -- Store as absolute path so cwd changes don't affect the next prompt.
-    if outputPath then
-      vim.b[buf].db_last_output_path =
-        output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
-    end
 
     ---@param url string|nil
     ---@param name string|nil
     ---@param resolved string
     local function start(url, name, resolved)
+      local dialect = client.dialect(resolved)
+      if not dialect then
+        return
+      end
+      local statement, span = selection.text(capture, dialect)
+      if statement == "" then
+        return vim.notify("db-query: no query to run", vim.log.levels.WARN)
+      end
+      -- Store as absolute path so cwd changes don't affect the next prompt.
+      if outputPath then
+        vim.b[buf].db_last_output_path =
+          output.destination(vim.api.nvim_buf_get_name(buf), outputPath)
+      end
       Source.of(buf):execute({
         buf = buf,
         url = url,
         name = name,
         resolved = resolved,
+        dialect = dialect,
         sql = statement,
         srcName = vim.api.nvim_buf_get_name(buf),
         format = format,

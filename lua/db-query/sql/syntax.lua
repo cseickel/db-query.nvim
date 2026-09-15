@@ -17,6 +17,7 @@ local M = {}
 ---@field parent dbquery.Group|nil
 ---@field index integer Position of this group among its parent's items, 0 for the statement itself.
 ---@field open "("|"["|nil
+---@field dialect dbquery.Dialect
 
 ---@class dbquery.Token
 ---@field group dbquery.Group|nil The nested group, on a token of kind "group".
@@ -29,39 +30,66 @@ local M = {}
 ---| "conflict" | "conflict_update" | "merge_when"
 ---| "setop" Just after union, intersect, or except.
 
---- Words that are never a table alias.
-local KEYWORDS = {}
-for word in ([[
-  select from where group by having window order limit offset fetch for returning set values using on
-  join inner left right full outer cross natural lateral union intersect except all distinct as with
-  recursive insert into update delete merge when matched then do conflict nothing and or not in is null
-  like ilike similar between case else end exists any some table only tablesample repeatable ordinality
-  partition over filter within create index references alter add column drop begin atomic returns
-  language materialized copy desc asc nulls last first true false loop
-]]):gmatch("%S+") do
-  KEYWORDS[word] = true
-end
-
---- Words that start a statement which returns or writes rows.
-M.QUERY = { select = true, with = true, values = true, table = true, insert = true, update = true, delete = true, merge = true }
-
 --- Clause keywords at which a group left open before the cursor is closed.
 local CLOSES_CALL = {
   from = true, where = true, group = true, order = true, having = true, limit = true, offset = true,
   join = true, union = true, intersect = true, except = true, returning = true, window = true,
 }
 
---- Returns true for a quoted identifier or a word that is not a keyword.
+local SETOPS = { union = true, intersect = true, except = true }
+
+--- Returns a token that stands for no text at `first`, such as the cursor.
+---@param kind dbquery.TokenKind
+---@param first integer
+---@return dbquery.Token
+function M.marker(kind, first)
+  return { kind = kind, first = first, last = first - 1, text = "", lower = "", open = false, reserved = false }
+end
+
+--- Returns true for a quoted identifier or a word the dialect does not reserve.
 ---@param token dbquery.Token|nil
 ---@return boolean
 function M.isName(token)
-  return token ~= nil and (token.kind == "quoted" or (token.kind == "word" and not KEYWORDS[token.lower]))
+  return token ~= nil and (token.kind == "quoted" or (token.kind == "word" and not token.reserved))
 end
 
 ---@param token dbquery.Token|nil
 ---@return boolean
 function M.isGroup(token)
   return token ~= nil and token.kind == "group"
+end
+
+--- Returns true when `items[index]` calls a function, as mysql's `replace(`
+--- does, rather than starting the clause its word names.
+---@param dialect dbquery.Dialect
+---@param items dbquery.Token[]
+---@param index integer
+---@return boolean
+local function calls(dialect, items, index)
+  local item, next = items[index], items[index + 1]
+  local opens = next ~= nil and (next.kind == "group" or next.kind == "(")
+  return item.kind == "word" and dialect.callable[item.lower] == true and opens
+end
+
+--- Returns true when `items[index]` starts a query in `dialect`.
+---@param dialect dbquery.Dialect
+---@param items dbquery.Token[]
+---@param index integer
+---@return boolean
+local function queryAt(dialect, items, index)
+  local item = items[index]
+  return item ~= nil and item.kind == "word" and dialect.queries[item.lower] == true and not calls(dialect, items, index)
+end
+
+--- Returns true when `group` holds a query, going by its first word.
+---@param group dbquery.Group
+---@return boolean
+function M.startsQuery(group)
+  local index = 1
+  while group.items[index] and group.items[index].kind == "cursor" do
+    index = index + 1
+  end
+  return queryAt(group.dialect, group.items, index)
 end
 
 --- Returns the dotted name starting at `items[index]` and the index after it.
@@ -147,9 +175,10 @@ end
 --- Only as many groups are closed as the statement is short of `)`, and only
 --- where a clause keyword appears after the cursor. A group whose first word
 --- starts a query stays open, because clause keywords belong inside it.
+---@param dialect dbquery.Dialect
 ---@param statement dbquery.Token[]
 ---@return dbquery.Token[]
-local function closeGroups(statement)
+local function closeGroups(dialect, statement)
   local missing = 0
   for _, token in ipairs(statement) do
     if token.kind == "(" then
@@ -167,7 +196,7 @@ local function closeGroups(statement)
     if pastCursor and token.kind == "word" and CLOSES_CALL[token.lower] then
       local top = open[#open]
       while missing > 0 and top and top.beforeCursor and not top.query do
-        repaired[#repaired + 1] = { kind = ")", first = token.first, last = token.first - 1, text = ")", lower = ")", open = false }
+        repaired[#repaired + 1] = M.marker(")", token.first)
         open[#open] = nil
         missing = missing - 1
         top = open[#open]
@@ -175,8 +204,7 @@ local function closeGroups(statement)
     end
     repaired[#repaired + 1] = token
     if token.kind == "(" then
-      local next = statement[index + 1]
-      open[#open + 1] = { beforeCursor = not pastCursor, query = next ~= nil and next.kind == "word" and M.QUERY[next.lower] == true }
+      open[#open + 1] = { beforeCursor = not pastCursor, query = queryAt(dialect, statement, index + 1) }
     elseif token.kind == ")" then
       open[#open] = nil
     elseif token.kind == "cursor" then
@@ -187,21 +215,22 @@ local function closeGroups(statement)
 end
 
 --- Nests `statement` by parentheses and brackets. Returns the statement as a
---- group, and the group and index holding the cursor token.
+--- group, and the group and index holding the cursor token. Every group reads
+--- by the rules of `dialect`.
+---@param dialect dbquery.Dialect
 ---@param statement dbquery.Token[] Code tokens of one statement, holding one cursor token.
 ---@return dbquery.Group root
 ---@return dbquery.Group cursorGroup
 ---@return integer cursorIndex
-function M.groups(statement)
-  local root = { items = {}, index = 0 }
+function M.groups(dialect, statement)
+  local root = { items = {}, index = 0, dialect = dialect }
   local group, cursorGroup, cursorIndex = root, root, 1
-  for _, token in ipairs(closeGroups(statement)) do
+  for _, token in ipairs(closeGroups(dialect, statement)) do
     if token.kind == "(" or token.kind == "[" then
-      local nested = { items = {}, parent = group, open = token.kind }
-      group.items[#group.items + 1] = {
-        kind = "group", first = token.first, last = token.last, text = token.text, lower = token.lower, open = false, group = nested,
-      }
-      nested.index = #group.items
+      local nested = { items = {}, parent = group, open = token.kind, index = #group.items + 1, dialect = dialect }
+      local wrapper = M.marker("group", token.first)
+      wrapper.last, wrapper.text, wrapper.lower, wrapper.group = token.last, token.text, token.lower, nested
+      group.items[#group.items + 1] = wrapper
       group = nested
     elseif (token.kind == ")" or token.kind == "]") and group.parent then
       group = group.parent
@@ -215,67 +244,39 @@ function M.groups(statement)
   return root, cursorGroup, cursorIndex
 end
 
---- Labels each item of `items` with its clause and its union block.
----@param items dbquery.Token[]
+---@param rule dbquery.ClauseRule
+---@param word string
+---@param state dbquery.ClauseState
+---@return boolean
+local function applies(rule, word, state)
+  return rule.word == word
+    and (rule.after == nil or (state.after ~= nil and rule.after[state.after] == true))
+    and (rule.within == nil or rule.within[state.clause] == true)
+    and (rule.test == nil or rule.test(state))
+end
+
+--- Labels each item of `group` with its clause and its union block.
+---@param group dbquery.Group
 ---@return dbquery.Clause[] clauses
 ---@return integer[] blocks
-function M.clauses(items)
+function M.clauses(group)
+  local items, rules = group.items, group.dialect.clauses
   local clauses, blocks = {}, {}
   local clause, block = "start", 1
-  local merge = lex.isWord(items[1], "merge")
+  local statement = items[1] and items[1].kind == "word" and items[1].lower or nil
   for index, item in ipairs(items) do
-    local word = item.kind == "word" and item.lower or nil
     local previous = items[index - 1]
-    local after = previous and previous.kind == "word" and previous.lower or nil
-
-    if word == "union" or word == "intersect" or word == "except" then
+    if item.kind == "word" and SETOPS[item.lower] then
       block, clause = block + 1, "setop"
-    elseif word == "with" and (clause == "start" or clause == "setop") then
-      clause = "with"
-    elseif word == "select" or word == "perform" then
-      clause = "select"
-    elseif word == "from" and after == "delete" then
-      clause = "delete_target"
-    elseif word == "from" and after ~= "distinct" and clause ~= "start" then
-      clause = "from"
-    elseif word == "where" then
-      clause = "where"
-    elseif word == "having" then
-      clause = "having"
-    elseif word == "window" then
-      clause = "window"
-    elseif word == "returning" then
-      clause = "returning"
-    elseif word == "limit" then
-      clause = "limit"
-    elseif word == "offset" then
-      clause = "offset"
-    elseif word == "fetch" then
-      clause = "fetch"
-    elseif word == "by" and after == "group" then
-      clause = "group_by"
-    elseif word == "by" and after == "order" then
-      clause = "order_by"
-    elseif word == "by" and after == "partition" then
-      clause = "partition_by"
-    elseif word == "into" and after == "insert" then
-      clause = "insert_target"
-    elseif word == "into" and after == "merge" then
-      clause = "merge_target"
-    elseif word == "update" and (after == "do" or after == "then") then
-      clause = "conflict_update"
-    elseif word == "update" and after ~= "for" then
-      clause = "update_target"
-    elseif word == "set" and (clause == "update_target" or clause == "conflict_update") then
-      clause = "set"
-    elseif word == "values" and (clause == "insert_target" or clause == "start" or clause == "with" or clause == "setop" or clause == "merge_when") then
-      clause = "values"
-    elseif word == "using" and (clause == "delete_target" or clause == "merge_target") then
-      clause = "from"
-    elseif word == "conflict" and after == "on" then
-      clause = "conflict"
-    elseif word == "when" and merge and (clause == "from" or clause == "set" or clause == "values" or clause == "merge_when") then
-      clause = "merge_when"
+    elseif item.kind == "word" and not calls(group.dialect, items, index) then
+      ---@type dbquery.ClauseState
+      local state = { after = previous and previous.kind == "word" and previous.lower or nil, clause = clause, statement = statement }
+      for _, rule in ipairs(rules) do
+        if applies(rule, item.lower, state) then
+          clause = rule.clause
+          break
+        end
+      end
     end
     clauses[index], blocks[index] = clause, block
   end

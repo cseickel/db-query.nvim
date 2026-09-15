@@ -8,6 +8,7 @@ The relations a query block can refer to.
 ]]
 
 local columns = require("db-query.sql.columns")
+local dialects = require("db-query.sql.dialect")
 local lex = require("db-query.sql.lex")
 local syntax = require("db-query.sql.syntax")
 
@@ -35,12 +36,6 @@ local M = {}
 ---@field columnGroup dbquery.Group|nil The group holding that column list.
 
 local TARGETS = { from = true, update_target = true, delete_target = true, insert_target = true, merge_target = true }
-local SKIPPED = {
-  from = true, join = true, inner = true, left = true, right = true, full = true, outer = true, cross = true,
-  natural = true, lateral = true, only = true, into = true, update = true, delete = true, using = true,
-  merge = true, insert = true,
-}
-local JOINS = { join = true, inner = true, left = true, right = true, full = true, cross = true, natural = true }
 
 --- Returns true when `clause` names relations.
 ---@param clause dbquery.Clause
@@ -50,37 +45,88 @@ function M.namesRelations(clause)
 end
 
 --- Returns true for a word that separates one from item from the next.
+---@param dialect dbquery.Dialect
 ---@param item dbquery.Token
 ---@return boolean
-function M.startsFromItem(item)
-  return item.kind == "," or (item.kind == "word" and SKIPPED[item.lower] == true)
+function M.startsFromItem(dialect, item)
+  if item.kind == "," then
+    return true
+  end
+  return item.kind == "word" and (dialect.beforeRelation[item.lower] == true or dialect.joins[item.lower] == true)
 end
 
 --- Returns the relations the first select of `group` reads.
 ---@param group dbquery.Group
 ---@return dbquery.Relation[]
 local function sources(group)
-  local clauses, blocks = syntax.clauses(group.items)
-  local found = M.relations(group.items, clauses, blocks, 1)
+  local clauses, blocks = syntax.clauses(group)
+  local found = M.relations(group, clauses, blocks, 1)
   vim.list_extend(found, M.ctes(group.items, clauses))
   return found
 end
 
---- Reads the from item at `items[index]`, a table, function, subquery, or
---- parenthesized join with its alias. Returns the relations that item puts in
---- scope and the index of the item after it.
+---@param part dbquery.PatternPart
+---@param item dbquery.Token|nil
+---@return boolean
+local function matchesPart(part, item)
+  if part == dialects.GROUP then
+    return syntax.isGroup(item)
+  end
+  if item == nil or item.kind ~= "word" then
+    return false
+  end
+  if part == dialects.ANY then
+    return true
+  end
+  if type(part) == "table" then
+    return part[item.lower] == true
+  end
+  return item.lower == part
+end
+
+--- Returns the index after the dialect's from suffixes that start at
+--- `items[at]`, such as `tablesample system (10)`, or `at` when none do.
+---@param dialect dbquery.Dialect
 ---@param items dbquery.Token[]
+---@param at integer
+---@return integer
+local function skipSuffixes(dialect, items, at)
+  local skipped = true
+  while skipped do
+    skipped = false
+    for _, pattern in ipairs(dialect.fromSuffixes) do
+      local position = at
+      for _, part in ipairs(pattern) do
+        if not (position and matchesPart(part, items[position])) then
+          position = nil
+          break
+        end
+        position = position + 1
+      end
+      if position then
+        at, skipped = position, true
+        break
+      end
+    end
+  end
+  return at
+end
+
+--- Reads the from item at `group.items[index]`, a table, function, subquery,
+--- or parenthesized join with its alias. Returns the relations that item puts
+--- in scope and the index of the item after it.
+---@param group dbquery.Group
 ---@param index integer
 ---@param clause dbquery.Clause
 ---@return dbquery.Relation[]
 ---@return integer
-local function fromItem(items, index, clause)
+local function fromItem(group, index, clause)
+  local items, dialect = group.items, group.dialect
   local found, relation, at = {}, nil, index
   local item = items[at]
 
   if syntax.isGroup(item) then
-    local word = syntax.firstWord(item.group)
-    if word and syntax.QUERY[word] then
+    if syntax.startsQuery(item.group) then
       relation = { kind = "subquery", columns = columns.outputs(item.group), sources = sources(item.group) }
     else
       local inner = item.group.items
@@ -88,7 +134,7 @@ local function fromItem(items, index, clause)
       for position = 1, #inner do
         clauses[position], blocks[position] = "from", 1
       end
-      vim.list_extend(found, M.relations(inner, clauses, blocks, 1))
+      vim.list_extend(found, M.relations(item.group, clauses, blocks, 1))
       relation = { kind = "join" }
     end
     at = at + 1
@@ -109,18 +155,7 @@ local function fromItem(items, index, clause)
   if items[at] and items[at].kind == "operator" and items[at].text == "*" then
     at = at + 1
   end
-  if lex.isWord(items[at], "tablesample") then
-    at = at + 2
-    if syntax.isGroup(items[at]) then
-      at = at + 1
-    end
-    if lex.isWord(items[at], "repeatable") then
-      at = at + 2
-    end
-  end
-  if lex.isWord(items[at], "with") and lex.isWord(items[at + 1], "ordinality") then
-    at = at + 2
-  end
+  at = skipSuffixes(dialect, items, at)
 
   local explicit = lex.isWord(items[at], "as")
   if explicit then
@@ -134,6 +169,7 @@ local function fromItem(items, index, clause)
       relation.columns = syntax.listNames(items[at].group)
       at = at + 1
     end
+    at = skipSuffixes(dialect, items, at)
   end
 
   if relation.kind ~= "join" or relation.alias then
@@ -142,14 +178,15 @@ local function fromItem(items, index, clause)
   return found, at
 end
 
---- Returns the relations named by the items of block `block` whose clause
---- names relations.
----@param items dbquery.Token[]
+--- Returns the relations named by the items of `group` in union block
+--- `block` whose clause names relations.
+---@param group dbquery.Group
 ---@param clauses dbquery.Clause[]
 ---@param blocks integer[]
 ---@param block integer
 ---@return dbquery.Relation[]
-function M.relations(items, clauses, blocks, block)
+function M.relations(group, clauses, blocks, block)
+  local items, dialect = group.items, group.dialect
   local found = {}
   local state, index = "item", 1
   while index <= #items do
@@ -161,17 +198,17 @@ function M.relations(items, clauses, blocks, block)
     if blocks[index] ~= block or not TARGETS[clauses[index]] or item.kind == "cursor" then
       index = index + 1
     elseif state == "item" then
-      if M.startsFromItem(item) then
+      if M.startsFromItem(dialect, item) then
         index = index + 1
       elseif syntax.isGroup(item) or lex.isIdentifier(item) then
-        local relations, after = fromItem(items, index, clauses[index])
+        local relations, after = fromItem(group, index, clauses[index])
         vim.list_extend(found, relations)
         state, index = "after", after
       else
         index = index + 1
       end
     else
-      if item.kind == "," or (item.kind == "word" and JOINS[item.lower]) then
+      if item.kind == "," or (item.kind == "word" and dialect.joins[item.lower]) then
         state = "item"
       elseif state == "after" and lex.isWord(item, "on") then
         state = "condition"
@@ -220,7 +257,7 @@ end
 ---@param group dbquery.Group
 ---@return dbquery.InsertTarget|nil
 function M.insertTarget(group)
-  local clauses = syntax.clauses(group.items)
+  local clauses = syntax.clauses(group)
   for index, item in ipairs(group.items) do
     if clauses[index] == "insert_target" and syntax.isName(item) then
       local name, after = syntax.nameAt(group.items, index)

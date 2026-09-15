@@ -16,7 +16,6 @@ they need. Interested parties subscribe via onFinish().
 local client = require("db-query.client")
 local output = require("db-query.output")
 local sql = require("db-query.sql")
-local url = require("db-query.url")
 
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
@@ -200,13 +199,16 @@ end
 ---@field url string|nil Connection as written, for b:db.
 ---@field name string|nil Connection's chosen name, for b:db_name.
 ---@field resolved string Resolved connection (may include password).
+---@field dialect dbquery.Dialect The rules the connection's client reads sql by.
 ---@field sql string
 ---@field srcName string Sql buffer's file name, for naming output files.
 ---@field format dbquery.Format
 ---@field span [integer, integer] First and last line the sql came from.
 ---@field outputPath string|nil User-specified output path.
 
---- Starts the client process. Returns nil on invalid url or cancelled output.
+--- Starts the client process. Returns nil when the log cannot be created,
+--- when the user declines to write over the results file, or when no client
+--- is known for the url.
 ---@param ctx dbquery.Context
 ---@return dbquery.Run|nil
 function Run.start(ctx)
@@ -215,7 +217,7 @@ function Run.start(ctx)
     return nil
   end
 
-  local kind = sql.rowKind(ctx.sql, url.scheme(ctx.resolved))
+  local kind = sql.rowKind(ctx.dialect, ctx.sql)
   local extension = client.target(ctx.resolved, kind, ctx.format)
 
   local path = nil
@@ -272,8 +274,7 @@ function Run.start(ctx)
   return self
 end
 
---- Registers `subscriber` to be called when the run finishes. If already
---- finished, calls immediately.
+--- Calls `subscriber` when the run finishes, or at once when it already has.
 ---@param subscriber fun(run: dbquery.Run)
 function Run:onFinish(subscriber)
   if self.status == "running" then
@@ -283,8 +284,9 @@ function Run:onFinish(subscriber)
   end
 end
 
---- Requests cancellation via server-side cancel or SIGINT. The run remains
---- active until the client exits.
+--- Asks the server to cancel the query when the client recorded its session,
+--- and sends SIGINT to the client otherwise. The run stays `running` until
+--- the client exits.
 function Run:cancel()
   if self.asked or self.status ~= "running" then
     return

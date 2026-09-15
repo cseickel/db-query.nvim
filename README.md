@@ -123,9 +123,11 @@ require("db-query").setup({
 | `:DBConnect`         | Pick the database for this buffer              |
 | `:DBOutputDir ~/out` | Set the output directory for the session       |
 
-`:DBQueryStatement` takes the lines of the statement under the cursor. A statement ends at a `;` outside a string, a comment, or a function body, at a psql command that sends the query, such as `\gset`, or at a psql command line ending in `;`.
+`:DBQueryStatement` takes the lines of the statement under the cursor. A statement ends at a `;` outside a string, a comment, or a function body, at a psql command that sends the query, such as `\gset`, or at a psql command line ending in `;`. The text is read by the rules of the buffer's database, so a `\'` inside a mysql string stays inside the string, and a `#` comment or a backtick name is read as one on mysql and mariadb.
 
-Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements, a postgres statement with a psql backslash command in it, or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
+On mysql and mariadb a statement also ends at `\G` and at a `delimiter` line, and after `delimiter //` it ends at `//` instead of `;`, so the statement under the cursor in a `create procedure` is the whole procedure. A statement run from below a `delimiter //` line is sent with that line ahead of it, so the client ends it where the buffer does.
+
+Every query appends what the client prints to the buffer's log. A query that returns rows, meaning a single `select`, `with`, `table`, or `values` statement, or an `insert`, `update`, `delete`, or `merge` with a `RETURNING` clause, also writes those rows to a results file. Anything else, such as a script of several statements, a postgres statement with a psql backslash command in it, a mysql statement ended with `\G`, or a mutation without `RETURNING`, writes only to the log, where the client's command tags and row counts land.
 
 `-f csv` writes the results file as delimited rows in place of the client's table. Pair it with something that renders CSV, like [csv-table.nvim](https://github.com/cseickel/csv-table.nvim). mysql and mariadb write tab-separated rows, so their file is `.tsv`.
 

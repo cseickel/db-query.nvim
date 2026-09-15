@@ -23,9 +23,6 @@ local M = {}
 
 ---@alias dbquery.Role dbquery.PlainRole|dbquery.InsertRole|dbquery.ColumnsRole
 
---- Keywords that are also function names.
-local CALLABLE_KEYWORDS = { left = true, right = true, any = true, some = true, exists = true }
-
 --- Returns the table whose column list `group` is, as in `create index on t (`,
 --- `references t (`, or `copy t (`, or nil when it is none of those.
 ---@param group dbquery.Group
@@ -58,8 +55,7 @@ function M.of(group)
   if not parent then
     return { role = "statement" }
   end
-  local word = syntax.firstWord(group)
-  if word and syntax.QUERY[word] then
+  if syntax.startsQuery(group) then
     return { role = "query" }
   end
 
@@ -72,9 +68,9 @@ function M.of(group)
   if lex.isWord(previous, "filter") or lex.isWord(previous, "over") or within then
     return { role = "clause" }
   end
-  local clauses = syntax.clauses(parent.items)
-  local afterRow = previous ~= nil and previous.kind == "," and clauses[group.index] == "values"
-  if target and (lex.isWord(previous, "values") or afterRow) then
+  local clauses = syntax.clauses(parent)
+  local row = lex.isWord(previous, "values") or (previous ~= nil and previous.kind == ",")
+  if target and row and clauses[group.index] == "values" then
     return { role = "values_row", insert = target }
   end
 
@@ -82,7 +78,7 @@ function M.of(group)
   if table then
     return { role = "columns_of", table = table }
   end
-  local keyword = previous ~= nil and previous.kind == "word" and CALLABLE_KEYWORDS[previous.lower]
+  local keyword = previous ~= nil and previous.kind == "word" and group.dialect.callable[previous.lower]
   if group.open == "(" and (syntax.isName(previous) or keyword) then
     return { role = "call" }
   end

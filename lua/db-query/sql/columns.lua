@@ -98,7 +98,7 @@ end
 ---@param group dbquery.Group
 ---@return string[]
 function M.outputs(group)
-  local clauses, blocks = syntax.clauses(group.items)
+  local clauses, blocks = syntax.clauses(group)
   local names, entry = {}, {}
   local function close()
     local name = outputName(entry)
