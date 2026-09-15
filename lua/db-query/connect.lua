@@ -19,6 +19,7 @@ local client = require("db-query.client")
 local config = require("db-query.config")
 local connections = require("db-query.connections")
 local dadbod = require("db-query.dadbod")
+local main = require("db-query.main")
 local modeline = require("db-query.modeline")
 local Source = require("db-query.source")
 local sql = require("db-query.sql")
@@ -236,7 +237,7 @@ function M.pick(buf, chosen)
     format_item = function(connection)
       return connection.name
     end,
-  }, function(choice)
+  }, main.wrap(function(choice)
     if not (choice and vim.api.nvim_buf_is_loaded(buf)) then
       return
     end
@@ -268,7 +269,7 @@ function M.pick(buf, chosen)
         chosen(choice)
       end
     end)
-  end)
+  end))
 end
 
 return M

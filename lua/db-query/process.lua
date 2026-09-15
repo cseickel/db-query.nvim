@@ -7,6 +7,8 @@ subscribe with onFinish(). Every process still running when nvim exits is
 killed, because a detached process does not die with nvim.
 ]]
 
+local main = require("db-query.main")
+
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
 ---@class dbquery.Process
@@ -84,7 +86,7 @@ function Process.start(spawn)
     detach = true,
     timeout = spawn.timeout,
   }, function(result)
-    vim.schedule(function()
+    main.run(function()
       self.result = result
       self.status = outcome(self, result)
       forget(self)

@@ -10,6 +10,8 @@ it. Deleting them is `Source:close`'s job, since the run that wrote a file
 outlives the window that showed it.
 ]]
 
+local main = require("db-query.main")
+
 ---@class dbquery.Pane
 ---@field win integer|nil
 ---@field buf integer|nil
@@ -154,7 +156,7 @@ function Pane:display(run)
   end
 
   self.timer = vim.uv.new_timer()
-  self.timer:start(REFRESH, REFRESH, vim.schedule_wrap(refresh))
+  self.timer:start(REFRESH, REFRESH, main.frame(refresh))
 
   run.process:onFinish(function()
     if self.run ~= run then

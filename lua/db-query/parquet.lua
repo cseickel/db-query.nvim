@@ -46,7 +46,8 @@ local function open(path, opened)
     if err then
       vim.notify("db-query: " .. err, vim.log.levels.ERROR)
     end
-    -- Scheduled, because the query opens a window, which BufReadCmd forbids.
+    -- BufReadCmd refuses opening a window, which the query does, and allows
+    -- the buffer edit `main.run` tests with, so `main.run` would run it here.
     return vim.schedule(function()
       opened("duckdb:", byPath)
     end)

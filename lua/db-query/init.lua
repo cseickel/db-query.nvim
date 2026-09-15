@@ -13,6 +13,7 @@ local config = require("db-query.config")
 local connect = require("db-query.connect")
 local dadbod = require("db-query.dadbod")
 local Indicator = require("db-query.indicator")
+local main = require("db-query.main")
 local output = require("db-query.output")
 local selection = require("db-query.selection")
 local Source = require("db-query.source")
@@ -36,23 +37,22 @@ local resolvedStatus = {}
 ---@param buf integer|nil Buffer to connect (default: the current one).
 ---@param chosen fun(connection: dbquery.Connection)|nil
 function M.connect(buf, chosen)
-  connect.pick(buf, chosen)
+  main.capture(function()
+    return buf or vim.api.nvim_get_current_buf()
+  end, function(current)
+    connect.pick(current, chosen)
+  end)
 end
 
---- Runs the sql specified in `opts`.
----
----@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
-function M.execute(opts)
-  opts = opts or {}
-  -- The lines are captured before any prompt opens, because opening a prompt
-  -- exits visual mode, and the cursor may move while a prompt is open.
-  local capture = selection.capture(opts)
+---@param opts dbquery.ExecuteOptions
+---@param capture dbquery.Capture
+---@param buf integer
+local function execute(opts, capture, buf)
   if selection.blank(capture) then
     return vim.notify("db-query: no query to run", vim.log.levels.WARN)
   end
 
   local format = opts.format or config.values.format
-  local buf = vim.api.nvim_get_current_buf()
 
   ---@param outputPath string|nil
   local function run(outputPath)
@@ -119,15 +119,26 @@ function M.execute(opts)
       default = vim.b[buf].db_last_output_path
         or output.destination(vim.api.nvim_buf_get_name(buf)),
       completion = "file",
-    }, function(value)
+    }, main.wrap(function(value)
       value = value and vim.trim(value) or ""
       if value ~= "" then
         run(value)
       end
-    end)
+    end))
   else
     run(opts.output)
   end
+end
+
+--- Runs the sql specified in `opts`.
+---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
+function M.execute(opts)
+  opts = opts or {}
+  -- The lines are captured before any prompt opens, because opening a prompt
+  -- exits visual mode, and the cursor may move while a prompt is open.
+  main.capture(function()
+    return opts, selection.capture(opts), vim.api.nvim_get_current_buf()
+  end, execute)
 end
 
 --- Calls `act` with the resolved url of `buf`'s connection, or warns that it
@@ -135,11 +146,14 @@ end
 ---@param buf integer|nil Defaults to the current buffer.
 ---@param act fun(resolved: string)
 local function withConnection(buf, act)
-  local resolved = dadbod.resolve(vim.b[buf or vim.api.nvim_get_current_buf()].db)
-  if not resolved then
-    return vim.notify("db-query: this buffer has no connection", vim.log.levels.WARN)
-  end
-  act(resolved)
+  main.capture(function()
+    return dadbod.resolve(vim.b[buf or vim.api.nvim_get_current_buf()].db)
+  end, function(resolved)
+    if not resolved then
+      return vim.notify("db-query: this buffer has no connection", vim.log.levels.WARN)
+    end
+    act(resolved)
+  end)
 end
 
 --- Reads the catalog of `buf`'s connection again, in the background.
@@ -162,18 +176,20 @@ end
 --- prompt changes nothing.
 ---@param path string|nil
 function M.outputDir(path)
-  if path then
-    return output.setDirectory(path)
-  end
-
-  vim.ui.input({
-    prompt = "Output directory",
-    default = output.directory(),
-    completion = "dir",
-  }, function(value)
-    if value then
-      output.setDirectory(vim.trim(value))
+  main.run(function()
+    if path then
+      return output.setDirectory(path)
     end
+
+    vim.ui.input({
+      prompt = "Output directory",
+      default = output.directory(),
+      completion = "dir",
+    }, main.wrap(function(value)
+      if value then
+        output.setDirectory(vim.trim(value))
+      end
+    end))
   end)
 end
 
@@ -182,16 +198,19 @@ end
 --- window alike.
 ---@param view dbquery.OutputView
 function M.output(view)
-  local source = Source.owning(vim.api.nvim_get_current_buf())
-  if not source then
-    return vim.notify("db-query: no query output for this buffer", vim.log.levels.WARN)
-  end
-  source:output(view)
+  main.capture(vim.api.nvim_get_current_buf, function(buf)
+    local source = Source.owning(buf)
+    if not source then
+      return vim.notify("db-query: no query output for this buffer", vim.log.levels.WARN)
+    end
+    source:output(view)
+  end)
 end
 
 --- Returns the spinner, what is running, and elapsed time for a winbar or
 --- statusline, or an empty string when nothing is running for `buf`. A query
 --- or connection test in `buf` shows ahead of a read of its database's catalog.
+--- Call it only from nvim's main loop, which a statusline always is.
 ---
 ---     vim.o.winbar = "%{%v:lua.require'db-query'.status()%}"
 ---
@@ -220,7 +239,7 @@ function M.status(buf)
 end
 
 ---@param opts dbquery.Config|nil
-function M.setup(opts)
+local function setup(opts)
   config.set(opts)
   output.sweep()
 
@@ -248,6 +267,11 @@ function M.setup(opts)
   if config.values.parquet then
     require("db-query.parquet").setup(group)
   end
+end
+
+---@param opts dbquery.Config|nil
+function M.setup(opts)
+  main.run(setup, opts)
 end
 
 return M

@@ -18,6 +18,7 @@ setting replaces it for the clients it names.
 local client = require("db-query.client")
 local config = require("db-query.config")
 local Indicator = require("db-query.indicator")
+local main = require("db-query.main")
 local output = require("db-query.output")
 local shape = require("db-query.catalog.shape")
 local url = require("db-query.url")
@@ -66,7 +67,7 @@ end
 local function tick()
   if reading() and not ticker then
     ticker = vim.uv.new_timer()
-    ticker:start(Indicator.FRAME_TIME, Indicator.FRAME_TIME, vim.schedule_wrap(function()
+    ticker:start(Indicator.FRAME_TIME, Indicator.FRAME_TIME, main.frame(function()
       vim.api.nvim__redraw({ statusline = true, winbar = true })
     end))
   elseif ticker and not reading() then
@@ -214,22 +215,15 @@ function M.refresh(connection)
     return not finished and entry.generation == generation
   end
 
-  vim.defer_fn(function()
+  vim.defer_fn(main.wrap(function()
     if current() then
       vim.notify("db-query: reading the catalog of " .. key)
     end
-  end, NOTICE_AFTER)
+  end), NOTICE_AFTER)
 
-  ---@param catalog dbquery.Catalog|nil
-  ---@param err string|nil
-  local function done(catalog, err)
-    -- A catalog function of the user's own may call done from a libuv callback,
-    -- where notifying and saving are refused.
-    if vim.in_fast_event() then
-      return vim.schedule(function()
-        done(catalog, err)
-      end)
-    end
+  -- A catalog function of the user's own may call done from anywhere.
+  ---@type fun(catalog: dbquery.Catalog|nil, err: string|nil)
+  local done = main.wrap(function(catalog, err)
     if not current() then
       return
     end
@@ -248,7 +242,7 @@ function M.refresh(connection)
     entry.catalog = catalog
     vim.notify(string.format("db-query: read the catalog of %s in %.1fs", key, seconds))
     save(key, catalog)
-  end
+  end)
 
   --- Calls `fn`, failing this read when it throws. A callback runs long after
   --- the catalog function returned, so its errors need catching of their own.

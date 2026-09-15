@@ -10,6 +10,7 @@ would have to configure themselves.
 ]]
 
 local config = require("db-query.config")
+local main = require("db-query.main")
 
 --- Where an indicator draws, and what it says the process is doing.
 ---@class dbquery.Place
@@ -141,10 +142,10 @@ end
 
 --- Removes the bar, spinner, and keybinding.
 ---
---- The nil timer makes this idempotent, which matters because a replaced
---- indicator is stopped when its successor is attached and stopped again when
---- its own process finally finishes. Without the guard the second call would
---- delete the successor's keymap and clear its extmarks.
+--- A second call finds `timer` nil and does nothing. A replaced indicator is
+--- stopped when its successor is attached and stopped again when its own
+--- process finishes, and that second call would otherwise delete the
+--- successor's keymap and clear its extmarks.
 function Indicator:stop()
   if not self.timer then
     return
@@ -186,7 +187,7 @@ function Indicator.attach(process, place)
   self.timer:start(
     FRAME_TIME,
     FRAME_TIME,
-    vim.schedule_wrap(function()
+    main.frame(function()
       self:tick()
     end)
   )
