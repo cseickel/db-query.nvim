@@ -33,13 +33,55 @@ local CLAUSES = {
   {
     word = "update",
     clause = "update_target",
+    -- `for update` and `for no key update` lock the rows a select reads.
     test = function(state)
-      return state.after ~= "for"
+      return state.after ~= "for" and state.after ~= "key"
     end,
   },
   { word = "set", within = set("update_target"), clause = "set" },
   { word = "values", within = set("insert_target start with setop"), clause = "values" },
   { word = "using", within = set("delete_target"), clause = "from" },
+}
+
+-- The clauses a query may go on with, each naming those that may follow it.
+local SETOP = "union intersect except"
+local AFTER_ORDER = "limit offset fetch " .. SETOP
+local AFTER_WINDOW = "order " .. AFTER_ORDER
+local AFTER_HAVING = "window " .. AFTER_WINDOW
+local AFTER_GROUP = "having " .. AFTER_HAVING
+local AFTER_WHERE = "group " .. AFTER_GROUP
+local AFTER_FROM = "where " .. AFTER_WHERE
+
+---@type dbquery.Keywords
+local KEYWORDS = {
+  start = set("select insert update delete with values table create alter drop begin"),
+  with = set("recursive as"),
+  setop = set("all distinct select"),
+  select = set("as from " .. AFTER_FROM),
+  from = set("as join inner left right full outer cross natural lateral on using for " .. AFTER_FROM),
+  where = set(AFTER_WHERE),
+  group_by = set(AFTER_GROUP),
+  having = set(AFTER_HAVING),
+  window = set(AFTER_WINDOW),
+  order_by = set("asc desc " .. AFTER_ORDER),
+  partition_by = set("order range rows groups"),
+  limit = set("offset fetch " .. SETOP),
+  offset = set("limit fetch " .. SETOP),
+  fetch = set(SETOP),
+  insert_target = set("values select default"),
+  update_target = set("set"),
+  delete_target = set("using where"),
+  merge_target = set("using on when"),
+  merge_when = set("when matched not then insert update delete values set"),
+  values = set("on " .. SETOP),
+  set = set("where"),
+  expression = set("case cast not null true false exists"),
+  operator = set("and or not is in like similar between"),
+  quantifier = set("all any some"),
+  projection = set("all distinct"),
+  case = set("when then else end"),
+  call = set("over filter within"),
+  closes = set("null true false end asc desc first last"),
 }
 
 ---@type table<string, dbquery.GrammarSignature>
@@ -59,6 +101,7 @@ return {
   name = "standard",
   folds = "lower",
   signatures = SIGNATURES,
+  keywords = KEYWORDS,
   lex = {
     strings = { ["'"] = false },
     escapeStrings = false,

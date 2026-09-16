@@ -49,10 +49,30 @@ local M = {}
 ---@field parameters string[] Comma-separated arguments in call order. Empty for a form whose arguments keywords separate, which no argument position can point into.
 ---@field variadic boolean The last parameter repeats.
 
+--- The keywords completion offers, keyed by where the cursor stands.
+---
+--- Every `dbquery.Clause` name holds the words that may follow a value or a
+--- name in that clause: `where` holds the clauses a query goes on with after
+--- its where clause, `from` holds those plus the joins and `as`. Seven keys
+--- are not clauses:
+---
+--- - `expression`: words that open a value.
+--- - `operator`: words that may follow a value, other than a clause.
+--- - `quantifier`: words that read a subquery, written after a comparison.
+--- - `projection`: words written just after `select`, or as a call's first argument.
+--- - `case`: words written inside an unclosed `case`.
+--- - `call`: words written after a call, such as a window function's `over`.
+--- - `closes`: reserved words that stand for a value or end one, such as
+---   `null` and the `end` of a case, so a word after one follows a value.
+---
+--- A key a dialect leaves out offers nothing there.
+---@alias dbquery.Keywords table<string, table<string, true>>
+
 ---@class dbquery.Dialect
 ---@field name string
 ---@field folds "lower"|"none" How the server reads an unquoted name: folded to lower case, or matched in any case.
 ---@field signatures table<string, dbquery.GrammarSignature> Keyed by lowercase function name.
+---@field keywords dbquery.Keywords
 ---@field lex dbquery.LexRules
 ---@field commands dbquery.Commands|nil The client's own commands, for a dialect read the way one client reads it.
 ---@field reserved table<string, true> Words that are never an alias.
@@ -69,6 +89,7 @@ local M = {}
 ---@field name string
 ---@field folds "lower"|"none"|nil
 ---@field signatures table<string, dbquery.GrammarSignature>|nil Replaces the base dialect's, since a dialect may lack a form its base has.
+---@field keywords dbquery.Keywords|nil Replaces the base dialect's, since a dialect may lack a word its base has.
 ---@field lex table|nil Rules of `dbquery.LexRules`, each replacing the base dialect's.
 ---@field commands dbquery.Commands|nil
 ---@field reserved table<string, true>|nil Added.
@@ -95,6 +116,18 @@ function M.set(text)
   return found
 end
 
+--- Returns the words of `base` that `text` does not name.
+---@param base table<string, true>
+---@param text string
+---@return table<string, true>
+function M.without(base, text)
+  local found = vim.tbl_extend("force", {}, base)
+  for word in text:gmatch("%S+") do
+    found[word] = nil
+  end
+  return found
+end
+
 ---@param base table<string, true>
 ---@param added table<string, true>|nil
 ---@return table<string, true>
@@ -111,6 +144,7 @@ function M.derive(base, changes)
     name = changes.name,
     folds = changes.folds or base.folds,
     signatures = changes.signatures or base.signatures,
+    keywords = changes.keywords or base.keywords,
     lex = vim.tbl_extend("force", base.lex, changes.lex or {}),
     commands = changes.commands or base.commands,
     reserved = union(base.reserved, changes.reserved),

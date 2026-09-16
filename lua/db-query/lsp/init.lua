@@ -25,11 +25,38 @@ local ErrorCodes = vim.lsp.protocol.ErrorCodes
 
 ---@alias dbquery.LspHandler fun(opened: dbquery.Opened, params: table, snippets: boolean): any
 
+--- Returns true when the request was made by typing a quote that closed what
+--- an earlier quote opened. The quote that opens a string asks for the values
+--- it may hold; the quote that ends one asks for nothing.
+---@param opened dbquery.Opened
+---@param at dbquery.CursorContext
+---@param params table
+---@return boolean
+local function closingQuote(opened, at, params)
+  local trigger = params.context
+  if trigger == nil or trigger.triggerKind ~= vim.lsp.protocol.CompletionTriggerKind.TriggerCharacter then
+    return false
+  end
+  local lex = opened.document.dialect.lex
+  local character = trigger.triggerCharacter
+  if lex.strings[character] ~= nil then
+    return at.kind ~= "literal"
+  end
+  if lex.identifiers[character] ~= nil then
+    -- A quoted name still being typed holds no closing quote yet.
+    return #at.word.text > 1 and at.word.text:sub(-1) == character
+  end
+  return false
+end
+
 ---@type table<string, dbquery.LspHandler>
 local HANDLERS = {
   ["textDocument/completion"] = function(opened, params, snippets)
     local cursor = document.offset(opened.lines, params.position)
     local at = context.at(opened.document, cursor)
+    if closingQuote(opened, at, params) then
+      return { isIncomplete = false, items = {} }
+    end
     return { isIncomplete = false, items = complete.items(opened, at, cursor, snippets) }
   end,
   ["textDocument/signatureHelp"] = function(opened, params)
@@ -106,7 +133,7 @@ local function server(dispatchers)
             serverInfo = { name = NAME },
             capabilities = {
               positionEncoding = "utf-8",
-              completionProvider = { triggerCharacters = { ".", "(" } },
+              completionProvider = { triggerCharacters = { ".", "(", "'", '"' } },
               signatureHelpProvider = { triggerCharacters = { "(", "," } },
               hoverProvider = true,
             },

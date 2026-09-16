@@ -9,6 +9,7 @@ An engine that sorts by it shows them in that order whatever their kind.
 
 local document = require("db-query.lsp.document")
 local insert = require("db-query.lsp.insert")
+local literal = require("db-query.lsp.literal")
 local names = require("db-query.lsp.names")
 
 local M = {}
@@ -65,12 +66,51 @@ local function add(state, group, label, text, kind, detail)
   }, group)
 end
 
+--- Operators a subquery may be written after, as in `= any (select ...)`.
+local COMPARES = { ["="] = true, ["<>"] = true, ["!="] = true, ["<"] = true, [">"] = true, ["<="] = true, [">="] = true }
+
+--- Adds the dialect's keywords for `list`, in alphabetical order.
 ---@param state dbquery.Completion
-local function keywords(state)
-  local words = vim.tbl_keys(state.opened.document.dialect.reserved)
+---@param list string|nil A field of `dbquery.Keywords`, or a clause the dialect names no keywords for.
+---@param skip table<string, true>|nil Words to leave out.
+local function keywords(state, list, skip)
+  local words = vim.tbl_keys(list and state.opened.document.dialect.keywords[list] or {})
   table.sort(words)
   for _, word in ipairs(words) do
-    add(state, GROUP.keyword, word, word, Kind.Keyword)
+    if not (skip and skip[word]) then
+      add(state, GROUP.keyword, word, word, Kind.Keyword)
+    end
+  end
+end
+
+--- Adds the keywords that may be written where a value goes: the words that
+--- open a value, or, once one is written, the words that may follow it and the
+--- words that may follow the clause holding it.
+---@param state dbquery.Completion
+local function valueKeywords(state)
+  local context = state.context
+  local previous = context.previous
+  if context.inCase then
+    keywords(state, "case")
+  end
+  if not context.opensValue then
+    keywords(state, "operator")
+    -- A word that ends a value, such as the `desc` of an order by, is written
+    -- once, so the clause no longer offers it or the words it stands among.
+    local closes = state.opened.document.dialect.keywords.closes or {}
+    local written = previous ~= nil and previous.kind == "word" and closes[previous.lower]
+    keywords(state, context.clause, written and closes or nil)
+    if context.afterCall then
+      keywords(state, "call")
+    end
+    return
+  end
+  keywords(state, "expression")
+  if previous ~= nil and previous.kind == "operator" and COMPARES[previous.text] then
+    keywords(state, "quantifier")
+  end
+  if (previous ~= nil and previous.lower == "select") or (context.call ~= nil and context.call.argument == 1) then
+    keywords(state, "projection")
   end
 end
 
@@ -207,7 +247,7 @@ local function columnsHere(state)
       add(state, GROUP["function"], fn.name, names.callable(dialect, fn.name), Kind.Function, detail)
     end
   end
-  keywords(state)
+  valueKeywords(state)
 end
 
 ---@param state dbquery.Completion
@@ -233,6 +273,17 @@ local function qualifiedHere(state)
   end
   local relations, functions = names.relationsIn(catalog, dialect, context.qualifier)
   relationItems(state, relations, functions, false)
+end
+
+--- Adds the values the string under the cursor may hold. A quote inside a
+--- value is doubled, as sql escapes it, and a string left open is closed.
+---@param state dbquery.Completion
+local function literalValues(state)
+  local quote = state.context.quote or "'"
+  local closing = state.context.closed and "" or quote
+  for _, label in ipairs(literal.labels(state.opened, state.context) or {}) do
+    add(state, GROUP.column, label, label:gsub(vim.pesc(quote), quote .. quote) .. closing, Kind.EnumMember)
+  end
 end
 
 ---@param state dbquery.Completion
@@ -301,8 +352,10 @@ function M.items(opened, context, cursor, snippets)
     qualifiedHere(state)
   elseif kind == "columns_of" then
     tableColumns(state, context.columnsOf)
+  elseif kind == "literal" then
+    literalValues(state)
   elseif kind == "keyword" then
-    keywords(state)
+    keywords(state, context.clause or "start")
   end
   return state.items
 end

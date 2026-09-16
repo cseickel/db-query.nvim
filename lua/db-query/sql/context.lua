@@ -21,13 +21,14 @@ local syntax = require("db-query.sql.syntax")
 local M = {}
 
 ---@alias dbquery.CursorKind
----| "none" Inside a string, comment, client command, or dollar quote that is not a body.
+---| "none" Inside a comment, client command, or dollar quote that is not a body.
 ---| "keyword" Where the next word is a keyword, such as after a table's alias.
 ---| "relation" Where a table goes.
 ---| "column" Where an expression goes.
 ---| "qualified" After `name.`, where a column of that relation goes.
 ---| "insert_columns" In the column list of an insert.
 ---| "columns_of" In a column list of a named table, such as `create index on t (`.
+---| "literal" Inside a string, where the word is the text between the quotes.
 
 ---@class dbquery.Word
 ---@field text string The whole identifier under the cursor, or "" when the cursor is between tokens.
@@ -54,6 +55,14 @@ local M = {}
 ---@field kind dbquery.CursorKind
 ---@field word dbquery.Word
 ---@field prefix string The part of `word` before the cursor.
+---@field previous dbquery.Token|nil The code token before the word under the cursor, which a nested group stands in as one token.
+---@field inCase boolean A `case` stands open before the cursor, so its `when`, `then`, `else`, and `end` may be written.
+---@field afterCall boolean The cursor stands just after a call, where a window function's `over` may be written.
+---@field opensValue boolean A value goes where the cursor stands, rather than a word reading the one before it.
+---@field quote string|nil The character opening the string, for kind "literal".
+---@field closed boolean A closing quote already stands at the end of the literal at the cursor.
+---@field valueOf string|nil The dotted name of the column a literal at the cursor is compared to or written into.
+---@field castTo string|nil The dotted name of the type a literal at the cursor is cast to.
 ---@field qualifier string|nil The dotted name before `.`, for kind "qualified".
 ---@field clause dbquery.Clause|nil The clause holding the cursor, when it is in a statement, a query block, or a filter, over, or within group clause.
 ---@field call dbquery.Call|nil The innermost function call holding the cursor.
@@ -153,6 +162,28 @@ local function resolveCtes(relations)
   resolve(relations, nil)
 end
 
+--- Returns the value being typed in the string token `token`, which is the
+--- text between its quotes on the line `cursor` is on. A string still being
+--- typed has no closing quote and runs to the end of the text, which the
+--- completion must not offer to replace.
+---@param token dbquery.Token
+---@param cursor integer
+---@return dbquery.Word
+local function quoted(token, cursor)
+  local closed = not token.open
+  local first = token.first + 1
+  local text = token.text:sub(2, closed and -2 or -1)
+  local opens = text:sub(1, cursor - first):find("\n[^\n]*$")
+  if opens then
+    first, text = first + opens, text:sub(opens + 1)
+  end
+  local ends = text:find("\n", 1, true)
+  if ends then
+    text = text:sub(1, ends - 1)
+  end
+  return { text = text, first = first, last = first + #text - 1 }
+end
+
 --- Returns the code tokens of the statement holding `cursor`, with a cursor
 --- token in place of the identifier under it, and that identifier. Inside a
 --- block such as a `begin atomic` body, the statement is the body's own
@@ -160,21 +191,23 @@ end
 ---@param dialect dbquery.Dialect
 ---@param tokens dbquery.Token[] Every token of the text.
 ---@param cursor integer
+---@param literal dbquery.Token|nil The string holding the cursor, which the marker stands in for whole.
 ---@return dbquery.Token[] statement
 ---@return dbquery.Word word
-local function cursorStatement(dialect, tokens, cursor)
+local function cursorStatement(dialect, tokens, cursor, literal)
   local marker = syntax.marker("cursor", cursor)
   local word = { text = "", first = cursor, last = cursor - 1 }
   local placed, withMarker = false, {}
   -- Client commands stay until the statements are split, because some of
   -- them end a statement.
   for _, token in ipairs(tokens) do
-    local under = lex.isIdentifier(token) and token.first < cursor and cursor <= token.last + 1
+    local under = token == literal
+      or (literal == nil and lex.isIdentifier(token) and token.first < cursor and cursor <= token.last + 1)
     if not placed and (under or token.first >= cursor) then
       withMarker[#withMarker + 1] = marker
       placed = true
       if under then
-        word = { text = token.text, first = token.first, last = token.last }
+        word = literal and quoted(token, cursor) or { text = token.text, first = token.first, last = token.last }
       end
     end
     if token.kind ~= "comment" and not under then
@@ -193,23 +226,129 @@ local function cursorStatement(dialect, tokens, cursor)
   error("the cursor token belongs to no statement")
 end
 
---- Returns the context at `cursor`, which is outside every string, comment,
---- and dollar quote.
+--- Words that may stand between a column and a value compared with it.
+local COMPARISONS = {
+  ["in"] = true, like = true, ilike = true, ["not"] = true, is = true, similar = true, to = true,
+  glob = true, match = true, regexp = true, rlike = true, any = true, all = true, some = true,
+  between = true,
+}
+
+--- Token kinds that leave a value unwritten, so the next word opens one.
+local UNWRITTEN = { operator = true, cast = true, [","] = true }
+
+--- Returns true when a value goes at `index`, rather than a word that reads
+--- the value written before it. The `*` of `select *` ends a value, and the
+--- `*` of `a * b` stands between two.
+---@param dialect dbquery.Dialect
+---@param items dbquery.Token[]
+---@param index integer
+---@return boolean
+local function opensValue(dialect, items, index)
+  local previous = items[index - 1]
+  if previous == nil then
+    return true
+  end
+  if previous.kind == "operator" and previous.text == "*" then
+    local before = items[index - 2]
+    return before ~= nil and not (lex.isWord(before, "select") or before.kind == "," or before.kind == ".")
+  end
+  if previous.kind == "word" then
+    return previous.reserved and not (dialect.keywords.closes or {})[previous.lower]
+  end
+  return UNWRITTEN[previous.kind] == true
+end
+
+--- Returns the name of the column a value at `index` is compared to or written
+--- into, reading back over the comparison that precedes it.
+---@param items dbquery.Token[]
+---@param index integer
+---@return string|nil
+local function comparedName(items, index)
+  local at, compared = index - 1, false
+  while items[at] ~= nil and (items[at].kind == "operator" or (items[at].kind == "word" and COMPARISONS[items[at].lower])) do
+    compared, at = true, at - 1
+  end
+  return compared and (syntax.nameBefore(items, at)) or nil
+end
+
+--- Returns the name of the type a value at `index` is cast to, written either
+--- as `'x'::mood` or as `cast('x' as mood)`.
+---@param items dbquery.Token[]
+---@param index integer
+---@param call dbquery.Call|nil The call holding the cursor.
+---@return string|nil
+local function castName(items, index, call)
+  local after = items[index + 1]
+  if after == nil then
+    return nil
+  end
+  if after.kind == "cast" then
+    return (syntax.nameAt(items, index + 2))
+  end
+  local casting = call ~= nil and call.name:lower() == "cast" and call.argument == 1
+  return casting and lex.isWord(after, "as") and (syntax.nameAt(items, index + 2)) or nil
+end
+
+--- Returns true when a `case` opened before `index` is still open there. A
+--- `case` inside a nested group is closed within it, since that group stands
+--- in `items` as one token.
+---@param items dbquery.Token[]
+---@param index integer
+---@return boolean
+local function openCase(items, index)
+  local depth = 0
+  for at = 1, index - 1 do
+    if lex.isWord(items[at], "case") then
+      depth = depth + 1
+    elseif lex.isWord(items[at], "end") and depth > 0 then
+      depth = depth - 1
+    end
+  end
+  return depth > 0
+end
+
+--- Returns true when a query written at `index` of `group` cannot read the
+--- relations `group` names: a CTE body, or a from item written without
+--- `lateral`. A query anywhere else, such as one in a select list or a where
+--- clause, reads them, which is what a correlated subquery does.
+---@param group dbquery.Group
+---@param clauses dbquery.Clause[]
+---@param index integer
+---@return boolean
+local function hidesRelations(group, clauses, index)
+  if clauses[index] == "with" then
+    return true
+  end
+  return scope.namesRelations(clauses[index]) and not lex.isWord(group.items[index - 1], "lateral")
+end
+
+--- Returns the context at `cursor`, which is outside every comment and dollar
+--- quote, and inside no string but `literal`.
 ---@param document dbquery.Document
 ---@param cursor integer
+---@param literal dbquery.Token|nil The string holding the cursor.
 ---@return dbquery.CursorContext
-local function analyze(document, cursor)
-  local statement, word = cursorStatement(document.dialect, document.tokens, cursor)
+local function analyze(document, cursor, literal)
+  local statement, word = cursorStatement(document.dialect, document.tokens, cursor, literal)
   local root, cursorGroup, cursorIndex = syntax.groups(document.dialect, statement)
-  local context = { kind = "column", word = word, prefix = word.text:sub(1, cursor - word.first), scope = {} }
+  local context =
+    { kind = "column", word = word, prefix = word.text:sub(1, cursor - word.first), scope = {}, inCase = false, afterCall = false, closed = false, opensValue = true }
 
   local group, index = cursorGroup, cursorIndex
+  -- `fromQuery` is true once the walk leaves a query, through any parentheses
+  -- written around it, so the group holding that query decides what it reads.
+  local relationsVisible, fromQuery = true, false
+  local child = nil
   while group do
     local what = role.of(group)
     local items = group.items
 
     if group == cursorGroup then
       local previous = items[index - 1]
+      context.previous = previous
+      context.opensValue = opensValue(document.dialect, items, index)
+      context.inCase = openCase(items, index)
+      context.afterCall = syntax.isGroup(previous) and role.of(previous.group).role == "call"
       if what.role == "insert_columns" or what.role == "values_row" then
         local list = what.role == "insert_columns" and "columns" or "values"
         context.insert = { table = what.insert.table, list = list, position = syntax.position(items, index), columns = what.insert.columns }
@@ -229,35 +368,64 @@ local function analyze(document, cursor)
       if previous and previous.kind == "." and lex.isIdentifier(items[index - 2]) then
         context.kind, context.qualifier = "qualified", (syntax.nameBefore(items, index - 2))
       end
+      if literal then
+        context.valueOf = comparedName(items, index)
+      end
     end
 
     if what.role == "call" and not context.call then
       context.call = { name = (syntax.nameBefore(group.parent.items, group.index - 1)), argument = syntax.position(items, index) }
     end
 
-    if what.role == "statement" or what.role == "query" then
-      local clauses, blocks = syntax.clauses(group)
-      vim.list_extend(context.scope, scope.relations(group, clauses, blocks, blocks[index]))
-      local target = scope.insertTarget(group)
-      local conflict = false
-      for at = 1, index do
-        conflict = conflict or clauses[at] == "conflict"
-      end
-      if target and conflict and clauses[index] ~= "returning" then
-        context.scope[#context.scope + 1] = { kind = "table", name = target.table, alias = "excluded" }
-      end
-      vim.list_extend(context.scope, scope.ctes(items, clauses))
-      local ddl = group == root and ddlTable(items)
-      if ddl then
-        context.scope[#context.scope + 1] = ddl
-      end
+    if literal and group == cursorGroup then
+      context.castTo = castName(items, index, context.call)
     end
 
-    index = group.index
+    -- A value in a list, as in `status in ('a', 'b')`, is compared by the
+    -- words written before the list.
+    if literal and context.valueOf == nil and child == cursorGroup then
+      context.valueOf = comparedName(items, index)
+    end
+
+    if what.role == "statement" or what.role == "query" then
+      local clauses, blocks = syntax.clauses(group)
+      if fromQuery and hidesRelations(group, clauses, index) then
+        relationsVisible = false
+      end
+      if relationsVisible then
+        vim.list_extend(context.scope, scope.relations(group, clauses, blocks, blocks[index]))
+        local target = scope.insertTarget(group)
+        local conflict = false
+        for at = 1, index do
+          conflict = conflict or clauses[at] == "conflict"
+        end
+        if target and conflict and clauses[index] ~= "returning" then
+          context.scope[#context.scope + 1] = { kind = "table", name = target.table, alias = "excluded" }
+        end
+        local ddl = group == root and ddlTable(items)
+        if ddl then
+          context.scope[#context.scope + 1] = ddl
+        end
+      end
+      vim.list_extend(context.scope, scope.ctes(items, clauses))
+    end
+
+    if what.role == "query" then
+      fromQuery = true
+    elseif what.role ~= "parens" then
+      fromQuery = false
+    end
+
+    child, index = group, group.index
     group = group.parent
   end
 
   resolveCtes(context.scope)
+  if literal then
+    context.kind = "literal"
+    context.quote = literal.text:sub(1, 1)
+    context.closed = not literal.open
+  end
   return context
 end
 
@@ -278,10 +446,20 @@ function M.at(document, cursor)
     end
     return context
   end
-  if body.inLiteral(document.tokens, cursor) then
-    return { kind = "none", word = { text = "", first = cursor, last = cursor - 1 }, prefix = "", scope = {} }
+  local literal = body.stringAt(document.tokens, cursor)
+  if literal == nil and body.inLiteral(document.tokens, cursor) then
+    return {
+      kind = "none",
+      word = { text = "", first = cursor, last = cursor - 1 },
+      prefix = "",
+      scope = {},
+      inCase = false,
+      afterCall = false,
+      closed = false,
+      opensValue = true,
+    }
   end
-  return analyze(document, cursor)
+  return analyze(document, cursor, literal)
 end
 
 return M

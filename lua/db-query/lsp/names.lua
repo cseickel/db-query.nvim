@@ -2,9 +2,10 @@
 Matching the names sql writes against the names in a catalog.
 
 - `parts` splits a dotted name, keeping a quoted part whole.
-- `relation`, `relationsIn`, and `functions` find what a name refers to in the
-  catalog, by the dialect's `folds` rule.
-- `reference` and `refersTo` match a written name against a relation in scope.
+- `relation`, `type`, `relationsIn`, and `functions` find what a name refers
+  to in the catalog, by the dialect's `folds` rule.
+- `reference` and `refersTo` match a written name against a relation in scope,
+  and `scopeColumn` finds the catalog column a name refers to among them.
 - `columns` lists the columns a relation in scope offers, and `insertable` the
   columns of a table an insert lists.
 - `quote` and `callable` write a catalog name the way sql has to spell it.
@@ -135,6 +136,15 @@ function M.relation(catalog, dialect, name)
   return qualified(catalog, dialect, catalog.relations, M.parts(dialect, name))[1]
 end
 
+--- Returns the catalog type a dotted name written in sql refers to.
+---@param catalog dbquery.Catalog
+---@param dialect dbquery.Dialect
+---@param name string
+---@return dbquery.Type|nil
+function M.type(catalog, dialect, name)
+  return qualified(catalog, dialect, catalog.types, M.parts(dialect, name))[1]
+end
+
 --- Returns every overload of the function a dotted name written in sql refers to.
 ---@param catalog dbquery.Catalog
 ---@param dialect dbquery.Dialect
@@ -252,6 +262,28 @@ function M.columns(catalog, dialect, relation, seen)
     end
   end
   return found
+end
+
+--- Returns the catalog column a dotted name refers to among the relations in
+--- `scope`, or nil when none of them offers it.
+---@param catalog dbquery.Catalog
+---@param dialect dbquery.Dialect
+---@param scope dbquery.ScopeRelation[]
+---@param written string
+---@return dbquery.Column|nil
+function M.scopeColumn(catalog, dialect, scope, written)
+  local parts = M.parts(dialect, written)
+  local qualifier = parts[#parts - 1]
+  for _, relation in ipairs(scope) do
+    if qualifier == nil or names(dialect, qualifier, M.reference(dialect, relation), true) then
+      for _, offered in ipairs(M.columns(catalog, dialect, relation)) do
+        if offered.column and names(dialect, parts[#parts], offered.name, true) then
+          return offered.column
+        end
+      end
+    end
+  end
+  return nil
 end
 
 --- Returns the columns of `relation` an insert lists: every one the database

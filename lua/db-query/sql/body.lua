@@ -3,6 +3,7 @@ Code nested inside a statement.
 
 - `at` finds the `do` block or function body holding the cursor, and the
   parameters and variables in scope there.
+- `stringAt` returns the string holding the cursor.
 - `inLiteral` says whether the cursor is inside a string, a comment, a client
   command, or a dollar quote.
 - `innerStatement` narrows a statement with a block, such as a `begin atomic`
@@ -147,6 +148,21 @@ function M.at(document, cursor)
         end
       end
       return { text = inner, offset = first - 1, variables = variables }
+    end
+  end
+  return nil
+end
+
+--- Returns the string token holding `cursor`, or nil when the cursor is in no
+--- string. A string still being typed has no closing quote and runs to the end
+--- of what is written.
+---@param tokens dbquery.Token[]
+---@param cursor integer
+---@return dbquery.Token|nil
+function M.stringAt(tokens, cursor)
+  for _, token in ipairs(tokens) do
+    if token.kind == "string" and token.first < cursor and (cursor <= token.last or token.open) then
+      return token
     end
   end
   return nil

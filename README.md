@@ -229,11 +229,32 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
 
 A language server named `db-query` runs inside nvim and attaches to every `sql`, `mysql`, and `plsql` buffer, scratch buffers included. It needs no install and no `vim.lsp.config` entry. Set `lsp = false` to turn it off.
 
-It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery or CTE. In `from` it offers tables and set-returning functions. Typing `.` or `(` triggers it. In an `insert`, it also offers items that write the column list and the values row:
+It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery or CTE. In `from` it offers tables and set-returning functions. Typing `.`, `(`, `'`, or `"` triggers it. In an `insert`, it also offers items that write the column list and the values row:
 
 - after `insert into`, one item per table that writes `t (col, ...) values (...)`, with a placeholder per column holding the column's name and type
 - inside the column list, `all columns` while the list is empty, and each column not listed yet
 - inside an empty `values (`, one placeholder per listed column
+
+The tables in scope are those of the query the cursor is in. A subquery in a select list or a `where` clause may refer to the outer query's tables, so it sees them too. A CTE body, or a subquery in `from` written without `lateral`, cannot, so it sees only its own. Every CTE the statement defines is in scope throughout it. A second statement written with no `;` after the first is a query of its own, so its `from` never mixes with the first's.
+
+The keywords offered are the ones that may be written where the cursor stands: after a table in `from`, the joins and the clauses that may follow; after a value, the operators; just after `select`, `all` and `distinct`. Each dialect offers the words it has:
+
+- mysql leaves out `fetch` and `lateral`
+- sqlite adds `glob`, `regexp`, and `match`
+- duckdb adds `qualify`, `exclude`, and `replace`
+
+Inside a string, it offers the values an enum column accepts. The column is the one the string is compared to, assigned to, or inserted into, and a cast to an enum type names the type outright:
+
+```sql
+select * from orders where status = '│'
+select * from orders where status in ('sad', '│')
+insert into orders (id, status) values (1, '│')
+update orders set status = '│'
+select '│'::mood
+select cast('│' as mood)
+```
+
+Picking a value replaces what stands between the quotes, and closes a string you left open. Typing the closing quote of a string opens no menu.
 
 Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it.
 
