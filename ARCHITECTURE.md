@@ -142,26 +142,6 @@ How each client fills the results file:
 
 Without a results file, psql runs with `-e` and `\timing on` so the log labels each statement's row count and elapsed time. sqlite3 and duckdb take the statement on their command line, and mysql and mariadb still read it from stdin.
 
-The log is markdown, named `<basename>.md` so that filetype detection makes it a markdown buffer. Whether the fenced sql is colored is up to your treesitter setup: it has to highlight fenced blocks and have a `sql` parser, which nvim does not ship. Each run is a heading with the run's number and the time, plus the connection's name when the buffer has one, a `rows` line when the run writes a results file, the sql, the client's output, and a bold status line: `✅ finished`, `❌ failed`, or `⏹ cancelled` with the seconds the run took:
-
-`````markdown
-## 3 · 14:07:41 · dev
-
-rows → `/home/chris/.cache/nvim/db-query/4242/query-4.txt`
-
-```sql
-select * from foo;
-```
-
-````bash
-ERROR:  relation "foo" does not exist
-LINE 1: select * from foo;
-                      ^
-````
-
-**❌ 3 failed in 0.031s**
-`````
-
 `Pane:display` shows the log the moment the run starts, with the cursor on the last line, and rereads it every 500ms. A window already holding a results file keeps it instead, so a rerun does not take away what you were reading. When the run finishes it stops the timer and shows the results file when the status is `ok` and there is one, and the log otherwise. `Source:output(view)` is what `:DBOutput` calls, and it reopens the window if it was closed. `"toggle"` picks whichever of the two files is not showing.
 
 ## Connections
