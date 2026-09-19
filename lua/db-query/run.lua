@@ -31,6 +31,29 @@ Run.__index = Run
 --- Counts runs, so each one is named in the log it shares with the others.
 local started = 0
 
+--- Fences the sql, and fences what the client prints.
+---
+--- The output fence is the longer of the two, so that neither a sql fence nor a
+--- client printing three backticks can end the block the client writes into.
+---
+--- Only the bare closing fence toggles a block, since a fence with an info
+--- string can only open one. A cancelled query still writing while its
+--- replacement announces therefore leaves a block open, and the run after the
+--- two of them closes it. Those three read wrong and the next one is clean.
+local SQL_FENCE = "```"
+local OUTPUT_FENCE = "````"
+
+--- What the client prints is a transcript rather than shell, and bash is the
+--- grammar that colors it best.
+local OUTPUT_LANGUAGE = "bash"
+
+--- How each way a run can end is written in its status line.
+local ENDED = {
+  ok = { icon = "✅", word = "finished" },
+  failed = { icon = "❌", word = "failed" },
+  cancelled = { icon = "⏹", word = "cancelled" },
+}
+
 ---@param argument string
 ---@return string
 local function quoted(argument)
@@ -87,21 +110,67 @@ local function move(from, to)
 end
 
 --- Opens the log with what is about to run, so the pane has something to show
---- before the client prints anything.
+--- before the client prints anything. The block the client writes into is left
+--- open, and `close` closes it.
 ---
---- The id repeats in the footer, because a cancelled query goes on writing
+--- The id repeats in the status line, because a cancelled query goes on writing
 --- while its replacement is already appending to the same log.
 ---@param self dbquery.Run
 local function announce(self)
-  local lines = { "", string.format("-- [%d] %s", self.id, os.date("%Y-%m-%d %H:%M:%S")) }
-  if self.path then
-    table.insert(lines, "-- rows -> " .. self.path)
+  local heading = { "## " .. self.id, os.date("%H:%M:%S") }
+  if self.ctx.name then
+    table.insert(heading, self.ctx.name)
   end
-  vim.list_extend(lines, { self.ctx.sql, "" })
+
+  local lines = { "", table.concat(heading, " · "), "" }
+  if self.path then
+    vim.list_extend(lines, { "rows → `" .. self.path .. "`", "" })
+  end
+  vim.list_extend(lines, {
+    SQL_FENCE .. "sql",
+    self.ctx.sql,
+    SQL_FENCE,
+    "",
+    OUTPUT_FENCE .. OUTPUT_LANGUAGE,
+    "",
+  })
   append(self.log, table.concat(lines, "\n"))
 end
 
---- Writes the footer and puts the rows where they were asked for.
+--- Whether `path` is empty or ends in a newline, and so whether the next thing
+--- appended to it starts a line.
+---@param path string
+---@return boolean
+local function atLineStart(path)
+  local file = io.open(path, "r")
+  if not file then
+    return true
+  end
+  local size = file:seek("end")
+  local last = size > 0 and file:seek("set", size - 1) and file:read(1) or "\n"
+  file:close()
+  return last == "\n"
+end
+
+--- Closes the block the client writes into and states how the run ended. Every
+--- `announce` is answered by exactly one of these, which is what leaves the log
+--- with no block open.
+---
+--- A client whose last line has no newline gets one, since a closing fence is
+--- only a fence at the start of a line.
+---@param self dbquery.Run
+---@param icon string
+---@param outcome string
+local function close(self, icon, outcome)
+  local lead = atLineStart(self.log) and "" or "\n"
+  append(
+    self.log,
+    string.format("%s%s\n\n**%s %d %s**\n", lead, OUTPUT_FENCE, icon, self.id, outcome)
+  )
+end
+
+--- Puts the rows where they were asked for, then closes the log's block. The
+--- rows move first, so nothing that goes wrong writing the log can lose them.
 ---
 --- A query that did not finish leaves its results file behind rather than
 --- deleting it, because two runs pointed at the same `-o` path share it and
@@ -109,15 +178,15 @@ end
 ---@param self dbquery.Run
 local function finish(self)
   local status = self.process.status
-  local label = status == "ok" and "finished" or status
-  append(self.log, string.format("\n[%d %s in %.3fs]\n", self.id, label, self.process:elapsed()))
-
   if self.staged then
     if status == "ok" and self.path then
       move(self.staged, self.path)
     end
     os.remove(self.staged)
   end
+
+  local ended = ENDED[status] or { icon = ENDED.failed.icon, word = status }
+  close(self, ended.icon, string.format("%s in %.3fs", ended.word, self.process:elapsed()))
 end
 
 --- What one query was asked to do, fixed when the user ran it. Every component
@@ -193,7 +262,10 @@ function Run.start(ctx)
     end,
   })
   if not process then
-    vim.notify("db-query: " .. tostring(err), vim.log.levels.ERROR)
+    local reason = tostring(err)
+    append(self.log, reason)
+    close(self, ENDED.failed.icon, "could not start")
+    vim.notify("db-query: " .. reason, vim.log.levels.ERROR)
     return nil
   end
   self.process = process

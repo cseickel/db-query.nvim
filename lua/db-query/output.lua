@@ -25,7 +25,7 @@ local asked = nil
 --- Counts staging files, so each run gets its own.
 local staged = 0
 
-local EXTENSIONS = { csv = true, tsv = true, txt = true, log = true }
+local EXTENSIONS = { csv = true, tsv = true, txt = true }
 
 ---@return string
 function M.directory()
@@ -110,7 +110,7 @@ end
 ---@param srcName string Full path of the source buffer.
 ---@return string|nil
 function M.log(srcName)
-  local path = MINE .. "/" .. baseName(srcName) .. ".log"
+  local path = MINE .. "/" .. baseName(srcName) .. ".md"
   return ready(path, "a") and path or nil
 end
 
@@ -137,8 +137,9 @@ function M.owns(path)
   return clearing() and vim.startswith(path, M.directory() .. "/")
 end
 
---- Returns `full` ending in `extension`. When `full` already ends in csv, tsv,
---- txt, or log, that extension is replaced rather than stacked.
+--- Returns `full` ending in `extension`. When `full` already ends in an
+--- extension a results file can have, that extension is replaced rather than
+--- stacked.
 ---@param full string
 ---@param extension string
 ---@return string

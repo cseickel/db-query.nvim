@@ -154,9 +154,9 @@ Every query appends what the client prints to the buffer's log. A query that ret
 
 ## Where output goes
 
-The log for a buffer is `stdpath("cache")/db-query/<pid>/<buffer name>.log`. Every query run from that buffer appends to it, each under a header with the run's number, the time, and the sql. The log is deleted when the sql buffer is wiped, and anything an nvim left behind is swept the next time one starts.
+Every query run from a buffer appends to that buffer's log. The log is deleted when the sql buffer is wiped, and anything an nvim left behind is swept the next time one starts.
 
-Results files go to the output directory, which defaults to the same `stdpath("cache")/db-query/<pid>/`, named for the sql buffer and numbered one past the highest number already there. They are ordinary buffers, so closing the window keeps the file, and `:DBOutput` brings it back. Results files are deleted when the sql buffer that produced them is wiped.
+Results files go to the output directory, which defaults to `stdpath("cache")/db-query/<pid>/`, named for the sql buffer and numbered one past the highest number already there. They are ordinary buffers, so closing the window keeps the file, and `:DBOutput` brings it back. Results files are deleted when the sql buffer that produced them is wiped.
 
 Set `output_dir` in `setup` to write results somewhere else. That turns `output_cleanup` off, because a directory of your own is somewhere you put results you are keeping. Set `output_cleanup = true` alongside it to have those files deleted with their sql buffer anyway.
 

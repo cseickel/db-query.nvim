@@ -79,7 +79,7 @@ Everything else is helper functions:
     - `client.dialect(resolved)` returns the dialect the connection's client reads sql by, and `selection.text(capture, dialect)` returns the sql and its `span`, the first and last line it came from. The statement at the cursor is found here rather than at capture, because where a statement ends depends on the dialect: a `\'` inside a mysql string keeps the string open, and in postgres it closes the string. When the buffer lines above the sql leave a mysql `delimiter` other than `;` in effect, the command that set it is put ahead of the sql, so the client ends the statement where the buffer does. When the statement comes back empty, which happens when the cursor sits between statements, the query is refused with "no query to run".
     - `Source.of(buf):execute(ctx)` starts the work. The `dbquery.Context` holds the request as it stood when the user ran it, the dialect included, and every part of the run reads what it needs from `run.ctx` rather than being handed it.
 
-3. `Source:execute` calls `Run.start` and stops there when it returns nil, records the results file in `self.files`, then replaces what the buffer was running: it cancels the previous process, stops its indicator, attaches an `Indicator` to the new process, and calls `Pane:display`. The indicator and the pane subscribe to the process after the run's own subscriber, so the footer is in the log before the pane reads it.
+3. `Source:execute` calls `Run.start` and stops there when it returns nil, records the results file in `self.files`, then replaces what the buffer was running: it cancels the previous process, stops its indicator, attaches an `Indicator` to the new process, and calls `Pane:display`. The indicator and the pane subscribe to the process after the run's own subscriber, so the rows are on the results path and the status line is in the log before the pane reads either.
 
 4. `Run.start` decides where output goes and starts the client:
 
@@ -88,12 +88,12 @@ Everything else is helper functions:
     - `client.target(resolved, kind, format)` returns the results file extension when the client writes that kind of rows to a file, and nil otherwise. With nil there is no results file, and a `-o` path draws a warning that nothing will be written to it.
     - `output.path(srcName, extension, chosen)` names the results file and creates it empty. `output.staging(extension)` names a file in the cache directory, with no whitespace in its path, for a client that cannot write to the results path itself.
     - `client.command(spec)` returns the argv, env, stdin, and where the client records its server session, plus either `stdout`, a file the shell must catch stdout in, or `staged`, meaning the client wrote to the staging file.
-    - `announce` appends a header to the log, so the pane has something to show before the client prints anything.
+    - `announce` appends the run's heading and sql to the log and opens the block the client's output lands in, so the pane has something to show before the client prints anything.
     - `writingTo` wraps the argv in `sh -c`. Both streams append to the log, unless the command named a `stdout` file, in which case stdout goes there and only stderr reaches the log. `Process.start` runs it through `vim.system`, detached, and the run subscribes `finish` to the process before anything else can.
 
-5. When the client exits, `Process` moves onto the main loop through `main.run`, sets `result` and `status`, removes the session file, and calls every subscriber in the order they subscribed. `status` is `ok` when the exit code is 0 and no signal ended the client, `cancelled` when a cancel was asked, and `failed` otherwise. Each subscriber is called in a `pcall`, so that one throwing cannot stop the rest. The run's `finish` appends the `[1 finished in 1.234s]` footer to the log and moves a staged file onto the results path when the run succeeded.
+5. When the client exits, `Process` moves onto the main loop through `main.run`, sets `result` and `status`, removes the session file, and calls every subscriber in the order they subscribed. `status` is `ok` when the exit code is 0 and no signal ended the client, `cancelled` when a cancel was asked, and `failed` otherwise. Each subscriber is called in a `pcall`, so that one throwing cannot stop the rest. The run's `finish` moves a staged file onto the results path when the run succeeded and appends the status line, `**✅ 1 finished in 1.234s**`.
 
-6. `Indicator:stop` removes the bar and the cancel key. `Pane` opens the results file when the process's status is `ok` and the run produced one, and otherwise reloads the log so its footer shows.
+6. `Indicator:stop` removes the bar and the cancel key. `Pane` opens the results file when the process's status is `ok` and the run produced one, and otherwise reloads the log so its status line shows.
 
 ## Design Decisions
 
@@ -111,11 +111,11 @@ Two things stay outside `main.lua`. `status`, `catalog.get`, and `catalog.readin
 
 **Query rows go to files, never through lua.** Collecting a large result set into a lua string through `vim.system` ran nvim out of memory, which shows as `E41`. So `run.lua` has the client write its rows to a file and never reads that file. `client.value` runs a statement in the `value` format and leaves its stdout on the process for the caller, and is used only for output known to be small: the connection test's `select 1`, the parquet view's `create view`, and the catalog queries, whose output on the largest database seen is about 6 MB.
 
-**The client's output is not parsed.** What is in the log is what the client printed, between the header `announce` writes and the footer `finish` writes. The results file holds what the client wrote and nothing else.
+**The client's output is not parsed.** What is in the log is what the client printed, inside the run's output block. The results file holds what the client wrote and nothing else.
 
 **The client writes its own rows where it can.** psql, sqlite3, and duckdb are told the results path and write rows there themselves, which leaves stdout and stderr both free for the log, so command tags, timing, and errors arrive in the order the client printed them. mysql and mariadb have no such mechanism, so the shell catches their stdout in the results file and only stderr reaches the log.
 
-**One log per sql buffer, appended.** Every run of a buffer writes to the same log, always under the cache directory, whatever the output directory is. A cancelled query keeps writing while its replacement is already appending to the same file, so each run has a number that appears in both its header and its footer.
+**One log per sql buffer, appended.** Every run of a buffer writes to the same log, always under the cache directory, whatever the output directory is. A cancelled query keeps writing while its replacement is already appending to the same file, so each run has a number that appears in both its heading and its status line.
 
 **A failed run keeps its results file.** Two runs pointed at the same `-o` path share it, so deleting the file on failure would take the other run's output with it. The log holds the reason the run failed.
 
@@ -131,7 +131,7 @@ Every run appends to the log. A run also writes a results file when `sql.rowKind
 - `insert`, `update`, `delete`, and `merge` that mention `returning` are `"returning"`.
 - Any other statement, such as `create table` or an `update` without RETURNING, returns nil. The client prints its command tag and row count to the log.
 
-`client.target` returns the extension: the client's `delimited` (`csv`, or `tsv` for mysql and mariadb) for csv format, and `txt` for text format. The `log` extension never appears in the output directory.
+`client.target` returns the extension: the client's `delimited` (`csv`, or `tsv` for mysql and mariadb) for csv format, and `txt` for text format.
 
 How each client fills the results file:
 
@@ -141,6 +141,26 @@ How each client fills the results file:
 - mysql and mariadb are one client, built by `client(binary)` in `client/mysql.lua`, and differ only in the binary run. The statement goes on stdin, where the client reads it as a script and acts on a `delimiter` line. Neither has a client-side redirect, so `command` returns `stdout = spec.path` and the shell catches stdout there, with `--batch` for csv, which prints tab-separated rows in place of the ascii table. Their `rows` holds only `"query"`, so a RETURNING statement goes to the log.
 
 Without a results file, psql runs with `-e` and `\timing on` so the log labels each statement's row count and elapsed time. sqlite3 and duckdb take the statement on their command line, and mysql and mariadb still read it from stdin.
+
+The log is markdown, named `<basename>.md` so that filetype detection makes it a markdown buffer. Whether the fenced sql is colored is up to your treesitter setup: it has to highlight fenced blocks and have a `sql` parser, which nvim does not ship. Each run is a heading with the run's number and the time, plus the connection's name when the buffer has one, a `rows` line when the run writes a results file, the sql, the client's output, and a bold status line: `✅ finished`, `❌ failed`, or `⏹ cancelled` with the seconds the run took:
+
+`````markdown
+## 3 · 14:07:41 · dev
+
+rows → `/home/chris/.cache/nvim/db-query/4242/query-4.txt`
+
+```sql
+select * from foo;
+```
+
+````bash
+ERROR:  relation "foo" does not exist
+LINE 1: select * from foo;
+                      ^
+````
+
+**❌ 3 failed in 0.031s**
+`````
 
 `Pane:display` shows the log the moment the run starts, with the cursor on the last line, and rereads it every 500ms. A window already holding a results file keeps it instead, so a rerun does not take away what you were reading. When the run finishes it stops the timer and shows the results file when the status is `ok` and there is one, and the log otherwise. `Source:output(view)` is what `:DBOutput` calls, and it reopens the window if it was closed. `"toggle"` picks whichever of the two files is not showing.
 
@@ -226,7 +246,7 @@ Each client file holds a `catalog` function that reads the catalog through `rows
 
 ## Output files
 
-The log for a sql buffer is `stdpath("cache") .. "/db-query/" .. <pid> .. "/" .. <basename> .. ".log"`. Staging files are `staging-<n>.<extension>` in the same directory, numbered per call so two runs never share one. Both live there whatever the output directory is, so a buffer keeps one log for the session and `output.sweep()` clears it later.
+The log for a sql buffer is `stdpath("cache") .. "/db-query/" .. <pid> .. "/" .. <basename> .. ".md"`. Staging files are `staging-<n>.<extension>` in the same directory, numbered per call so two runs never share one. Both live there whatever the output directory is, so a buffer keeps one log for the session and `output.sweep()` clears it later.
 
 Results files go to `output.directory()`, which returns the first of these that applies:
 
