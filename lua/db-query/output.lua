@@ -2,7 +2,8 @@
 Output file paths and cleanup.
 
 Row data goes to the output directory, which the user chooses. Logs go to a
-subdirectory of nvim's cache named by nvim's pid, and never anywhere else.
+directory per buffer under one named by nvim's pid, in nvim's cache and never
+anywhere else.
 Saved catalogs go to the `catalog` subdirectory of the same cache, shared by
 every nvim. On startup, sweep() removes directories for nvims that have exited
 and the partly written catalogs they left.
@@ -102,15 +103,18 @@ function M.setDirectory(path)
   vim.notify("db-query: output goes to " .. M.directory())
 end
 
---- Returns the log for `srcName`, which every run of that buffer appends to,
+--- Returns the log for buffer `buf`, which every run of that buffer appends to,
 --- or nil when it cannot be written.
 ---
 --- Logs live in this nvim's cache directory whatever the output directory is,
---- so a buffer keeps one log for the session and sweep() clears it later.
+--- so a buffer keeps one log for the session and sweep() clears it later. The
+--- buffer number names the directory, since two buffers can share a base name,
+--- and the file keeps the readable name for the window showing it.
+---@param buf integer Buffer the query came from.
 ---@param srcName string Full path of the source buffer.
 ---@return string|nil
-function M.log(srcName)
-  local path = MINE .. "/" .. baseName(srcName) .. ".md"
+function M.log(buf, srcName)
+  local path = MINE .. "/" .. buf .. "/" .. baseName(srcName) .. ".md"
   return ready(path, "a") and path or nil
 end
 

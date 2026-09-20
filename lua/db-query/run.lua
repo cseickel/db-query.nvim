@@ -19,39 +19,20 @@ local Process = require("db-query.process")
 local sql = require("db-query.sql")
 
 ---@class dbquery.Run
----@field id integer Distinguishes runs sharing a log.
 ---@field ctx dbquery.Context What was asked for.
----@field log string Log file, appended to by every run of this buffer.
+---@field log dbquery.LogEntry This run's place in the log every run of this buffer appends to.
 ---@field path string|nil Results file, when the statement returns rows.
 ---@field staged string|nil Path the client wrote rows to, moved onto `path`.
 ---@field process dbquery.Process
 local Run = {}
 Run.__index = Run
 
---- Counts runs, so each one is named in the log it shares with the others.
-local started = 0
-
---- Fences the sql, and fences what the client prints.
----
---- The output fence is the longer of the two, so that neither a sql fence nor a
---- client printing three backticks can end the block the client writes into.
----
---- Only the bare closing fence toggles a block, since a fence with an info
---- string can only open one. A cancelled query still writing while its
---- replacement announces therefore leaves a block open, and the run after the
---- two of them closes it. Those three read wrong and the next one is clean.
-local SQL_FENCE = "```"
-local OUTPUT_FENCE = "````"
-
---- What the client prints is a transcript rather than shell, and bash is the
---- grammar that colors it best.
-local OUTPUT_LANGUAGE = "bash"
-
---- How each way a run can end is written in its status line.
-local ENDED = {
-  ok = { icon = "✅", word = "finished" },
-  failed = { icon = "❌", word = "failed" },
-  cancelled = { icon = "⏹", word = "cancelled" },
+--- How each way a run can end is said in the log.
+---@type table<dbquery.Status, dbquery.LogMessage>
+local COMPLETION = {
+  ok = "success_complete",
+  failed = "error_complete",
+  cancelled = "cancel_complete",
 }
 
 ---@param argument string
@@ -66,10 +47,10 @@ end
 --- A client that writes its own rows leaves both streams for the log. One that
 --- cannot names a `rows` file for stdout, so only stderr reaches the log.
 ---@param argv string[]
----@param log string
+---@param logPath string
 ---@param rows string|nil
 ---@return string[]
-local function writingTo(argv, log, rows)
+local function writingTo(argv, logPath, rows)
   local words = {}
   for _, argument in ipairs(argv) do
     table.insert(words, quoted(argument))
@@ -82,19 +63,9 @@ local function writingTo(argv, log, rows)
   line = "exec " .. line
 
   if rows then
-    return { "sh", "-c", line .. " >" .. quoted(rows) .. " 2>>" .. quoted(log) }
+    return { "sh", "-c", line .. " >" .. quoted(rows) .. " 2>>" .. quoted(logPath) }
   end
-  return { "sh", "-c", line .. " >>" .. quoted(log) .. " 2>&1" }
-end
-
----@param path string
----@param text string
-local function append(path, text)
-  local file = io.open(path, "a")
-  if file then
-    file:write(text)
-    file:close()
-  end
+  return { "sh", "-c", line .. " >>" .. quoted(logPath) .. " 2>&1" }
 end
 
 --- Moves `from` onto `to`, copying when the two are on different filesystems.
@@ -109,68 +80,9 @@ local function move(from, to)
   end
 end
 
---- Opens the log with what is about to run, so the pane has something to show
---- before the client prints anything. The block the client writes into is left
---- open, and `close` closes it.
----
---- The id repeats in the status line, because a cancelled query goes on writing
---- while its replacement is already appending to the same log.
----@param self dbquery.Run
-local function announce(self)
-  local heading = { "## " .. self.id, os.date("%H:%M:%S") }
-  if self.ctx.name then
-    table.insert(heading, self.ctx.name)
-  end
-
-  local lines = { "", table.concat(heading, " · "), "" }
-  if self.path then
-    vim.list_extend(lines, { "rows → `" .. self.path .. "`", "" })
-  end
-  vim.list_extend(lines, {
-    SQL_FENCE .. "sql",
-    self.ctx.sql,
-    SQL_FENCE,
-    "",
-    OUTPUT_FENCE .. OUTPUT_LANGUAGE,
-    "",
-  })
-  append(self.log, table.concat(lines, "\n"))
-end
-
---- Whether `path` is empty or ends in a newline, and so whether the next thing
---- appended to it starts a line.
----@param path string
----@return boolean
-local function atLineStart(path)
-  local file = io.open(path, "r")
-  if not file then
-    return true
-  end
-  local size = file:seek("end")
-  local last = size > 0 and file:seek("set", size - 1) and file:read(1) or "\n"
-  file:close()
-  return last == "\n"
-end
-
---- Closes the block the client writes into and states how the run ended. Every
---- `announce` is answered by exactly one of these, which is what leaves the log
---- with no block open.
----
---- A client whose last line has no newline gets one, since a closing fence is
---- only a fence at the start of a line.
----@param self dbquery.Run
----@param icon string
----@param outcome string
-local function close(self, icon, outcome)
-  local lead = atLineStart(self.log) and "" or "\n"
-  append(
-    self.log,
-    string.format("%s%s\n\n**%s %d %s**\n", lead, OUTPUT_FENCE, icon, self.id, outcome)
-  )
-end
-
---- Puts the rows where they were asked for, then closes the log's block. The
---- rows move first, so nothing that goes wrong writing the log can lose them.
+--- Puts the rows where they were asked for, then says in the log how the run
+--- ended. The rows move first, so nothing that goes wrong writing the log can
+--- lose them.
 ---
 --- A query that did not finish leaves its results file behind rather than
 --- deleting it, because two runs pointed at the same `-o` path share it and
@@ -185,8 +97,7 @@ local function finish(self)
     os.remove(self.staged)
   end
 
-  local ended = ENDED[status] or { icon = ENDED.failed.icon, word = status }
-  close(self, ended.icon, string.format("%s in %.3fs", ended.word, self.process:elapsed()))
+  self.log:append(COMPLETION[status])
 end
 
 --- What one query was asked to do, fixed when the user ran it. Every component
@@ -203,17 +114,13 @@ end
 ---@field span [integer, integer] First and last line the sql came from.
 ---@field outputPath string|nil User-specified output path.
 
---- Starts the client process. Returns nil when the log cannot be created,
---- when the user declines to write over the results file, when no client is
---- known for the url, or when the process cannot start.
+--- Starts the client process. Returns nil when the user declines to write over
+--- the results file, when no client is known for the url, or when the process
+--- cannot start.
 ---@param ctx dbquery.Context
+---@param log dbquery.Log The log of the buffer the query came from.
 ---@return dbquery.Run|nil
-function Run.start(ctx)
-  local log = output.log(ctx.srcName)
-  if not log then
-    return nil
-  end
-
+function Run.start(ctx, log)
   local kind = sql.rowKind(ctx.dialect, ctx.sql)
   local extension = client.target(ctx.resolved, kind, ctx.format)
 
@@ -244,18 +151,17 @@ function Run.start(ctx)
     return nil
   end
 
-  started = started + 1
+  local entry = log:entry(ctx, path)
   local self = setmetatable({
-    id = started,
     ctx = ctx,
-    log = log,
+    log = entry,
     path = path,
     staged = command.staged and staging or nil,
   }, Run)
-  announce(self)
+  entry:append("query", ctx.sql)
 
   local process, err = Process.start({
-    argv = writingTo(command.argv, log, command.stdout),
+    argv = writingTo(command.argv, entry.path, command.stdout),
     command = command,
     askServer = function()
       return command.sessionFile ~= nil and client.cancel(ctx.resolved, command.sessionFile)
@@ -263,8 +169,8 @@ function Run.start(ctx)
   })
   if not process then
     local reason = tostring(err)
-    append(self.log, reason)
-    close(self, ENDED.failed.icon, "could not start")
+    entry:append("output", reason)
+    entry:append("error_complete")
     vim.notify("db-query: " .. reason, vim.log.levels.ERROR)
     return nil
   end

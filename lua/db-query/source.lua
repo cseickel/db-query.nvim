@@ -8,6 +8,7 @@ cancels the one before it.
 
 local catalog = require("db-query.catalog")
 local Indicator = require("db-query.indicator")
+local Log = require("db-query.log")
 local output = require("db-query.output")
 local Pane = require("db-query.pane")
 local Run = require("db-query.run")
@@ -18,6 +19,7 @@ local sql = require("db-query.sql")
 ---@class dbquery.Source
 ---@field buf integer
 ---@field pane dbquery.Pane
+---@field log dbquery.Log|nil The log every query of this buffer appends to, opened by the first one.
 ---@field run dbquery.Run|nil The last query, whose files the pane shows.
 ---@field process dbquery.Process|nil The last process started, a query's or a connection test's.
 ---@field indicator dbquery.Indicator|nil
@@ -113,10 +115,10 @@ function Source:output(view)
   end
 
   if view == "toggle" then
-    view = self.pane:showing() == self.run.log and "result" or "log"
+    view = self.pane:showing() == self.run.log.path and "result" or "log"
   end
   if view == "log" then
-    return self.pane:show(self.run, self.run.log, true)
+    return self.pane:show(self.run, self.run.log.path, true)
   end
 
   if not (self.run.process.status == "ok" and self.run.path) then
@@ -138,8 +140,8 @@ function Source:close()
   end
   self.pane:stop()
 
-  if self.run then
-    os.remove(self.run.log)
+  if self.log then
+    os.remove(self.log.path)
   end
   for _, path in ipairs(self.files) do
     if output.owns(path) then
@@ -152,13 +154,19 @@ end
 --- Runs `ctx.sql`, replacing any running process. The one it replaces is
 --- cancelled but may still be finishing when this one starts.
 ---
---- The replacement has to exist before the previous process is cancelled.
---- `Run.start` returns nil for an unknown url scheme, an output path it cannot
---- write, and an overwrite the user declined, and none of those are a reason to
---- stop what is already running.
+--- The replacement has to exist before the previous process is cancelled. A log
+--- that cannot be written, an unknown url scheme, an output path it cannot
+--- write, and an overwrite the user declined are all reasons no query starts,
+--- and none of them is a reason to stop what is already running.
 ---@param ctx dbquery.Context
 function Source:execute(ctx)
-  local run = Run.start(ctx)
+  local log = self.log or Log.open(ctx)
+  if not log then
+    return
+  end
+  self.log = log
+
+  local run = Run.start(ctx, log)
   if not run then
     return
   end

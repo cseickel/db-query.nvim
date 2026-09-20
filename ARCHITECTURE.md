@@ -6,7 +6,7 @@ A query is handed to a cli client, which writes what it prints to a log file and
 
 All modules are in `lua/db-query/`.
 
-- **Running a query.** `source.lua` is the sql buffer and owns the one process it is running. `run.lua` is the query in flight, `process.lua` the client process under it, `pane.lua` the window showing its output, and `indicator.lua` the spinner and cancel key drawn in the sql buffer.
+- **Running a query.** `source.lua` is the sql buffer and owns its log and the one process it is running. `run.lua` is the query in flight, `process.lua` the client process under it, `log.lua` how its log reads, `pane.lua` the window showing its output, and `indicator.lua` the spinner and cancel key drawn in the sql buffer.
 - **Reaching a database.** `client/` maps each url scheme to a client and turns a connection and a statement into a command line, one file per client. `connect.lua` decides which connection a buffer runs against, helped by `modeline.lua`, `connections.lua`, `dadbod.lua`, and `url.lua`.
 - **Reading sql.** `sql/lex.lua` tokenizes, `sql/dialect/` holds one rule set per way of reading sql, and the modules above them say what the cursor is in.
 - **Knowing the database.** `catalog/` keeps one catalog per database, read in the background and saved to disk.

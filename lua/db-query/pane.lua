@@ -145,8 +145,8 @@ function Pane:display(run)
   self.run = run
 
   local held = self.win and vim.api.nvim_win_is_valid(self.win) and self.path
-  if not (held and held ~= run.log) then
-    self:show(run, run.log, true)
+  if not (held and held ~= run.log.path) then
+    self:show(run, run.log.path, true)
   end
 
   local function refresh()
@@ -166,7 +166,7 @@ function Pane:display(run)
     if run.process.status == "ok" and run.path then
       self:show(run, run.path, false)
     else
-      self:show(run, run.log, true)
+      self:show(run, run.log.path, true)
     end
   end)
 end
