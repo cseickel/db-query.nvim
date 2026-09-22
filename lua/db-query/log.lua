@@ -45,18 +45,16 @@ Entry.__index = Entry
 --- replacement opens an entry therefore leaves a block open, and the run after
 --- the two of them closes it. Those three read wrong and the next one is clean.
 local SQL_FENCE = "```"
-local OUTPUT_FENCE = "````"
-
---- What the client prints is a transcript rather than shell, and bash is the
---- grammar that colors it best.
-local OUTPUT_LANGUAGE = "bash"
+local OUTPUT_FENCE_OPEN = "~~~~ bash\n"
+local OUTPUT_FENCE_CLOSE = "~~~~"
+local SEPARATOR = string.rep("-", 80)
 
 --- How each completion is written.
 ---@type table<dbquery.LogMessage, { icon: string, word: string }>
 local ENDED = {
-  success_complete = { icon = "✅", word = "finished" },
-  error_complete = { icon = "❌", word = "failed" },
-  cancel_complete = { icon = "⏹", word = "cancelled" },
+  success_complete = { icon = "✅", word = "Finished" },
+  error_complete = { icon = "❌", word = "Failed" },
+  cancel_complete = { icon = "⏹", word = "Cancelled" },
 }
 
 ---@param path string
@@ -93,22 +91,18 @@ end
 ---@param self dbquery.LogEntry
 ---@param sql string
 local function opening(self, sql)
-  local heading = { "## " .. self.id, os.date("%H:%M:%S") }
+  local heading = { "# " .. self.id, os.date("%H:%M:%S") }
   if self.name then
     table.insert(heading, self.name)
   end
 
-  local lines = { "", table.concat(heading, " · "), "" }
-  if self.rows then
-    vim.list_extend(lines, { "rows → `" .. self.rows .. "`", "" })
-  end
+  local lines = { table.concat(heading, " · "), "" }
   vim.list_extend(lines, {
     SQL_FENCE .. "sql",
     sql,
     SQL_FENCE,
     "",
-    OUTPUT_FENCE .. OUTPUT_LANGUAGE,
-    "",
+    OUTPUT_FENCE_OPEN,
   })
   append(self.path, table.concat(lines, "\n"))
 end
@@ -122,19 +116,34 @@ end
 ---@param self dbquery.LogEntry
 ---@param ended { icon: string, word: string }
 local function closing(self, ended)
-  local lead = atLineStart(self.path) and "" or "\n"
   local seconds = (vim.uv.hrtime() - self.started) / 1e9
+  local completion = string.format(
+    "%s %s in %.3fs",
+    ended.icon,
+    ended.word,
+    seconds
+  )
+  local lines = { }
+  -- if the last line is an opening fence with no output, we should remove it
+  local last = io.open(self.path, "r"):read("*a"):sub(-OUTPUT_FENCE_OPEN:len())
+  if last == OUTPUT_FENCE_OPEN then
+    if self.rows then
+      vim.list_extend(lines, { "rows → " .. self.rows })
+    else
+      vim.list_extend(lines, { "OK" })
+    end
+  end
+  vim.list_extend(lines, {
+    OUTPUT_FENCE_CLOSE,
+    "",
+    completion,
+    "",
+    SEPARATOR,
+    "\n"
+  })
   append(
     self.path,
-    string.format(
-      "%s%s\n\n**%s %d %s in %.3fs**\n",
-      lead,
-      OUTPUT_FENCE,
-      ended.icon,
-      self.id,
-      ended.word,
-      seconds
-    )
+    table.concat(lines, "\n")
   )
 end
 
