@@ -4,7 +4,7 @@ A SQL runner for Neovim, which utilizes command line clients to execute queries.
 
 Queries run through `psql`, `duckdb`, `sqlite3`, `mysql`, or `mariadb`. Everything the client prints goes to a log that fills in as the query runs. Rows go to a file of their own, which replaces the log on screen when the query finishes. `<C-c>` cancels.
 
-A language server built into the plugin completes the tables, columns, and functions of the buffer's database, and gives hover and signature help. See Completion below.
+A language server built into the plugin completes the tables, columns, and functions of the buffer's database, gives hover and signature help, and opens the definition of a table or function and the objects that depend on it. See Completion below.
 
 ## Requirements
 
@@ -92,9 +92,10 @@ require("db-query").setup({
   -- Omitting this setting will just revert it to the default.
   cancel = "<C-c>",
 
-  -- What marks a finished query, under it in the sql buffer and in the log.
-  -- The defaults are Nerd Font glyphs, check_circle, times_circle, and ban.
-  -- Set any of them to text or an emoji if your font has no Nerd Font glyphs.
+  -- What marks a finished query, beside its first line of code in the sql
+  -- buffer and at the start of its line in the log. The defaults are Nerd
+  -- Font glyphs, check_circle, times_circle, and ban. Set any of them to text
+  -- or an emoji if your font has no Nerd Font glyphs.
   icons = { ok = "\u{f058}", failed = "\u{f057}", cancelled = "\u{f05e}" },
 
   -- Attach the language server to sql buffers. See Completion below.
@@ -195,7 +196,7 @@ end, { desc = "switch between the log and the rows" })
 
 ## While a query runs
 
-A spinner goes in the gutter beside the first line that is running and a bar beside the rest, turning under them to a line with `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
+A spinner goes in the gutter beside the first line of code that is running and a bar beside the rest, turning under them to a line with `running query`, a clock, and the cancel key. A comment above the query is left out of the mark, and the line under it runs to the end of the query's last line as it was when the run started. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
 When the query ends, its icon from `icons` takes the spinner's place beside its first line of code, and the line under the query says how it ended, such as `2,520 rows in 0.98s`, `failed after 0.21s`, or `cancelled after 3.40s`. The row count comes from psql, and the other clients say `finished in 0.98s`. That line moves to the next query you run, and every query you have run keeps its icon.
 
@@ -214,14 +215,16 @@ end
 
 ## Highlights
 
-A query is colored by its status:
+A query is colored by its status. The status group colors the sign, the gutter bar, and the line under the query, and the query's line in the log. The `Band` group is the strip the message under the query sits on: the status color over the background tinted a tenth of the way toward it. The `Text` group is the message itself, in italics, the status color dimmed a fifth of the way toward the background, on the same strip.
 
-| Status | Groups |
-|---|---|
-| running | `DbQueryProgress`, `DbQueryProgressBand`, `DbQueryProgressText` |
-| success | `DbQueryResultOk`, `DbQueryResultOkBand`, `DbQueryResultOkText` |
-| failed | `DbQueryResultError`, `DbQueryResultErrorBand`, `DbQueryResultErrorText` |
-| cancelled | `DbQueryResultCancelled`, `DbQueryResultCancelledBand`, `DbQueryResultCancelledText` |
+| Status | Status group | Links to | Derived groups |
+|---|---|---|---|
+| running | `DbQueryProgress` | `DiagnosticInfo` | `DbQueryProgressBand`, `DbQueryProgressText` |
+| success | `DbQueryResultOk` | `DiagnosticOk` | `DbQueryResultOkBand`, `DbQueryResultOkText` |
+| failed | `DbQueryResultError` | `DiagnosticError` | `DbQueryResultErrorBand`, `DbQueryResultErrorText` |
+| cancelled | `DbQueryResultCancelled` | `DiagnosticHint` | `DbQueryResultCancelledBand`, `DbQueryResultCancelledText` |
+
+Every group is set as a default, so one your colorscheme defines is kept. The band and text are computed again from the status group and `Normal` each time a colorscheme loads, so defining the status group alone recolors all three. When the status group has no foreground or `Normal` has no background, the band and text link to the status group instead.
 
 ## Parquet
 
@@ -268,9 +271,13 @@ select cast('│' as mood)
 
 Picking a value replaces what stands between the quotes, and closes a string you left open. Typing the closing quote of a string opens no menu.
 
-Goto definition on a table, view, or function name, or on a column, opens the object's DDL, read from the database: the `create` statement with its constraints, then its indexes, triggers, and comments, or every overload of a function. The file is kept in this nvim's cache, and its buffer runs against the same connection. sqlite's functions and postgres aggregates have no definition, and duckdb's built-in functions have none either, though its macros do.
+Goto definition on a table, view, or function name, or on a column, opens the object's DDL, read from the database each time you ask: the `create` statement, then the indexes, triggers, and comments the database keeps apart from it, or every overload of a function. The file is named for the object, such as `public.orders.sql`, under `stdpath("cache")/db-query/<pid>/definitions/`, where it is swept with the rest of this nvim's cache, and its buffer runs against the same connection. sqlite's functions and postgres aggregates have no definition, and duckdb's built-in functions have none either. A duckdb macro is rebuilt from what duckdb keeps of it, which leaves out its parameters' defaults.
 
-Goto references lists what in the database depends on that object, each opened the same way at the first line that names it: tables whose foreign keys point at it, views, functions and procedures, and tables whose triggers or column defaults use it. Postgres records most of these itself. A plpgsql body, and every view and routine on sqlite, duckdb, mysql, and mariadb, is searched for the name, so a reference built with dynamic sql is not found.
+Goto references lists what in the database depends on that object: tables whose foreign keys point at it, views, functions and procedures, tables whose triggers use it, and on postgres tables whose column defaults or constraints call it. Each one opens the same way, at the first line that names the object. The list starts with the object's own definition, because nvim asks for the declaration unless you call `vim.lsp.buf.references({ includeDeclaration = false })`.
+
+Postgres records what a view, a sql-standard function body, a foreign key, and a trigger depends on. Everything else is found by searching the text the database keeps: plpgsql bodies on postgres, and every view, routine, and trigger on sqlite, duckdb, mysql, and mariadb. A match counts only where the name is read as a word or a quoted identifier, so a name inside a string or a comment does not count, and a reference built with dynamic sql is not found. sqlite records nothing as depending on a function, so one has no references.
+
+Both answer from the catalog, so an object made since the catalog was read is not found until `:DBRefreshCatalog` reads it again.
 
 Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it.
 

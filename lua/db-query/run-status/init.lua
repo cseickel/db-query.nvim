@@ -54,8 +54,7 @@ local DIM = 0.8
 
 local ITALIC = "DbQueryResultItalic"
 
---- Cells between the text column and the start of the elbow's text, where no
---- line of sql starts.
+--- Cells the elbow runs into the text column before its text starts.
 local INDENT = 3
 
 --- Fewest cells between the elbow's bars, which the text is centered in, so

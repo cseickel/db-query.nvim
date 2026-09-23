@@ -44,7 +44,7 @@ All modules are in `lua/db-query/`.
 
 **Plugin code runs on nvim's main loop.** nvim refuses editor changes in a libuv callback (E5560) and under textlock (E565), which holds while it evaluates a statusline, an `<expr>` mapping, or a completion function. Anything entered from outside the plugin goes through `main.lua`, which tests whether nvim would refuse and otherwise waits. Reads are allowed under textlock, so `main.capture` takes the editor state at the call moment and does the rest later.
 
-**Query rows go to files, never through lua.** Collecting a large result set into a lua string ran nvim out of memory (`E41`). `run.lua` has the client write its rows and never reads them back. `client.value` is the exception, for output known to be small: the connection test, the parquet view, and the catalog queries.
+**Query rows go to files, never through lua.** Collecting a large result set into a lua string ran nvim out of memory (`E41`). `run.lua` has the client write its rows and never reads them back. `client.value` is the exception, for output known to be small: the connection test, the parquet view, the catalog queries, and the DDL that goto definition and references open.
 
 **The client's output is not parsed.** The log holds what the client printed. The results file holds what the client wrote and nothing else.
 
@@ -78,9 +78,11 @@ Above the lexer, `sql/statements.lua` says where one statement ends, and the mod
 
 `lsp/init.lua` answers completion, signature help, and hover from the catalog and the relations the cursor can see. nvim calls it inside the requester's own call stack, under textlock during completion, so a request is read at once and answered on a later pass of the main loop. Goto definition and references query the database, so their handlers answer once those queries finish. A buffer with no connection still gets keywords and the names its own sql defines.
 
+`lsp/target.lua` turns the word under the cursor into the catalog object it names, for hover, definition, and references alike. `lsp/definition.lua` has the object's client read its DDL, through the client's `definition` in `client/definition/`, and writes it to the file `output.definition` names, with `b:db` set on the file's buffer. A definition or a reference is then an ordinary file location, and the user can run the DDL. References come from the client's `references` in `client/references/`. Postgres reads most of them from `pg_depend`. The rest are `like` searches of the text the database keeps, and `ddl.mentions` lexes each hit with the client's dialect and keeps it only where the name is a word or a quoted identifier. A reference is kept only when the catalog holds it, since the DDL reader takes a catalog entry. The DDL reads run four at a time, because each is a client process and, on a server, a connection.
+
 ## Adding a database
 
-Add a file under `lua/db-query/client/` returning a `dbquery.Client`, and map its url scheme to it in `CLIENTS` at `client/init.lua:51`. `dbquery.Client` at `client/init.lua:37` is the contract. The parts that need a decision rather than a value:
+Add a file under `lua/db-query/client/` returning a `dbquery.Client`, and map its url scheme to it in `CLIENTS` in `client/init.lua`. `dbquery.Client`, in the same file, is the contract. The parts that need a decision rather than a value:
 
 - `command(spec)` turns a connection and a statement into argv. When `spec.path` is set the client must put the rows there and nothing else, either by writing there itself, by writing to `spec.staging` and returning `staged = true`, or by returning `stdout = spec.path`. With no `spec.path`, everything the client prints goes to the log.
 - `dialect` decides where `:DBQueryStatement` cuts a statement. Use the closest one under `sql/dialect/`, or derive a new one with `dialect.derive`. A client that runs lines of its own before the server sees them needs a dialect of its own, the way `psql.lua` derives from `postgres.lua`.

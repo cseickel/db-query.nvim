@@ -3,8 +3,6 @@ A language server that runs inside nvim, giving any completion engine the
 columns, tables, and functions of a sql buffer's database, with hover,
 signature help, and the definition and references of a table or function.
 
-- `attach` starts the server for a buffer, or attaches the running one.
-
 nvim calls the server's `request` in the requester's own call stack, which
 during completion is under textlock, and records the request as pending only
 after `request` returns. So `request` reads the buffer at once and answers
@@ -67,8 +65,8 @@ local HANDLERS = {
   ["textDocument/signatureHelp"] = function(opened, params, reply)
     reply(nil, signature.help(opened, context.at(opened.document, document.offset(opened.lines, params.position))))
   end,
-  -- A hover or definition position is the start of the character under the
-  -- cursor, and the word it belongs to is the one that character is in.
+  -- A hover, definition, or references position is the start of the character
+  -- under the cursor, and the word it belongs to is the one that character is in.
   ["textDocument/hover"] = function(opened, params, reply)
     reply(nil, hover.hover(opened, context.at(opened.document, document.offset(opened.lines, params.position) + 1)))
   end,
