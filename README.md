@@ -270,6 +270,8 @@ Picking a value replaces what stands between the quotes, and closes a string you
 
 Goto definition on a table, view, or function name, or on a column, opens the object's DDL, read from the database: the `create` statement with its constraints, then its indexes, triggers, and comments, or every overload of a function. The file is kept in this nvim's cache, and its buffer runs against the same connection. sqlite's functions and postgres aggregates have no definition, and duckdb's built-in functions have none either, though its macros do.
 
+Goto references lists what in the database depends on that object, each opened the same way at the first line that names it: tables whose foreign keys point at it, views, functions and procedures, and tables whose triggers or column defaults use it. Postgres records most of these itself. A plpgsql body, and every view and routine on sqlite, duckdb, mysql, and mariadb, is searched for the name, so a reference built with dynamic sql is not found.
+
 Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it.
 
 Completion will only suggest basic keywords until the catalog (tables, columns, function, etc) has been loaded for the database you are connected to. Depending on the size of your schema and speed of the database, this could be done in 1 second or 5 minutes. It does run in the background. It will cache a prior catalog from past sessions and use that while it refreshes, so you probably won't notice the delay after the first connection.

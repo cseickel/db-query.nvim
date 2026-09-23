@@ -185,6 +185,7 @@ return {
   name = "postgres",
   catalog = catalog,
   definition = require("db-query.client.definition.postgres"),
+  references = require("db-query.client.references.postgres"),
   rows = { query = true, returning = true },
   delimited = "csv",
   dialect = psql,

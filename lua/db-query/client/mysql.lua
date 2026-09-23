@@ -199,6 +199,7 @@ local function client(binary)
     name = binary,
     catalog = catalog,
     definition = require("db-query.client.definition.mysql"),
+    references = require("db-query.client.references.mysql"),
     rows = { query = true },
     delimited = "tsv",
     dialect = dialect,

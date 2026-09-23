@@ -11,7 +11,7 @@ All modules are in `lua/db-query/`.
 - **Reaching a database.** `client/` maps each url scheme to a client and turns a connection and a statement into a command line, one file per client. `connect.lua` decides which connection a buffer runs against, helped by `modeline.lua`, `connections.lua`, `dadbod.lua`, and `url.lua`.
 - **Reading sql.** `sql/lex.lua` tokenizes, `sql/dialect/` holds one rule set per way of reading sql, and the modules above them say what the cursor is in.
 - **Knowing the database.** `catalog/` keeps one catalog per database, read in the background and saved to disk.
-- **Answering the editor.** `lsp/` is an in-process language server for completion, signature help, hover, and goto definition.
+- **Answering the editor.** `lsp/` is an in-process language server for completion, signature help, hover, goto definition, and references.
 - **Entry points.** `init.lua` is the public API, `command.lua` the `:DB*` commands, `parquet.lua` the `*.parquet` hook.
 - **Plumbing.** `main.lua` gets code onto nvim's main loop, `output.lua` names every file the plugin writes, `selection.lua` captures the lines a query comes from, `config.lua` holds the settings.
 
@@ -76,7 +76,7 @@ Above the lexer, `sql/statements.lua` says where one statement ends, and the mod
 
 ## Language server
 
-`lsp/init.lua` answers completion, signature help, and hover from the catalog and the relations the cursor can see. nvim calls it inside the requester's own call stack, under textlock during completion, so a request is read at once and answered on a later pass of the main loop. Goto definition is the one request that queries the database, so its handler answers once that query finishes. A buffer with no connection still gets keywords and the names its own sql defines.
+`lsp/init.lua` answers completion, signature help, and hover from the catalog and the relations the cursor can see. nvim calls it inside the requester's own call stack, under textlock during completion, so a request is read at once and answered on a later pass of the main loop. Goto definition and references query the database, so their handlers answer once those queries finish. A buffer with no connection still gets keywords and the names its own sql defines.
 
 ## Adding a database
 
@@ -86,4 +86,5 @@ Add a file under `lua/db-query/client/` returning a `dbquery.Client`, and map it
 - `dialect` decides where `:DBQueryStatement` cuts a statement. Use the closest one under `sql/dialect/`, or derive a new one with `dialect.derive`. A client that runs lines of its own before the server sees them needs a dialect of its own, the way `psql.lua` derives from `postgres.lua`.
 - `catalog(request, done)` reads the catalog, using the helpers in `catalog/rows.lua`.
 - `definition(request, target, done)` reads the DDL goto definition opens, in a file under `client/definition/`.
+- `references(request, target, done)` finds what depends on an object, for goto references, in a file under `client/references/`.
 - `cancel` is worth writing only when the database has a server that can be asked to stop a query, and it needs `command` to return a `sessionFile` the client records its session id in. Without it, cancelling sends `SIGINT`, which is right for an embedded database.

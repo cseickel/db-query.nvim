@@ -39,6 +39,7 @@ local M = {}
 ---@field name string Names the client in `catalog.clients`.
 ---@field catalog dbquery.CatalogFetch Built-in way to read the database's catalog.
 ---@field definition fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(ddl: string|nil, err: string|nil)) Reads the DDL of a relation, or of a column's relation, or of every overload of a function.
+---@field references fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(found: dbquery.Reference[]|nil, err: string|nil)) Finds the relations and routines that depend on what `definition` would read.
 ---@field rows table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
 ---@field delimited string Extension for csv format: csv or tsv.
 ---@field command fun(spec: dbquery.CommandSpec): dbquery.Command

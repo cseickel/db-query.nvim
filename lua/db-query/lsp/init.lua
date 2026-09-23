@@ -1,7 +1,7 @@
 --[[
 A language server that runs inside nvim, giving any completion engine the
 columns, tables, and functions of a sql buffer's database, with hover,
-signature help, and the definition of a table or function.
+signature help, and the definition and references of a table or function.
 
 - `attach` starts the server for a buffer, or attaches the running one.
 
@@ -74,6 +74,10 @@ local HANDLERS = {
   end,
   ["textDocument/definition"] = function(opened, params, reply)
     definition.locate(opened, context.at(opened.document, document.offset(opened.lines, params.position) + 1), reply)
+  end,
+  ["textDocument/references"] = function(opened, params, reply)
+    local at = context.at(opened.document, document.offset(opened.lines, params.position) + 1)
+    definition.references(opened, at, vim.tbl_get(params, "context", "includeDeclaration") == true, reply)
   end,
 }
 
@@ -156,6 +160,7 @@ local function server(dispatchers)
               signatureHelpProvider = { triggerCharacters = { "(", "," } },
               hoverProvider = true,
               definitionProvider = true,
+              referencesProvider = true,
             },
           })
         end)

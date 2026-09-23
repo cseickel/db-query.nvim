@@ -195,6 +195,7 @@ return {
   name = "duckdb",
   catalog = catalog,
   definition = require("db-query.client.definition.duckdb"),
+  references = require("db-query.client.references.duckdb"),
   rows = { query = true, returning = true },
   delimited = "csv",
   embedded = true,
