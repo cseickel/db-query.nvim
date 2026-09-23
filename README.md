@@ -194,13 +194,11 @@ end, { desc = "switch between the log and the rows" })
 
 `execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the results file or `true` to be asked for one. `output` takes `"log"`, `"result"`, or `"toggle"`, the same as `:DBOutput`.
 
-## While a query runs
+## Query progress and results
 
-A spinner goes in the gutter beside the first line of code that is running and a bar beside the rest, turning under them to a line with `running query`, a clock, and the cancel key. A comment above the query is left out of the mark, and the line under it runs to the end of the query's last line as it was when the run started. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
+### Progress
 
-When the query ends, its icon from `icons` takes the spinner's place beside its first line of code, and the line under the query says how it ended, such as `2,520 rows in 0.98s`, `failed after 0.21s`, or `cancelled after 3.40s`. The row count comes from psql, and the other clients say `finished in 0.98s`. That line moves to the next query you run, and every query you have run keeps its icon.
-
-Each of those queries also holds a diagnostic with its last run: an info for a success, an error for a failure, and a hint for a cancel. `vim.diagnostic.open_float()` shows the outcome, and `]d` moves between the queries you have run. Running a query replaces the marks of any earlier run over the same lines, and deleting the query's text deletes them.
+A spinner goes in the gutter beside the first line of code that is running and a bar beside the rest, turning under them to a line with `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. 
 
 You can call `statusline(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested, and `reading catalog <name>` while the catalog of the buffer's database is read and nothing else is running in that buffer. `status(buf)` is its old name, which still works:
 
@@ -212,6 +210,20 @@ end
 ```
 
 `b:db_name` holds the name of the connection, in the sql buffer and its output windows alike, so `%{get(b:, 'db_name', '')}` shows which database you are looking at.
+
+### Results
+
+When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
+
+Whatever the result is, the progress indicator turns into a result status and will stay there until the next query is excuted. This marker is always for the curent or prior run only.
+
+There are also diagnostic markers added for each executed statement which will remain until replaced by a newer execution. Those diagnostics will use:
+
+| Result | Default icon | Diagnostic severity | Highlight group |
+|---|---|---|---|
+| success | `\u{f058}` check_circle | info | `DbQueryResultOk` |
+| failure | `\u{f057}` times_circle | error | `DbQueryResultError` |
+| cancel | `\u{f05e}` ban | hint | `DbQueryResultCancelled` |
 
 ## Highlights
 
