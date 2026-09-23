@@ -9,6 +9,7 @@ format decision lives here, so a caller hands over raw text and says which kind
 of message it is.
 ]]
 
+local outcome = require("db-query.outcome")
 local output = require("db-query.output")
 
 ---@alias dbquery.LogMessage
@@ -49,12 +50,16 @@ local OUTPUT_FENCE_OPEN = "~~~~ bash\n"
 local OUTPUT_FENCE_CLOSE = "~~~~"
 local SEPARATOR = string.rep("-", 80)
 
+---@class dbquery.LogEnding
+---@field status dbquery.Status Picks the icon, and the color the line is drawn in.
+---@field word string
+
 --- How each completion is written.
----@type table<dbquery.LogMessage, { icon: string, word: string }>
+---@type table<dbquery.LogMessage, dbquery.LogEnding>
 local ENDED = {
-  success_complete = { icon = "✅", word = "Finished" },
-  error_complete = { icon = "❌", word = "Failed" },
-  cancel_complete = { icon = "⏹", word = "Cancelled" },
+  success_complete = { status = "ok", word = "Finished" },
+  error_complete = { status = "failed", word = "Failed" },
+  cancel_complete = { status = "cancelled", word = "Cancelled" },
 }
 
 ---@param path string
@@ -109,42 +114,27 @@ end
 
 --- Closes the block the client writes into and states how the run ended. Every
 --- `query` message is answered by exactly one completion, which is what leaves
---- the log with no block open.
+--- the log with no block open. A success that wrote rows names the results
+--- file inside the block.
 ---
 --- A client whose last line has no newline gets one, since a closing fence is
 --- only a fence at the start of a line.
 ---@param self dbquery.LogEntry
----@param ended { icon: string, word: string }
+---@param ended dbquery.LogEnding
 local function closing(self, ended)
   local seconds = (vim.uv.hrtime() - self.started) / 1e9
-  local completion = string.format(
-    "%s %s in %.3fs",
-    ended.icon,
-    ended.word,
-    seconds
-  )
-  local lines = { }
-  -- if the last line is an opening fence with no output, we should remove it
-  local last = io.open(self.path, "r"):read("*a"):sub(-OUTPUT_FENCE_OPEN:len())
-  if last == OUTPUT_FENCE_OPEN then
-    if self.rows then
-      vim.list_extend(lines, { "rows → " .. self.rows })
-    else
-      vim.list_extend(lines, { "OK" })
+  local completion = string.format("%s %s in %.3fs", outcome.icon(ended.status), ended.word, seconds)
+
+  local lines = {}
+  if ended.status == "ok" and self.rows then
+    table.insert(lines, "saved to " .. self.rows)
+  else
+    if not atLineStart(self.path) then
+      table.insert(lines, "")
     end
   end
-  vim.list_extend(lines, {
-    OUTPUT_FENCE_CLOSE,
-    "",
-    completion,
-    "",
-    SEPARATOR,
-    "\n"
-  })
-  append(
-    self.path,
-    table.concat(lines, "\n")
-  )
+  vim.list_extend(lines, { OUTPUT_FENCE_CLOSE, "", completion, "", SEPARATOR, "", "" })
+  append(self.path, table.concat(lines, "\n"))
 end
 
 --- Returns the log for `ctx`'s buffer, or nil when the file cannot be written.

@@ -19,16 +19,23 @@ local function resultRows(spec)
   return "COPY (\n" .. body .. "\n) TO STDOUT WITH (FORMAT csv, HEADER)"
 end
 
+--- Returns `file` quoted as a psql meta-command argument. psql reads backslash
+--- escapes inside the single quotes, so both marks have to be escaped.
+---@param file string
+---@return string
+local function quotedPath(file)
+  return "'" .. file:gsub("\\", "\\\\"):gsub("'", "\\'") .. "'"
+end
+
 --- psql meta-command sending query results to `file`, or back to stdout when
---- `file` is nil. psql reads backslash escapes inside a single-quoted
---- meta-command argument, so both marks have to be escaped.
+--- `file` is nil.
 ---@param file string|nil
 ---@return string
 local function sendTo(file)
   if not file then
     return "\\o"
   end
-  return "\\o '" .. file:gsub("\\", "\\\\"):gsub("'", "\\'") .. "'"
+  return "\\o " .. quotedPath(file)
 end
 
 local SEARCH_PATH = [[
@@ -184,6 +191,8 @@ return {
   command = function(spec)
     local without, password = url.withoutPassword(spec.connection)
     local sessionFile = vim.fn.tempname() .. ".pid"
+    ---@type string|nil
+    local countFile = nil
     local argv = { "psql", without, "-w", "--no-psqlrc", "-v", "ON_ERROR_STOP=1" }
     local script
 
@@ -200,15 +209,21 @@ return {
         "",
       }
     elseif spec.path then
+      countFile = vim.fn.tempname() .. ".rows"
       vim.list_extend(argv, { "-f", "-" })
       script = {
         sendTo(sessionFile),
         "SELECT pg_backend_pid();",
-        sendTo(spec.path),
-        resultRows(spec),
-        -- Separate semicolon in case the statement ends in a line comment.
-        ";",
         sendTo(nil),
+        -- Quiet keeps psql from printing COPY's status, the count echoed below.
+        "\\set QUIET on",
+        resultRows(spec),
+        -- With \o, psql drops COPY's result, and :ROW_COUNT with it.
+        "\\g " .. quotedPath(spec.path),
+        sendTo(countFile),
+        "\\qecho :ROW_COUNT",
+        sendTo(nil),
+        "\\echo -n :ROW_COUNT 'rows '",
         "",
       }
     else
@@ -231,6 +246,7 @@ return {
       argv = argv,
       env = password and { PGPASSWORD = password } or nil,
       sessionFile = sessionFile,
+      countFile = countFile,
       stdin = table.concat(script, "\n"),
     }
   end,

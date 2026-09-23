@@ -14,6 +14,8 @@ local main = require("db-query.main")
 ---@class dbquery.Process
 ---@field status dbquery.Status
 ---@field started integer hrtime nanoseconds.
+---@field finished integer|nil hrtime nanoseconds, set when the process exits.
+---@field rows integer|nil Rows the client reported writing, for a client that records them in `command.countFile`.
 ---@field job vim.SystemObj
 ---@field result vim.SystemCompleted|nil How the process exited, set when `status` leaves "running".
 ---@field askServer fun(): boolean Asks the server to cancel, returning false when it cannot be asked.
@@ -41,6 +43,19 @@ vim.api.nvim_create_autocmd("VimLeavePre", {
     live = {}
   end,
 })
+
+--- Returns the number a client wrote to `file`, or nil when it has not.
+---@param file string
+---@return integer|nil
+function Process.recorded(file)
+  local handle = io.open(file, "r")
+  if not handle then
+    return nil
+  end
+  local text = handle:read("*a")
+  handle:close()
+  return tonumber(text:match("%d+"))
+end
 
 ---@param self dbquery.Process
 local function forget(self)
@@ -86,12 +101,19 @@ function Process.start(spawn)
     detach = true,
     timeout = spawn.timeout,
   }, function(result)
+    local finished = vim.uv.hrtime()
     main.run(function()
       self.result = result
+      self.finished = finished
       self.status = outcome(self, result)
       forget(self)
       if spawn.command.sessionFile then
         os.remove(spawn.command.sessionFile)
+      end
+      local countFile = spawn.command.countFile
+      if countFile then
+        self.rows = Process.recorded(countFile)
+        os.remove(countFile)
       end
       for _, subscriber in ipairs(self.subscribers) do
         local ok, err = pcall(subscriber, self, result)
@@ -110,9 +132,10 @@ function Process.start(spawn)
   return self
 end
 
+--- Returns seconds from start to exit, or to now while the process runs.
 ---@return number
 function Process:elapsed()
-  return (vim.uv.hrtime() - self.started) / 1e9
+  return ((self.finished or vim.uv.hrtime()) - self.started) / 1e9
 end
 
 --- Calls `subscriber` with how the process exited when it finishes, or at once

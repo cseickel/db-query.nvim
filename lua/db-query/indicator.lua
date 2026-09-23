@@ -92,26 +92,26 @@ end
 --- Returns the text offset (sign + number + fold columns) for `buf`'s window.
 ---@param buf integer
 ---@return integer
-local function textColumn(buf)
+function Indicator.textColumn(buf)
   local win = vim.fn.win_findbuf(buf)[1]
   local info = win and vim.fn.getwininfo(win)[1]
   return info and info.textoff or 1
 end
 
 --- Draws the spinner, label, timer, and cancel hint on a virtual line below
---- the marked lines.
+--- the marked lines, from the bar in the gutter and underlined to the width of
+--- the last marked line. The line stays where edits moved it.
 function Indicator:drawSpinner()
   local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
   local placed = vim.api.nvim_buf_get_extmark_by_id(self.buf, NAMESPACE, SPINNER, {})
-  local at = math.min(placed[1] or self.last, bottom)
-
-  local indent = textColumn(self.buf)
+  local seconds = self.process:elapsed()
+  local indent = Indicator.textColumn(self.buf)
   local text = BAR
     .. string.rep(" ", indent - 1)
-    .. string.format("%s  %s  %.1fs    %s to cancel", frameAt(self.process:elapsed()), self.label, self.process:elapsed(), self.key)
+    .. string.format("%s  %s  %.1fs    %s to cancel", frameAt(seconds), self.label, seconds, self.key)
   text = text .. string.rep(" ", indent + self.width - vim.fn.strdisplaywidth(text))
 
-  vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, at, 0, {
+  vim.api.nvim_buf_set_extmark(self.buf, NAMESPACE, math.min(placed[1] or self.last, bottom), 0, {
     id = SPINNER,
     virt_lines = { { { text, { "DbQueryIndicator", UNDERLINE } } } },
     virt_lines_leftcol = true,

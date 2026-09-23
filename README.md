@@ -92,6 +92,11 @@ require("db-query").setup({
   -- Omitting this setting will just revert it to the default.
   cancel = "<C-c>",
 
+  -- What marks a finished query, under it in the sql buffer and in the log.
+  -- The defaults are Nerd Font glyphs, check_circle, times_circle, and ban.
+  -- Set any of them to text or an emoji if your font has no Nerd Font glyphs.
+  icons = { ok = "\u{f058}", failed = "\u{f057}", cancelled = "\u{f05e}" },
+
   -- Attach the language server to sql buffers. See Completion below.
   lsp = true,
 
@@ -192,6 +197,10 @@ end, { desc = "switch between the log and the rows" })
 
 A bar marks the lines that are running, continuing onto a line beneath them with a spinner, `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
+When the query ends, its icon from `icons` goes in the gutter beside its first line of code, and a line under the query says how it ended, such as `2520 rows in 0.98s`, `failed in 0.21s`, or `cancelled in 3.40s`. The row count comes from psql, and the other clients say `finished in 0.98s`. That line moves to the next query you run, and every query you have run keeps its icon.
+
+Each of those queries also holds a diagnostic with its last run: an info for a success, an error for a failure, and a hint for a cancel. `vim.diagnostic.open_float()` shows the outcome, and `]d` moves between the queries you have run. Running a query replaces the marks of any earlier run over the same lines, and deleting the query's text deletes them.
+
 You can call `status(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested, and `reading catalog <name>` while the catalog of the buffer's database is read and nothing else is running in that buffer:
 
 ```lua
@@ -210,6 +219,14 @@ end
 ```lua
 vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
 ```
+
+A finished query is colored by how it ended:
+
+| Ended | Groups |
+|---|---|
+| success | `DbQueryResultOk`, `DbQueryResultOkBand`, `DbQueryResultOkText` |
+| failed | `DbQueryResultError`, `DbQueryResultErrorBand`, `DbQueryResultErrorText` |
+| cancelled | `DbQueryResultCancelled`, `DbQueryResultCancelledBand`, `DbQueryResultCancelledText` |
 
 ## Parquet
 

@@ -24,6 +24,7 @@ local M = {}
 ---@field stdout string|nil File the shell must catch stdout in, for a client that cannot write rows itself.
 ---@field staged boolean|nil Client wrote rows to `spec.staging`, to be moved onto the results file.
 ---@field sessionFile string|nil Path where the client writes the backend pid.
+---@field countFile string|nil Path where the client writes how many rows it wrote to `spec.path`.
 
 ---@class dbquery.CommandSpec
 ---@field connection string
@@ -120,19 +121,6 @@ function M.command(spec)
   return client and client.command(spec)
 end
 
---- Returns the server pid from `file`, or nil if not yet written.
----@param file string
----@return integer|nil
-local function recorded(file)
-  local handle = io.open(file, "r")
-  if not handle then
-    return nil
-  end
-  local text = handle:read("*a")
-  handle:close()
-  return tonumber(text:match("%d+"))
-end
-
 --- Sends a cancel request to the server for the session recorded in `file`.
 ---
 --- Returns false when the client has no server-side cancel (caller should
@@ -145,7 +133,7 @@ function M.cancel(connection, file)
   if not (client and client.cancel) then
     return false
   end
-  local pid = recorded(file)
+  local pid = Process.recorded(file)
   if not pid then
     return false
   end

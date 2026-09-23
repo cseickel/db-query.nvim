@@ -17,6 +17,12 @@ local M = {}
 ---@field output_cleanup boolean Delete results files when their sql buffer is wiped.
 ---@field catalog dbquery.CatalogConfig
 ---@field lsp boolean Attach the built-in language server to sql buffers.
+---@field icons dbquery.IconsConfig How a finished query is marked, in the sql buffer and the log.
+
+---@class dbquery.IconsConfig
+---@field ok string
+---@field failed string
+---@field cancelled string
 
 ---@class dbquery.CatalogConfig
 ---@field timeout integer Milliseconds each query of a built-in catalog function may take.
@@ -30,14 +36,18 @@ M.values = {
   output_cleanup = true,
   lsp = true,
   catalog = { timeout = 300000, clients = {} },
+  -- Nerd Font check_circle, times_circle, and ban.
+  icons = { ok = "\u{f058}", failed = "\u{f057}", cancelled = "\u{f05e}" },
 }
 
 ---@param opts dbquery.Config|nil
 function M.set(opts)
   local given = opts or {}
   local catalog = vim.tbl_extend("force", M.values.catalog, given.catalog or {})
+  local icons = vim.tbl_extend("force", M.values.icons, given.icons or {})
   M.values = vim.tbl_extend("force", M.values, given)
   M.values.catalog = catalog
+  M.values.icons = icons
   -- Default: auto-cleanup only when no custom output_dir is set.
   if given.output_cleanup == nil then
     M.values.output_cleanup = M.values.output_dir == nil

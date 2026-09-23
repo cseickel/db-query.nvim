@@ -7,6 +7,7 @@ cancels the one before it.
 ]]
 
 local catalog = require("db-query.catalog")
+local diagnostics = require("db-query.diagnostics")
 local Indicator = require("db-query.indicator")
 local Log = require("db-query.log")
 local output = require("db-query.output")
@@ -51,27 +52,16 @@ function Source.of(buf)
   return self
 end
 
---- Returns the Source whose pane is showing `buf`, or nil.
----@param buf integer
----@return dbquery.Source|nil
-local function showing(buf)
-  for _, source in pairs(sources) do
-    if source.pane:shows(buf) then
-      return source
-    end
-  end
-  return nil
-end
-
---- Returns the Source for `buf`, a sql buffer or the output file a pane is
---- showing, or nil for any other buffer.
+--- Returns the Source for `buf`, a sql buffer or a file its queries wrote, or
+--- nil for any other buffer.
 ---@param buf integer
 ---@return dbquery.Source|nil
 function Source.owning(buf)
   if not vim.api.nvim_buf_is_valid(buf) then
     return nil
   end
-  return sources[buf] or showing(buf)
+  local owner = Pane.owner(buf)
+  return sources[buf] or (owner and sources[owner])
 end
 
 --- Returns the indicator's status for `buf`, as the sql buffer or the output
@@ -118,13 +108,13 @@ function Source:output(view)
     view = self.pane:showing() == self.run.log.path and "result" or "log"
   end
   if view == "log" then
-    return self.pane:show(self.run, self.run.log.path, true)
+    return self.pane:show(self.run, self.run.log.path, { tail = true })
   end
 
   if not (self.run.process.status == "ok" and self.run.path) then
     return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
   end
-  self.pane:show(self.run, self.run.path, false)
+  self.pane:show(self.run, self.run.path)
 end
 
 --- Cleans up when the source buffer is wiped. Cancels any running process,
@@ -178,6 +168,7 @@ function Source:execute(ctx)
   end
 
   replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
+  diagnostics.track(ctx, run.process)
   self.pane:display(run)
 
   -- A script that failed or was cancelled may still have run its definitions.
