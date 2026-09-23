@@ -184,6 +184,7 @@ end
 return {
   name = "postgres",
   catalog = catalog,
+  definition = require("db-query.client.definition.postgres"),
   rows = { query = true, returning = true },
   delimited = "csv",
   dialect = psql,

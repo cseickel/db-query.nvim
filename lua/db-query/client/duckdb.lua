@@ -2,6 +2,7 @@
 Running statements through the duckdb cli.
 ]]
 
+local ddl = require("db-query.client.definition")
 local duckdb = require("db-query.sql.dialect.duckdb")
 local rows = require("db-query.catalog.rows")
 local sql = require("db-query.sql")
@@ -53,18 +54,6 @@ local FUNCTION_KINDS = {
   table_macro = { kind = "macro", returnsSet = true },
 }
 
----@param name string
----@return string
-local function identifier(name)
-  return '"' .. name:gsub('"', '""') .. '"'
-end
-
----@param text string
----@return string
-local function literal(text)
-  return "'" .. text:gsub("'", "''") .. "'"
-end
-
 --- Returns where duckdb looks an unqualified name up: the `search_path`
 --- setting, whose entries are `schema` or `database.schema`, or else the
 --- current database's main schema, followed by the built-in schemas.
@@ -108,12 +97,12 @@ local function withLabels(request, types, done)
   local selects = {}
   for _, row in ipairs(types) do
     if row.enum then
-      local name = table.concat({ identifier(row.database), identifier(row.schema), identifier(row.name) }, ".")
+      local name = table.concat({ ddl.identifier(row.database), ddl.identifier(row.schema), ddl.identifier(row.name) }, ".")
       table.insert(selects, string.format(
         "select json_object('database', %s, 'schema', %s, 'name', %s, 'labels', enum_range(null::%s))",
-        literal(row.database),
-        literal(row.schema),
-        literal(row.name),
+        ddl.literal(row.database),
+        ddl.literal(row.schema),
+        ddl.literal(row.name),
         name
       ))
     end
@@ -205,6 +194,7 @@ end
 return {
   name = "duckdb",
   catalog = catalog,
+  definition = require("db-query.client.definition.duckdb"),
   rows = { query = true, returning = true },
   delimited = "csv",
   embedded = true,

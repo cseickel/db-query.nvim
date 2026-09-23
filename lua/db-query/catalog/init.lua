@@ -262,21 +262,19 @@ function M.refresh(connection)
       if not current() then
         return
       end
-      local process, err = client.value({
+      local process = client.read({
         connection = connection,
         statement = statement,
         timeout = (opts or {}).timeout,
         readonly = true,
-      })
-      if not process then
-        return guarded(callback, nil, err or "the client could not start")
-      end
-      table.insert(entry.processes, process)
-      process:onFinish(function()
+      }, function(output, err)
         if current() then
-          guarded(callback, process.status == "ok" and process.result.stdout or nil, process:reason())
+          guarded(callback, output, err)
         end
       end)
+      if process then
+        table.insert(entry.processes, process)
+      end
     end,
   }
 

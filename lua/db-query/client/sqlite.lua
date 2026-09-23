@@ -103,6 +103,7 @@ end
 return {
   name = "sqlite",
   catalog = catalog,
+  definition = require("db-query.client.definition.sqlite"),
   rows = { query = true, returning = true },
   delimited = "csv",
   embedded = true,

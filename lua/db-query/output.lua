@@ -3,7 +3,7 @@ Output file paths and cleanup.
 
 Row data goes to the output directory, which the user chooses. Logs go to a
 directory per buffer under one named by nvim's pid, in nvim's cache and never
-anywhere else.
+anywhere else, and so do the files goto definition opens.
 Saved catalogs go to the `catalog` subdirectory of the same cache, shared by
 every nvim. On startup, sweep() removes directories for nvims that have exited
 and the partly written catalogs they left.
@@ -130,6 +130,24 @@ function M.staging(extension)
   pcall(vim.fn.mkdir, MINE, "p")
   staged = staged + 1
   return string.format("%s/staging-%d.%s", MINE, staged, extension)
+end
+
+--- Returns the file that holds the DDL of the object `name` names, under a
+--- directory for `connection`, since two databases can each hold a
+--- `public.users`. Each part of `name` keeps letters, digits, `_`, and `-`,
+--- and every other byte is percent-encoded.
+---@param connection string Resolved url.
+---@param name string[] The object's qualified name, one part each.
+---@return string
+function M.definition(connection, name)
+  local parts = vim.tbl_map(function(part)
+    return (part:gsub("[^%w_-]", function(char)
+      return string.format("%%%02X", char:byte())
+    end))
+  end, name)
+  local directory = MINE .. "/definitions/" .. vim.fn.sha256(connection):sub(1, 12)
+  pcall(vim.fn.mkdir, directory, "p")
+  return directory .. "/" .. table.concat(parts, ".") .. ".sql"
 end
 
 --- Returns true when the plugin should delete `path` once the buffer that

@@ -38,6 +38,7 @@ local M = {}
 ---@class dbquery.Client
 ---@field name string Names the client in `catalog.clients`.
 ---@field catalog dbquery.CatalogFetch Built-in way to read the database's catalog.
+---@field definition fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(ddl: string|nil, err: string|nil)) Reads the DDL of a relation, or of a column's relation, or of every overload of a function.
 ---@field rows table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
 ---@field delimited string Extension for csv format: csv or tsv.
 ---@field command fun(spec: dbquery.CommandSpec): dbquery.Command
@@ -172,6 +173,24 @@ function M.value(spec)
       return command.sessionFile ~= nil and M.cancel(spec.connection, command.sessionFile)
     end,
   })
+end
+
+--- Runs `spec.statement` as `value` does, and calls `callback` once with what
+--- it printed, or with why it failed. Returns the process, or nil after
+--- calling `callback` when the client cannot start.
+---@param spec dbquery.ValueSpec
+---@param callback fun(output: string|nil, err: string|nil)
+---@return dbquery.Process|nil
+function M.read(spec, callback)
+  local process, err = M.value(spec)
+  if not process then
+    callback(nil, err or "the client could not start")
+    return nil
+  end
+  process:onFinish(function()
+    callback(process.status == "ok" and process.result.stdout or nil, process:reason())
+  end)
+  return process
 end
 
 return M

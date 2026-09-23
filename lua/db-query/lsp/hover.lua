@@ -3,7 +3,7 @@ Hover for the name under the cursor: a column, a table, or a function, as the
 catalog describes it.
 ]]
 
-local names = require("db-query.lsp.names")
+local target = require("db-query.lsp.target")
 
 local M = {}
 
@@ -37,19 +37,49 @@ local function qualifiedName(relation)
 end
 
 ---@param column dbquery.Column
----@return string
-local function columnLine(column)
+---@return string|nil
+local function constraints(column)
   local filled = column.generated and ("generated " .. column.generated)
     or (column.default and ("default " .. column.default))
     or nil
-  return joined(" ", column.name, column.type, (not column.nullable) and "not null" or nil, filled)
+  local line = joined(" ", (not column.nullable) and "not null" or nil, filled)
+  return line ~= "" and line or nil
 end
 
 ---@param column dbquery.Column
----@param relation dbquery.Relation|nil
+---@return string
+local function columnLine(column)
+  return joined(" ", column.name, column.type, constraints(column))
+end
+
+---@param text string
+---@param width integer
+---@return string
+local function padded(text, width)
+  return text .. string.rep(" ", width - vim.fn.strdisplaywidth(text))
+end
+
+--- Returns one line per column, with the names, types, and constraints each
+--- starting in the same column.
+---@param columns dbquery.Column[]
+---@return string[]
+local function columnTable(columns)
+  local nameWidth, typeWidth = 0, 0
+  for _, column in ipairs(columns) do
+    nameWidth = math.max(nameWidth, vim.fn.strdisplaywidth(column.name))
+    typeWidth = math.max(typeWidth, vim.fn.strdisplaywidth(column.type or ""))
+  end
+  return vim.tbl_map(function(column)
+    local line = padded(column.name, nameWidth) .. " " .. padded(column.type or "", typeWidth)
+    return ((line .. " " .. (constraints(column) or "")):gsub("%s+$", ""))
+  end, columns)
+end
+
+---@param column dbquery.Column
+---@param relation dbquery.Relation
 ---@return string[]
 local function describeColumn(column, relation)
-  local lines = { "```sql", (relation and (qualifiedName(relation) .. ".") or "") .. columnLine(column), "```" }
+  local lines = { "```sql", qualifiedName(relation) .. "." .. columnLine(column), "```" }
   if column.labels then
     vim.list_extend(lines, { "", "values: " .. table.concat(column.labels, ", ") })
   end
@@ -61,8 +91,8 @@ end
 ---@return string[]
 local function describeRelation(relation)
   local lines = { "```sql", relation.kind .. " " .. qualifiedName(relation) }
-  for _, column in ipairs(relation.columns) do
-    lines[#lines + 1] = "  " .. columnLine(column)
+  for _, line in ipairs(columnTable(relation.columns)) do
+    lines[#lines + 1] = "  " .. line
   end
   lines[#lines + 1] = "```"
   comment(lines, relation.comment)
@@ -91,89 +121,23 @@ local function describeFunctions(functions)
   return lines
 end
 
---- Returns the description of the column `word` among the columns `relation`
---- offers, when the catalog knows it.
----@param opened dbquery.Opened
----@param relation dbquery.ScopeRelation
----@param word string
----@return string[]|nil
-local function scopeColumn(opened, relation, word)
-  local dialect = opened.document.dialect
-  local part = names.parts(dialect, word)[1]
-  for _, offered in ipairs(names.columns(opened.catalog, dialect, relation)) do
-    if offered.column and offered.name:lower() == part.text:lower() then
-      return describeColumn(offered.column, offered.relation)
-    end
-  end
-  return nil
-end
-
----@param opened dbquery.Opened
----@param name string
----@param calls boolean The name is followed by `(`.
----@return string[]|nil
-local function catalogName(opened, name, calls)
-  local catalog, dialect = opened.catalog, opened.document.dialect
-  local relation = not calls and names.relation(catalog, dialect, name)
-  if relation then
-    return describeRelation(relation)
-  end
-  local functions = names.functions(catalog, dialect, name)
-  return #functions > 0 and describeFunctions(functions) or nil
-end
-
 --- Returns, as markdown, the column, table, or function overloads the catalog
 --- holds under the word in `context`, or nil when the catalog holds none.
 ---@param opened dbquery.Opened
 ---@param context dbquery.CursorContext
 ---@return lsp.Hover|nil
 function M.hover(opened, context)
-  local word, catalog = context.word.text, opened.catalog
-  if word == "" or not catalog then
+  local found = target.at(opened, context)
+  if not found then
     return nil
   end
-  local dialect = opened.document.dialect
-  local calls = opened.document.text:sub(context.word.last + 1):match("^%s*%(") ~= nil
   local lines
-
-  if context.kind == "qualified" then
-    local matched = false
-    for _, relation in ipairs(context.scope) do
-      if names.refersTo(dialect, relation, context.qualifier) and #names.columns(catalog, dialect, relation) > 0 then
-        matched, lines = true, scopeColumn(opened, relation, word)
-        break
-      end
-    end
-    if not matched then
-      lines = scopeColumn(opened, { kind = "table", name = context.qualifier }, word)
-        or catalogName(opened, context.qualifier .. "." .. word, calls)
-    end
-  elseif context.kind == "insert_columns" or context.kind == "columns_of" then
-    local table = context.kind == "columns_of" and context.columnsOf or context.insert.table
-    lines = scopeColumn(opened, { kind = "table", name = table }, word)
-  elseif context.kind == "relation" then
-    lines = catalogName(opened, word, calls)
+  if found.kind == "column" then
+    lines = describeColumn(found.column, found.relation)
+  elseif found.kind == "relation" then
+    lines = describeRelation(found.relation)
   else
-    for _, relation in ipairs(context.scope) do
-      if not calls and names.reference(dialect, relation) and names.refersTo(dialect, relation, word)
-        and relation.kind == "table" and relation.name then
-        lines = catalogName(opened, relation.name, false)
-        break
-      end
-    end
-    if not lines and not calls then
-      for _, relation in ipairs(context.scope) do
-        lines = scopeColumn(opened, relation, word)
-        if lines then
-          break
-        end
-      end
-    end
-    lines = lines or catalogName(opened, word, calls)
-  end
-
-  if not lines then
-    return nil
+    lines = describeFunctions(found.functions)
   end
   return { contents = { kind = "markdown", value = table.concat(lines, "\n") } }
 end
