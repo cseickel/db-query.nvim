@@ -12,9 +12,9 @@ local command = require("db-query.command")
 local config = require("db-query.config")
 local connect = require("db-query.connect")
 local dadbod = require("db-query.dadbod")
-local Indicator = require("db-query.indicator")
 local main = require("db-query.main")
 local output = require("db-query.output")
+local Progress = require("db-query.run-status.progress")
 local selection = require("db-query.selection")
 local Source = require("db-query.source")
 
@@ -23,10 +23,10 @@ local M = {}
 local FILETYPES = { "sql", "mysql", "plsql" }
 
 --- Cache of `dadbod.resolve` results, keyed by the written `b:db`, holding
---- false when the url resolved to nothing. A statusline calls `status` on every
---- redraw, and the cache keeps each redraw from calling `db#resolve` again.
+--- false when the url resolved to nothing. A statusline calls `statusline` on
+--- every redraw, and the cache keeps each redraw from calling `db#resolve` again.
 ---@type table<string, string|false>
-local resolvedStatus = {}
+local resolvedStatusline = {}
 
 ---@class dbquery.ExecuteOptions : dbquery.Selection
 ---@field format dbquery.Format|nil Output format (default: config value).
@@ -212,13 +212,13 @@ end
 --- or connection test in `buf` shows ahead of a read of its database's catalog.
 --- Call it only from nvim's main loop, which a statusline always is.
 ---
----     vim.o.winbar = "%{%v:lua.require'db-query'.status()%}"
+---     vim.o.winbar = "%{%v:lua.require'db-query'.statusline()%}"
 ---
 ---@param buf integer|nil Defaults to the current buffer.
 ---@return string
-function M.status(buf)
+function M.statusline(buf)
   buf = buf or vim.api.nvim_get_current_buf()
-  local running = Source.status(buf)
+  local running = Source.statusline(buf)
   if running ~= "" then
     return running
   end
@@ -227,15 +227,23 @@ function M.status(buf)
     if type(written) ~= "string" then
       return nil
     end
-    if resolvedStatus[written] == nil then
-      resolvedStatus[written] = dadbod.resolve(written) or false
+    if resolvedStatusline[written] == nil then
+      resolvedStatusline[written] = dadbod.resolve(written) or false
     end
-    return resolvedStatus[written] or nil
+    return resolvedStatusline[written] or nil
   end)
   if not seconds then
     return ""
   end
-  return Indicator.format(vim.trim("reading catalog " .. (vim.b[buf].db_name or "")), seconds)
+  return Progress.format(vim.trim("reading catalog " .. (vim.b[buf].db_name or "")), seconds)
+end
+
+--- Deprecated name of `statusline`.
+---@deprecated Use `statusline`.
+---@param buf integer|nil
+---@return string
+function M.status(buf)
+  return M.statusline(buf)
 end
 
 ---@param opts dbquery.Config|nil

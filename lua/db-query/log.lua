@@ -9,7 +9,7 @@ format decision lives here, so a caller hands over raw text and says which kind
 of message it is.
 ]]
 
-local outcome = require("db-query.outcome")
+local runStatus = require("db-query.run-status")
 local output = require("db-query.output")
 
 ---@alias dbquery.LogMessage
@@ -123,7 +123,7 @@ end
 ---@param ended dbquery.LogEnding
 local function closing(self, ended)
   local seconds = (vim.uv.hrtime() - self.started) / 1e9
-  local completion = string.format("%s %s in %.3fs", outcome.icon(ended.status), ended.word, seconds)
+  local completion = string.format("%s %s in %.3fs", runStatus.icon(ended.status), ended.word, seconds)
 
   local lines = {}
   if ended.status == "ok" and self.rows then

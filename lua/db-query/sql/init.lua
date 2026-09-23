@@ -118,6 +118,24 @@ function M.statementAt(dialect, lines, row)
   return { first, last }
 end
 
+--- Returns `span` of `buf` with its first line moved down to the line where the
+--- first token that is not a comment starts, or `span` as it is when every
+--- token in it is a comment.
+---@param dialect dbquery.Dialect
+---@param buf integer
+---@param span [integer, integer] First and last line (0-based).
+---@return [integer, integer]
+function M.codeSpan(dialect, buf, span)
+  local text = table.concat(vim.api.nvim_buf_get_lines(buf, span[1], span[2] + 1, false), "\n")
+  for _, token in ipairs(lex.tokens(dialect, text)) do
+    if token.kind ~= "comment" then
+      local skipped = select(2, text:sub(1, token.first - 1):gsub("\n", ""))
+      return { span[1] + skipped, span[2] }
+    end
+  end
+  return span
+end
+
 --- Returns true when any statement in `sql` starts with one of the dialect's
 --- `definitions`, such as `create` or `drop`, and so may change the catalog.
 ---@param dialect dbquery.Dialect

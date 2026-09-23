@@ -1,17 +1,17 @@
 --[[
 Coordinates what runs from a sql buffer.
 
-A Source ties together a Run, Pane, and Indicator for one buffer. Each buffer
+A Source ties together a Run, Pane, and Progress for one buffer. Each buffer
 runs one process at a time, a query or a connection test, and starting either
 cancels the one before it.
 ]]
 
 local catalog = require("db-query.catalog")
-local diagnostics = require("db-query.diagnostics")
-local Indicator = require("db-query.indicator")
 local Log = require("db-query.log")
 local output = require("db-query.output")
 local Pane = require("db-query.pane")
+local Progress = require("db-query.run-status.progress")
+local result = require("db-query.run-status.result")
 local Run = require("db-query.run")
 local sql = require("db-query.sql")
 
@@ -23,7 +23,7 @@ local sql = require("db-query.sql")
 ---@field log dbquery.Log|nil The log every query of this buffer appends to, opened by the first one.
 ---@field run dbquery.Run|nil The last query, whose files the pane shows.
 ---@field process dbquery.Process|nil The last process started, a query's or a connection test's.
----@field indicator dbquery.Indicator|nil
+---@field progress dbquery.Progress|nil
 ---@field files string[] Result files this buffer's queries have written.
 local Source = {}
 Source.__index = Source
@@ -64,16 +64,16 @@ function Source.owning(buf)
   return sources[buf] or (owner and sources[owner])
 end
 
---- Returns the indicator's status for `buf`, as the sql buffer or the output
---- its pane shows, or an empty string when nothing is running.
+--- Returns the progress's statusline text for `buf`, as the sql buffer or the
+--- output its pane shows, or an empty string when nothing is running.
 ---@param buf integer
 ---@return string
-function Source.status(buf)
+function Source.statusline(buf)
   local self = Source.owning(buf)
-  if not (self and self.indicator) then
+  if not (self and self.progress) then
     return ""
   end
-  return self.indicator:status()
+  return self.progress:statusline()
 end
 
 --- Cancels the running process, if any.
@@ -89,11 +89,11 @@ end
 ---@param place dbquery.Place
 local function replace(self, process, place)
   self:cancel()
-  if self.indicator then
-    self.indicator:stop()
+  if self.progress then
+    self.progress:stop()
   end
   self.process = process
-  self.indicator = Indicator.attach(process, place)
+  self.progress = Progress.attach(process, place)
 end
 
 --- Puts the log or the last query's result in the pane, reopening the window
@@ -118,15 +118,15 @@ function Source:output(view)
 end
 
 --- Cleans up when the source buffer is wiped. Cancels any running process,
---- stops the indicator, and deletes the files this buffer's queries wrote.
+--- stops the progress, and deletes the files this buffer's queries wrote.
 --- Leaves existing output windows open.
 ---
 --- Deleting here rather than when an output window closes is what lets you
 --- move between the log and the result as often as you like.
 function Source:close()
   self:cancel()
-  if self.indicator then
-    self.indicator:stop()
+  if self.progress then
+    self.progress:stop()
   end
   self.pane:stop()
 
@@ -167,8 +167,9 @@ function Source:execute(ctx)
     table.insert(self.files, run.path)
   end
 
-  replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
-  diagnostics.track(ctx, run.process)
+  local span = sql.codeSpan(ctx.dialect, self.buf, ctx.span)
+  replace(self, run.process, { buf = self.buf, span = span, label = "running query" })
+  result.track(self.buf, span, run.process)
   self.pane:display(run)
 
   -- A script that failed or was cancelled may still have run its definitions.
@@ -180,7 +181,7 @@ function Source:execute(ctx)
 end
 
 --- Shows a connection test of `name`, replacing any running process, which is
---- cancelled. The indicator marks `span`.
+--- cancelled. The progress marks `span`.
 ---@param process dbquery.Process
 ---@param span [integer, integer]
 ---@param name string

@@ -6,7 +6,8 @@ A query is handed to a cli client, which writes what it prints to a log file and
 
 All modules are in `lua/db-query/`.
 
-- **Running a query.** `source.lua` is the sql buffer and owns its log and the one process it is running. `run.lua` is the query in flight, `process.lua` the client process under it, `log.lua` how its log reads, `pane.lua` the window showing its output, `indicator.lua` the spinner and cancel key drawn in the sql buffer, `outcome.lua` the icon and color a finished query is marked with in the sql buffer and the log, and `diagnostics.lua` the icon, elbow, and diagnostic each query keeps for its last run.
+- **Running a query.** `source.lua` is the sql buffer and owns its log and the one process it is running. `run.lua` is the query in flight, `process.lua` the client process under it, `log.lua` how its log reads, and `pane.lua` the window showing its output.
+- **Showing run status.** `run-status/init.lua` holds each status's color, icon, and summary, and draws the mark a query gets in the sql buffer. `run-status/progress.lua` draws the mark with a spinner and binds the cancel key while a process runs. `run-status/result.lua` gives each query the mark and a diagnostic for its last run.
 - **Reaching a database.** `client/` maps each url scheme to a client and turns a connection and a statement into a command line, one file per client. `connect.lua` decides which connection a buffer runs against, helped by `modeline.lua`, `connections.lua`, `dadbod.lua`, and `url.lua`.
 - **Reading sql.** `sql/lex.lua` tokenizes, `sql/dialect/` holds one rule set per way of reading sql, and the modules above them say what the cursor is in.
 - **Knowing the database.** `catalog/` keeps one catalog per database, read in the background and saved to disk.
@@ -21,23 +22,25 @@ All modules are in `lua/db-query/`.
 
   init.execute ──► Source:execute ──┬──► Run.start ──► Process.start ──► psql ──┬──► query-1.txt  the rows
        │                            │                                           └──► query.md     the log
-       ├─ selection.capture         ├──► Indicator.attach   spinner and cancel key in query.sql
-       └─ dadbod.resolve            └──► Pane:display       opens query.md, rereads it every 500ms
+       ├─ selection.capture         ├──► Progress.attach    spinner and cancel key in query.sql
+       └─ dadbod.resolve            ├──► result.track       forgets earlier marks over the same lines
+                                    └──► Pane:display       opens query.md, rereads it every 500ms
 
   psql exits, and Process calls its subscribers in the order they subscribed:
 
-       1. Run's finish     writes  **✅ 1 finished in 0.412s**  into query.md
-       2. Indicator:stop   removes the spinner and the cancel key
-       3. Pane             swaps the window from query.md to query-1.txt
+       1. Run's finish     writes  Finished in 0.412s  into query.md
+       2. Progress:stop    removes the spinner and the cancel key
+       3. result           marks the query with  2,520 rows in 0.41s
+       4. Pane             swaps the window from query.md to query-1.txt
 ```
 
-`Run` subscribes inside `Run.start`, before `Source:execute` attaches the other two, so the log is complete on disk before the `Pane` rereads it. A statement that changes the catalog adds a fourth subscriber, `catalog.refresh`.
+`Run` subscribes inside `Run.start`, before `Source:execute` attaches the others, so the log is complete on disk before the `Pane` rereads it. A statement that changes the catalog adds one more subscriber, `catalog.refresh`.
 
 `init.execute` captures the selection and the cursor at the moment it is called, because a prompt ends visual mode and an `<expr>` mapping moves the cursor before the plugin may act. What it captures becomes a `dbquery.Context`, the request as the user made it, dialect included, and every part of the run reads what it needs from `run.ctx`.
 
 ## Design decisions
 
-**A buffer runs one process at a time**, a query or a connection test, and starting either cancels the one before it. `indicator.lua` is the reason: its extmarks and its cancel key are buffer-local, so a second process would draw over the first.
+**A buffer runs one process at a time**, a query or a connection test, and starting either cancels the one before it. `run-status/progress.lua` is the reason: its extmarks and its cancel key are buffer-local, so a second process would draw over the first.
 
 **Plugin code runs on nvim's main loop.** nvim refuses editor changes in a libuv callback (E5560) and under textlock (E565), which holds while it evaluates a statusline, an `<expr>` mapping, or a completion function. Anything entered from outside the plugin goes through `main.lua`, which tests whether nvim would refuse and otherwise waits. Reads are allowed under textlock, so `main.capture` takes the editor state at the call moment and does the rest later.
 

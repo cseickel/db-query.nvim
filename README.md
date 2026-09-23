@@ -195,16 +195,16 @@ end, { desc = "switch between the log and the rows" })
 
 ## While a query runs
 
-A bar marks the lines that are running, continuing onto a line beneath them with a spinner, `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
+A spinner goes in the gutter beside the first line that is running and a bar beside the rest, turning under them to a line with `running query`, a clock, and the cancel key. The output window shows the log, reloaded every half second, so a long script fills in as it goes. Rows you are already looking at stay on screen instead, so a rerun does not take them away while it works. When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
-When the query ends, its icon from `icons` goes in the gutter beside its first line of code, and a line under the query says how it ended, such as `2520 rows in 0.98s`, `failed in 0.21s`, or `cancelled in 3.40s`. The row count comes from psql, and the other clients say `finished in 0.98s`. That line moves to the next query you run, and every query you have run keeps its icon.
+When the query ends, its icon from `icons` takes the spinner's place beside its first line of code, and the line under the query says how it ended, such as `2,520 rows in 0.98s`, `failed after 0.21s`, or `cancelled after 3.40s`. The row count comes from psql, and the other clients say `finished in 0.98s`. That line moves to the next query you run, and every query you have run keeps its icon.
 
 Each of those queries also holds a diagnostic with its last run: an info for a success, an error for a failure, and a hint for a cancel. `vim.diagnostic.open_float()` shows the outcome, and `]d` moves between the queries you have run. Running a query replaces the marks of any earlier run over the same lines, and deleting the query's text deletes them.
 
-You can call `status(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested, and `reading catalog <name>` while the catalog of the buffer's database is read and nothing else is running in that buffer:
+You can call `statusline(buf)` to get the same spinner, label, and timer in your winbar or statusline. It reads `testing connection <name>` while a connection is tested, and `reading catalog <name>` while the catalog of the buffer's database is read and nothing else is running in that buffer. `status(buf)` is its old name, which still works:
 
 ```lua
-local text = require("db-query").status(vim.api.nvim_get_current_buf())
+local text = require("db-query").statusline(vim.api.nvim_get_current_buf())
 if text ~= "" then
   return "%#StatusLineInfo# " .. text .. " %*"
 end
@@ -214,16 +214,11 @@ end
 
 ## Highlights
 
-`DbQueryIndicator` colors the bar and everything drawn under it. It links to `DiagnosticInfo` unless you set it:
+A query is colored by its status:
 
-```lua
-vim.api.nvim_set_hl(0, "DbQueryIndicator", { fg = "#7aa2f7" })
-```
-
-A finished query is colored by how it ended:
-
-| Ended | Groups |
+| Status | Groups |
 |---|---|
+| running | `DbQueryProgress`, `DbQueryProgressBand`, `DbQueryProgressText` |
 | success | `DbQueryResultOk`, `DbQueryResultOkBand`, `DbQueryResultOkText` |
 | failed | `DbQueryResultError`, `DbQueryResultErrorBand`, `DbQueryResultErrorText` |
 | cancelled | `DbQueryResultCancelled`, `DbQueryResultCancelledBand`, `DbQueryResultCancelledText` |
@@ -322,7 +317,7 @@ The plugin reads the tables, columns, functions, and types of each database a bu
 
 The read starts when a connection passes its test. It runs again after any query holding a statement that starts with `create`, `alter`, `drop`, or `comment`, plus `rename` on mysql and mariadb and `import` on postgres, whether or not the query succeeded, and again on `:DBRefreshCatalog`. Its queries run read-only, several at once, and each is killed after `catalog.timeout` milliseconds, which is 5 minutes by default because some remote mariadb servers take minutes to answer. A read that fails leaves the catalog as it was and says why, and the next read waits for one of those three things. One catalog is kept per database, so buffers on the same url share it.
 
-While a read runs, `status(buf)` shows `reading catalog <name>` with a clock in every buffer on that database. A read still running after 2 seconds says so in a notification, and one that finishes says how long it took. `:DBRefreshCatalog cancel` stops the read and keeps the catalog you had.
+While a read runs, `statusline(buf)` shows `reading catalog <name>` with a clock in every buffer on that database. A read still running after 2 seconds says so in a notification, and one that finishes says how long it took. `:DBRefreshCatalog cancel` stops the read and keeps the catalog you had.
 
 The saved file is named by a hash of the url without its password, or of the file path for sqlite and duckdb, in a directory only your user can read, since it lists every table and column. A file saved by an older version of the plugin is upgraded when the change allows it, and read fresh from the database when it does not.
 

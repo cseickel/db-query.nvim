@@ -42,7 +42,7 @@ local namedUrl = nil
 ---@type table<integer, dbquery.Attempt>
 local attempts = {}
 
---- Returns the lines the indicator marks while `buf` tests a connection: the
+--- Returns the lines the progress marks while `buf` tests a connection: the
 --- modeline, or else the statement at the cursor, or else the cursor's line.
 ---@param buf integer
 ---@param dialect dbquery.Dialect
@@ -58,7 +58,7 @@ local function testedAt(buf, dialect)
 end
 
 --- Runs `select 1` against `connection` without blocking, shown in `buf` by
---- an indicator that can cancel it, and calls `done` on the main loop with
+--- a progress mark that can cancel it, and calls `done` on the main loop with
 --- whether it answered and, when it did not, why. A server that says nothing
 --- within TIMEOUT fails, and so does a cancelled test.
 ---@param buf integer

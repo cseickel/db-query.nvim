@@ -17,9 +17,9 @@ setting replaces it for the clients it names.
 
 local client = require("db-query.client")
 local config = require("db-query.config")
-local Indicator = require("db-query.indicator")
 local main = require("db-query.main")
 local output = require("db-query.output")
+local Progress = require("db-query.run-status.progress")
 local shape = require("db-query.catalog.shape")
 local url = require("db-query.url")
 
@@ -49,7 +49,7 @@ local entries = {}
 
 local NOTICE_AFTER = 2000
 
---- Redraws winbars and statuslines while any read runs, so `status` spins.
+--- Redraws winbars and statuslines while any read runs, so `statusline` spins.
 ---@type uv.uv_timer_t|nil
 local ticker = nil
 
@@ -67,7 +67,7 @@ end
 local function tick()
   if reading() and not ticker then
     ticker = vim.uv.new_timer()
-    ticker:start(Indicator.FRAME_TIME, Indicator.FRAME_TIME, main.frame(function()
+    ticker:start(Progress.FRAME_TIME, Progress.FRAME_TIME, main.frame(function()
       vim.api.nvim__redraw({ statusline = true, winbar = true })
     end))
   elseif ticker and not reading() then

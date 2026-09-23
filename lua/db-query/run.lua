@@ -9,8 +9,7 @@ buffer appends to. Rows go to a separate file, which only exists when the
 statement returns any.
 
 A Run holds its files and the process writing them, along with the request it
-came from as `run.ctx`, which is where the indicator and the pane read what
-they need.
+came from as `run.ctx`, which is where the pane reads what it needs.
 ]]
 
 local client = require("db-query.client")
