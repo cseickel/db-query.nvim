@@ -50,15 +50,16 @@ local function test(buf, connection, done)
   if not resolved then
     return done(false, "its url is empty")
   end
-  if client.embedded(resolved) then
-    return done(true)
-  end
-  -- An unknown scheme has already been reported by `client.dialect`.
-  local dialect = client.dialect(resolved)
-  if not dialect then
+  -- An unknown scheme has already been reported by `client.known`.
+  local dbClient = client.known(resolved)
+  if not dbClient then
     return done(false)
   end
+  if dbClient.embedded then
+    return done(true)
+  end
   local process, err = client.value({
+    client = dbClient,
     connection = resolved,
     statement = "select 1",
     timeout = TEST_TIMEOUT_MS,
@@ -77,7 +78,7 @@ local function test(buf, connection, done)
   else
     local win = vim.fn.win_findbuf(buf)[1]
     local row = win and vim.api.nvim_win_get_cursor(win)[1] - 1 or 0
-    span = sql.statementAt(dialect, vim.api.nvim_buf_get_lines(buf, 0, -1, false), row) or { row, row }
+    span = sql.statementAt(dbClient.dialect, vim.api.nvim_buf_get_lines(buf, 0, -1, false), row) or { row, row }
   end
   Source.of(buf):test(process, span, connection.name)
   process:onFinish(function()

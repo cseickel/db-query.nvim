@@ -14,6 +14,14 @@ local M = {}
 ---@field name string
 ---@field routine boolean A function or procedure, rather than a relation.
 
+--- Returns the catalog object `target` reads the DDL of: the first overload of
+--- a function, and otherwise the relation, which for a column is its table.
+---@param target dbquery.Target
+---@return dbquery.Function|dbquery.Relation
+function M.object(target)
+  return target.kind == "functions" and target.functions[1] or target.relation
+end
+
 --- Returns `text` as a sql string literal.
 ---@param text string
 ---@return string
@@ -214,22 +222,6 @@ function M.script(statements)
   end, statements), "\n\n") .. "\n"
 end
 
---- Returns true when `text`, read by `dialect`, names `name` as a word or a
---- quoted identifier, and not inside a string or a comment.
----@param dialect dbquery.Dialect
----@param text string
----@param name string
----@return boolean
-function M.mentions(dialect, text, name)
-  local lower = name:lower()
-  for _, token in ipairs(lex.tokens(dialect, text)) do
-    if (token.kind == "word" and token.lower == lower) or (token.kind == "quoted" and token.text:sub(2, -2) == name) then
-      return true
-    end
-  end
-  return false
-end
-
 --- Returns the references in `rows`, each once. A row holding `text` came from
 --- a search of that text, and is kept only when the text names `name`.
 ---@param dialect dbquery.Dialect
@@ -241,7 +233,7 @@ function M.references(dialect, rows, name)
   for _, row in ipairs(rows) do
     local routine = row.routine == true or row.routine == 1
     local key = table.concat({ row.database or "", row.schema or "", row.name, tostring(routine) }, "\0")
-    if not seen[key] and (row.text == nil or M.mentions(dialect, row.text, name)) then
+    if not seen[key] and (row.text == nil or lex.mentions(dialect, row.text, name)) then
       seen[key] = true
       table.insert(references, { database = row.database, schema = row.schema, name = row.name, routine = routine })
     end

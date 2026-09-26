@@ -169,6 +169,7 @@ function M.refresh(resolved)
         return
       end
       local process = client.read({
+        client = dbClient,
         connection = resolved,
         statement = statement,
         timeout = (opts or {}).timeout,

@@ -50,9 +50,8 @@ function M.open(captured)
   local dbClient = url and client.of(url)
   local dialect = dbClient and dbClient.dialect
     or require("db-query.sql.dialect." .. (captured.filetype == "mysql" and "mysql" or "standard"))
-  local text = table.concat(captured.lines, "\n")
   return vim.tbl_extend("force", captured, {
-    document = { dialect = dialect, text = text, tokens = lex.tokens(dialect, text) },
+    document = lex.document(dialect, table.concat(captured.lines, "\n")),
     catalog = dbClient and catalog.get(url) or nil,
   })
 end

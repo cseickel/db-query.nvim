@@ -219,6 +219,20 @@ function M.tokens(dialect, text)
   return tokens
 end
 
+--- Sql text and its tokens, read by the rules of one dialect.
+---@class dbquery.Document
+---@field dialect dbquery.Dialect
+---@field text string Usually a whole buffer.
+---@field tokens dbquery.Token[] Every token of `text`, so text lexed once serves every request against it.
+
+--- Returns `text` lexed by `dialect`.
+---@param dialect dbquery.Dialect
+---@param text string
+---@return dbquery.Document
+function M.document(dialect, text)
+  return { dialect = dialect, text = text, tokens = M.tokens(dialect, text) }
+end
+
 ---@param token dbquery.Token|nil
 ---@param word string
 ---@return boolean
@@ -231,6 +245,22 @@ end
 ---@return boolean
 function M.isIdentifier(token)
   return token ~= nil and (token.kind == "word" or token.kind == "quoted")
+end
+
+--- Returns true when `text`, read by `dialect`, names `name` as a word or a
+--- quoted identifier, and not inside a string or a comment.
+---@param dialect dbquery.Dialect
+---@param text string
+---@param name string
+---@return boolean
+function M.mentions(dialect, text, name)
+  local lower = name:lower()
+  for _, token in ipairs(M.tokens(dialect, text)) do
+    if (token.kind == "word" and token.lower == lower) or (token.kind == "quoted" and token.text:sub(2, -2) == name) then
+      return true
+    end
+  end
+  return false
 end
 
 --- Returns `tokens` without comments and client commands.

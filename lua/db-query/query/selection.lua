@@ -81,9 +81,10 @@ function M.blank(capture)
   return vim.trim(table.concat(capture.lines, "\n")) == ""
 end
 
---- Returns the sql text and line span of `capture`, reading the statement at
---- the cursor by the rules of `dialect`. When the lines above the sql leave the
---- client on a delimiter other than `;`, the command setting it comes first.
+--- Returns the sql text of `capture`, reading the statement at the cursor by
+--- the rules of `dialect`, and its line span starting at its first line of
+--- code. When the lines above the sql leave the client on a delimiter other
+--- than `;`, the command setting it comes first.
 ---@param capture dbquery.Capture
 ---@param dialect dbquery.Dialect
 ---@return string sql
@@ -103,7 +104,7 @@ function M.sql(capture, dialect)
 
   local sqlText = vim.trim(table.concat(lines, "\n"))
   local command = sqlText ~= "" and sql.delimiterCommand(dialect, above)
-  return command and (command .. "\n" .. sqlText) or sqlText, span
+  return command and (command .. "\n" .. sqlText) or sqlText, sql.codeSpan(dialect, lines, span)
 end
 
 return M

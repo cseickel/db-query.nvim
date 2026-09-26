@@ -30,7 +30,7 @@ where function_type in ('macro', 'table_macro') and not internal and macro_defin
 ---@param done fun(references: dbquery.Reference[]|nil, err: string|nil)
 return function(request, target, done)
   local isFunction = target.kind == "functions"
-  local named = isFunction and target.functions[1] or target.relation
+  local named = query.object(target)
   local statement = query.fill((isFunction and "" or FOREIGN_KEYS) .. SEARCHED, {
     database = query.literal(named.database),
     schema = query.literal(named.schema),

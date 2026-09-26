@@ -5,24 +5,14 @@ columns.
 ]]
 
 local client = require("db-query.client")
+local duckdb = require("db-query.client.duckdb")
+local query = require("db-query.client.query")
 
 local M = {}
 
 -- Shared database per nvim; duckdb takes an exclusive lock.
 local URL = "duckdb:" .. vim.fn.tempname() .. ".duckdb"
 local SCRATCH = vim.fn.stdpath("cache") .. "/parquet"
-
----@param text string
----@return string
-local function literal(text)
-  return "'" .. text:gsub("'", "''") .. "'"
-end
-
----@param name string
----@return string
-local function identifier(name)
-  return '"' .. name:gsub('"', '""') .. '"'
-end
 
 --- Creates a view for `path` in the shared database, then calls `opened` with
 --- the url and lines of the query against it. When the view cannot be created,
@@ -31,17 +21,17 @@ end
 ---@param opened fun(url: string, lines: string[])
 local function open(path, opened)
   local name = vim.fn.fnamemodify(path, ":t:r")
-  local byPath = { "select *", "from " .. literal(path), "limit 1000;" }
+  local view = query.qualified(duckdb.dialect, name)
+  local byPath = { "select *", "from " .. query.literal(path), "limit 1000;" }
 
   local process, err = client.value({
+    client = duckdb,
     connection = URL,
-    statement = string.format("create or replace view %s as select * from %s;", identifier(name), literal(path)),
+    statement = string.format("create or replace view %s as select * from %s;", view, query.literal(path)),
     readonly = false,
   })
   if not process then
-    if err then
-      vim.notify("db-query: " .. err, vim.log.levels.ERROR)
-    end
+    vim.notify("db-query: " .. tostring(err), vim.log.levels.ERROR)
     -- Deferred with vim.schedule: inside BufReadCmd `mainloop.run` sees no
     -- lock, but nvim refuses to open the output window there.
     return vim.schedule(function()
@@ -54,7 +44,7 @@ local function open(path, opened)
       vim.notify("db-query: " .. vim.trim(result.stderr or "create view failed"), vim.log.levels.ERROR)
       return opened("duckdb:", byPath)
     end
-    opened(URL, { "select *", "from " .. identifier(name), "limit 1000;" })
+    opened(URL, { "select *", "from " .. view, "limit 1000;" })
   end)
 end
 

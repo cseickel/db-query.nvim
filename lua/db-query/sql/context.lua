@@ -38,12 +38,6 @@ local M = {}
 ---@field list "columns"|"values"
 ---@field position integer Which entry of the list the cursor is in, counting from 1.
 
---- Sql text and its tokens, read by the rules of one dialect.
----@class dbquery.Document
----@field dialect dbquery.Dialect
----@field text string Usually a whole buffer.
----@field tokens dbquery.Token[] Every token of `text`, so text lexed once serves every request against it.
-
 ---@class dbquery.CursorContext
 ---@field kind dbquery.CursorKind
 ---@field word dbquery.Word
@@ -280,9 +274,7 @@ end
 function M.at(document, cursor)
   local functionBody = body.at(document, cursor)
   if functionBody then
-    local dialect = document.dialect
-    local bodyDocument = { dialect = dialect, text = functionBody.text, tokens = lex.tokens(dialect, functionBody.text) }
-    local context = M.at(bodyDocument, cursor - functionBody.offset)
+    local context = M.at(lex.document(document.dialect, functionBody.text), cursor - functionBody.offset)
     context.word.first = context.word.first + functionBody.offset
     context.word.last = context.word.last + functionBody.offset
     if context.kind ~= "none" then

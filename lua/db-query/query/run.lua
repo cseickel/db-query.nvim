@@ -60,22 +60,22 @@ end
 ---@field url string|nil Connection as written, for b:db.
 ---@field connectionName string|nil Connection's chosen name, for b:db_name.
 ---@field resolved string Resolved connection (may include password).
----@field dialect dbquery.Dialect The rules the connection's client reads sql by.
+---@field client dbquery.Client The client for the connection's url scheme.
 ---@field sql string
 ---@field bufName string Sql buffer's file name, for naming output files.
 ---@field format dbquery.Format
----@field span [integer, integer] First and last line the sql came from.
+---@field span [integer, integer] First and last line the sql came from, starting at its first line of code.
 ---@field outputPath string|nil User-specified output path.
 
 --- Starts the client process. Returns nil when the user declines to write over
---- the results file, when no client is known for the url, or when the process
---- cannot start.
+--- the results file, or when the process cannot start.
 ---@param ctx dbquery.Context
 ---@param log dbquery.Log The log of the buffer the query came from.
 ---@return dbquery.Run|nil
 function Run.start(ctx, log)
-  local rowKind = sql.rowKind(ctx.dialect, ctx.sql)
-  local extension = client.target(ctx.resolved, rowKind, ctx.format)
+  local rowKind = sql.rowKind(ctx.client.dialect, ctx.sql)
+  local writesRows = rowKind ~= nil and ctx.client.rowKinds[rowKind] == true
+  local extension = writesRows and (ctx.format == "csv" and ctx.client.csvExtension or "txt") or nil
 
   local path = nil
   if extension then
@@ -91,7 +91,7 @@ function Run.start(ctx, log)
   end
 
   local stagingPath = extension and files.staging(extension) or nil
-  local command = client.command({
+  local command = ctx.client.command({
     connection = ctx.resolved,
     statement = ctx.sql,
     format = ctx.format,
@@ -100,9 +100,6 @@ function Run.start(ctx, log)
     staging = stagingPath,
     readonly = false,
   })
-  if not command then
-    return nil
-  end
 
   ---@type dbquery.Run
   local self = setmetatable({
@@ -117,7 +114,7 @@ function Run.start(ctx, log)
     argv = shellArgv(command.argv, log.path, command.stdout),
     command = command,
     askServer = function()
-      return command.sessionFile ~= nil and client.cancel(ctx.resolved, command.sessionFile)
+      return command.sessionFile ~= nil and client.cancel(ctx.client, ctx.resolved, command.sessionFile)
     end,
   })
   if not process then

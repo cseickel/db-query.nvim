@@ -129,15 +129,15 @@ function M.statementAt(dialect, lines, row)
   return { first, last }
 end
 
---- Returns `span` of `buf` with its first line moved down to the line where the
---- first token that is not a comment starts, or `span` as it is when every
---- token in it is a comment.
+--- Returns `span` with its first line moved down to the line where the first
+--- token of `lines` that is not a comment starts, or `span` as it is when every
+--- token is a comment.
 ---@param dialect dbquery.Dialect
----@param buf integer
+---@param lines string[] The lines `span` covers.
 ---@param span [integer, integer] First and last line (0-based).
 ---@return [integer, integer]
-function M.codeSpan(dialect, buf, span)
-  local text = table.concat(vim.api.nvim_buf_get_lines(buf, span[1], span[2] + 1, false), "\n")
+function M.codeSpan(dialect, lines, span)
+  local text = table.concat(lines, "\n")
   for _, token in ipairs(lex.tokens(dialect, text)) do
     if token.kind ~= "comment" then
       local skipped = select(2, text:sub(1, token.first - 1):gsub("\n", ""))

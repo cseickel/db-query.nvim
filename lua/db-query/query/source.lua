@@ -147,9 +147,9 @@ end
 --- cancelled but may still be finishing when this one starts.
 ---
 --- The replacement has to exist before the previous process is cancelled. A log
---- that cannot be written, an unknown url scheme, an output path it cannot
---- write, and an overwrite the user declined are all reasons no query starts,
---- and none of them is a reason to stop what is already running.
+--- that cannot be written, an output path it cannot write, and an overwrite the
+--- user declined are all reasons no query starts, and none of them is a reason
+--- to stop what is already running.
 ---@param ctx dbquery.Context
 function Source:execute(ctx)
   local log = self.log or Log.open(ctx)
@@ -169,13 +169,12 @@ function Source:execute(ctx)
     table.insert(self.files, run.path)
   end
 
-  local span = sql.codeSpan(ctx.dialect, self.buf, ctx.span)
-  replace(self, run.process, { buf = self.buf, span = span, label = "running query" })
-  result.track(self.buf, span, run.process)
+  replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
+  result.track(self.buf, ctx.span, run.process)
   self.pane:display(run)
 
   -- A script that failed or was cancelled may still have run its definitions.
-  if sql.defines(ctx.dialect, ctx.sql) then
+  if sql.defines(ctx.client.dialect, ctx.sql) then
     run.process:onFinish(function()
       catalog.refresh(ctx.resolved)
     end)

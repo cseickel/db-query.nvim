@@ -34,7 +34,7 @@ where action_statement like :pattern escape '!' and not (event_object_schema = :
 ---@param done fun(references: dbquery.Reference[]|nil, err: string|nil)
 return function(request, target, done)
   local isFunction = target.kind == "functions"
-  local named = isFunction and target.functions[1] or target.relation
+  local named = query.object(target)
   local statement = query.fill((isFunction and "" or FOREIGN_KEYS) .. SEARCHED, {
     schema = query.literal(named.schema),
     name = query.literal(named.name),

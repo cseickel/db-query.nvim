@@ -11,6 +11,7 @@ local client = require("db-query.client")
 local config = require("db-query.config")
 local dadbod = require("db-query.connection.dadbod")
 local files = require("db-query.query.files")
+local lex = require("db-query.sql.lex")
 local names = require("db-query.lsp.names")
 local query = require("db-query.client.query")
 local target = require("db-query.lsp.target")
@@ -26,12 +27,6 @@ local READS_AT_ONCE = 4
 ---@field url string
 ---@field dbClient dbquery.Client
 ---@field request dbquery.CatalogRequest
-
----@param named dbquery.Target
----@return { database: string|nil, schema: string|nil, name: string }
-local function catalogObject(named)
-  return named.kind == "functions" and named.functions[1] or named.relation
-end
 
 --- Returns the connection, client, and request that read DDL for `opened`, or
 --- nil when its buffer has no connection a client runs.
@@ -54,6 +49,7 @@ local function sourceOf(opened, reply)
       timeout = config.values.catalog.timeout,
       query = function(statement, opts, callback)
         client.read({
+          client = dbClient,
           connection = url,
           statement = statement,
           timeout = (opts or {}).timeout,
@@ -106,7 +102,7 @@ local function locationOf(source, named, mentioned, done)
     if not text then
       return done(nil, err)
     end
-    local path = files.definition(source.url, names.qualifiedParts(catalogObject(named)))
+    local path = files.definition(source.url, names.qualifiedParts(query.object(named)))
     local ok, uriOrErr, lines = pcall(writeDefinition, path, text, source.opened)
     if not ok then
       return done(nil, uriOrErr)
@@ -114,7 +110,7 @@ local function locationOf(source, named, mentioned, done)
     local uri = uriOrErr
     local line = 0
     for index, content in ipairs(mentioned and lines or {}) do
-      if query.mentions(source.opened.document.dialect, content, mentioned) then
+      if lex.mentions(source.opened.document.dialect, content, mentioned) then
         line = index - 1
         break
       end
@@ -182,7 +178,7 @@ function M.references(opened, context, declaration, reply)
   if not (named and source and catalog) then
     return reply(nil, nil)
   end
-  local mentioned = catalogObject(named).name
+  local mentioned = query.object(named).name
 
   source.dbClient.references(source.request, named, function(references, err)
     if not references then

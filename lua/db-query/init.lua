@@ -57,11 +57,11 @@ function M.execute(opts)
     ---@param connectionName string|nil
     ---@param resolved string
     local function start(outputPath, url, connectionName, resolved)
-      local dialect = client.dialect(resolved)
-      if not dialect then
+      local dbClient = client.known(resolved)
+      if not dbClient then
         return
       end
-      local statement, span = selection.sql(capture, dialect)
+      local statement, span = selection.sql(capture, dbClient.dialect)
       if statement == "" then
         return vim.notify("db-query: no query to run", vim.log.levels.WARN)
       end
@@ -75,7 +75,7 @@ function M.execute(opts)
         url = url,
         connectionName = connectionName,
         resolved = resolved,
-        dialect = dialect,
+        client = dbClient,
         sql = statement,
         bufName = vim.api.nvim_buf_get_name(buf),
         format = format,

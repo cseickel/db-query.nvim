@@ -56,29 +56,6 @@ local CLIENTS = {
   mariadb = mysql.mariadb,
 }
 
---- Returns the extension for the results file, or nil when the run writes no
---- rows and everything belongs in the log.
----@param connection string
----@param kind dbquery.RowKind|nil
----@param format dbquery.Format
----@return string|nil
-function M.target(connection, kind, format)
-  local client = CLIENTS[url.scheme(connection)]
-  if not (client and kind and client.rowKinds[kind]) then
-    return nil
-  end
-  return format == "csv" and client.csvExtension or "txt"
-end
-
---- Returns true when `connection` is a file the client opens itself, with no
---- server to reach.
----@param connection string
----@return boolean
-function M.embedded(connection)
-  local client = CLIENTS[url.scheme(connection)]
-  return client ~= nil and client.embedded == true
-end
-
 --- Returns the client for `connection`'s scheme, or nil when none is known.
 ---@param connection string
 ---@return dbquery.Client|nil
@@ -90,44 +67,24 @@ end
 --- when no client is known for it.
 ---@param connection string
 ---@return dbquery.Client|nil
-local function known(connection)
-  local client = M.of(connection)
-  if not client then
+function M.known(connection)
+  local dbClient = M.of(connection)
+  if not dbClient then
     -- Show scheme, not full url, to avoid exposing expanded $VAR values.
     vim.notify("no client known for " .. url.scheme(connection), vim.log.levels.ERROR)
   end
-  return client
-end
-
---- Returns the dialect `connection`'s client reads sql by.
----
---- Returns nil and shows an error when no client is known for the url scheme.
----@param connection string
----@return dbquery.Dialect|nil
-function M.dialect(connection)
-  local client = known(connection)
-  return client and client.dialect
-end
-
---- Returns the command to run `spec.statement` against `spec.connection`.
----
---- Returns nil and shows an error when no client is known for the url scheme.
----@param spec dbquery.CommandSpec
----@return dbquery.Command|nil
-function M.command(spec)
-  local client = known(spec.connection)
-  return client and client.command(spec)
+  return dbClient
 end
 
 --- Sends a cancel request to the server for the session recorded in
 --- `sessionFile`. Returns false when the client has no server-side cancel or no
 --- session pid has been recorded yet.
+---@param dbClient dbquery.Client
 ---@param connection string
 ---@param sessionFile string
 ---@return boolean
-function M.cancel(connection, sessionFile)
-  local client = CLIENTS[url.scheme(connection)]
-  if not (client and client.cancel) then
+function M.cancel(dbClient, connection, sessionFile)
+  if not dbClient.cancel then
     return false
   end
   local pid = Process.recorded(sessionFile)
@@ -135,38 +92,36 @@ function M.cancel(connection, sessionFile)
     return false
   end
 
-  local command = client.cancel(connection, pid)
+  local command = dbClient.cancel(connection, pid)
   vim.system(command.argv, { env = command.env, detach = true })
   return true
 end
 
 ---@class dbquery.ValueSpec
+---@field client dbquery.Client
 ---@field connection string
 ---@field statement string
 ---@field timeout integer|nil Milliseconds before the client is killed, nil to wait for it.
 ---@field readonly boolean
 
 --- Starts `spec.statement` in the "value" format, so its result is the stdout
---- the process finishes with. Shows an error and returns nil when no client is
---- known for the url. Returns nil and the reason when the client cannot start.
+--- the process finishes with. Returns nil and the reason when the client
+--- cannot start.
 ---@param spec dbquery.ValueSpec
 ---@return dbquery.Process|nil
 ---@return string|nil
 function M.value(spec)
-  local command = M.command({
+  local command = spec.client.command({
     connection = spec.connection,
     statement = spec.statement,
     format = "value",
     readonly = spec.readonly,
   })
-  if not command then
-    return nil
-  end
   return Process.start({
     command = command,
     timeout = spec.timeout,
     askServer = function()
-      return command.sessionFile ~= nil and M.cancel(spec.connection, command.sessionFile)
+      return command.sessionFile ~= nil and M.cancel(spec.client, spec.connection, command.sessionFile)
     end,
   })
 end
