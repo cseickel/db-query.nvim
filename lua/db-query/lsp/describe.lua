@@ -37,6 +37,35 @@ function M.passed(fn)
   end):totable()
 end
 
+--- Returns the named table, out, and inout arguments of `fn`, which are the
+--- columns it returns.
+---@param fn dbquery.Function
+---@return dbquery.Argument[]
+function M.returned(fn)
+  return vim.iter(fn.args):filter(function(arg)
+    return (arg.mode == "table" or arg.mode == "out" or arg.mode == "inout") and arg.name ~= nil
+  end):totable()
+end
+
+--- Returns an argument as a signature shows it, such as `out total numeric`.
+--- An argument a call may leave out is in brackets, and one with no name or
+--- type reads `value`.
+---@param arg dbquery.Argument
+---@return string
+function M.argument(arg)
+  local parts = {}
+  if arg.mode ~= "in" then
+    parts[#parts + 1] = arg.mode
+  end
+  parts[#parts + 1] = arg.name
+  parts[#parts + 1] = arg.type
+  local label = table.concat(parts, " ")
+  if label == "" then
+    label = "value"
+  end
+  return arg.default and ("[" .. label .. "]") or label
+end
+
 --- Returns what `fn` returns, one line when it names a type, and one line per
 --- column when it returns table or out arguments:
 ---
@@ -53,21 +82,17 @@ function M.result(dialect, fn)
   if not fn.result then
     return nil
   end
-  local rows = {}
-  for _, arg in ipairs(fn.args) do
-    local returned = arg.mode == "table" or arg.mode == "out" or arg.mode == "inout"
-    if returned and arg.name then
-      rows[#rows + 1] = { names.quote(dialect, arg.name), arg.type or "" }
-    end
-  end
-  if #rows == 0 or fn.kind == "procedure" then
+  local returned = M.returned(fn)
+  if #returned == 0 or fn.kind == "procedure" then
     return { fn.result }
   end
   local head = fn.result:match("^TABLE%s*%(") and "TABLE" or fn.result
   local lines = { head .. " (" }
-  local columns = M.aligned(rows)
-  for index, line in ipairs(columns) do
-    lines[#lines + 1] = "  " .. line .. (index < #columns and "," or "")
+  local columnLines = M.aligned(vim.tbl_map(function(arg)
+    return { names.quote(dialect, arg.name), arg.type or "" }
+  end, returned))
+  for index, line in ipairs(columnLines) do
+    lines[#lines + 1] = "  " .. line .. (index < #columnLines and "," or "")
   end
   lines[#lines + 1] = ")"
   return lines

@@ -1,8 +1,5 @@
 --[[
 Calls into vim-dadbod and vim-dadbod-completion, both optional.
-
-- `resolve` expands a written url into the one a client is given.
-- `refetch` points vim-dadbod-completion at a buffer's new `b:db`.
 ]]
 
 local M = {}

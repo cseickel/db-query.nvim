@@ -1,11 +1,9 @@
 --[[
-The relations a statement has in scope, matched against the catalog.
-
-- `reference` and `refersTo` match a written name against a relation in scope.
-- `columns` lists the columns a relation in scope offers.
-- `scopeColumn` finds the catalog column a name refers to among them.
+The columns each relation in a statement's scope offers, and the names that
+refer to those relations.
 ]]
 
+local describe = require("db-query.lsp.describe")
 local names = require("db-query.lsp.names")
 
 local M = {}
@@ -26,14 +24,14 @@ function M.reference(dialect, relation)
   return nil
 end
 
---- Returns true when `written`, a name as sql writes it, refers to the scope
---- relation `relation`.
+--- Returns true when `name`, as sql writes it, refers to the scope relation
+--- `relation`.
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.ScopeRelation
----@param written string
+---@param name string
 ---@return boolean
-function M.refersTo(dialect, relation, written)
-  local parts = names.parts(dialect, written)
+function M.refersTo(dialect, relation, name)
+  local parts = names.parts(dialect, name)
   if relation.alias then
     return #parts == 1 and names.matches(dialect, parts[1], M.reference(dialect, relation), true)
   end
@@ -52,16 +50,13 @@ function M.refersTo(dialect, relation, written)
   return true
 end
 
----@class dbquery.OfferedColumn
----@field name string
----@field column dbquery.Column|nil The catalog column, when the catalog records one.
----@field relation dbquery.Relation|nil The catalog relation the column belongs to.
-
+--- Returns a column the catalog does not record, such as a CTE's, which may
+--- hold null.
 ---@param name string
----@param type string|nil
----@return dbquery.OfferedColumn
-local function returned(name, type)
-  return { name = name, column = { name = name, type = type, nullable = true, hidden = false } }
+---@param columnType string|nil
+---@return dbquery.Column
+local function derivedColumn(name, columnType)
+  return { name = name, type = columnType, nullable = true, hidden = false }
 end
 
 --- Returns the columns a function in from returns, from the first overload
@@ -71,35 +66,27 @@ end
 ---@param catalog dbquery.Catalog
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.ScopeRelation
----@return dbquery.OfferedColumn[]
+---@return dbquery.Column[]
 local function functionColumns(catalog, dialect, relation)
   for _, fn in ipairs(names.functions(catalog, dialect, relation.name)) do
-    local found = {}
-    for _, argument in ipairs(fn.args) do
-      local output = argument.mode == "table" or argument.mode == "out" or argument.mode == "inout"
-      if output and argument.name then
-        found[#found + 1] = returned(argument.name, argument.type)
-      end
-    end
-    if #found > 0 then
-      return found
+    local outputs = describe.returned(fn)
+    if #outputs > 0 then
+      return vim.tbl_map(function(arg)
+        return derivedColumn(arg.name, arg.type)
+      end, outputs)
     end
 
-    local result = fn.result and (fn.result:match("^SETOF%s+(.+)$") or fn.result)
-    if result and result ~= "record" and not result:match("^TABLE%s*%(") then
-      local table = names.relation(catalog, dialect, result)
-      if table then
-        return vim.tbl_map(function(column)
-          return { name = column.name, column = column, relation = table }
-        end, table.columns)
+    local resultType = fn.result and (fn.result:match("^SETOF%s+(.+)$") or fn.result)
+    if resultType and resultType ~= "record" and not resultType:match("^TABLE%s*%(") then
+      local returnedRelation = names.relation(catalog, dialect, resultType)
+      if returnedRelation then
+        return returnedRelation.columns
       end
-      local composite = names.type(catalog, dialect, result)
+      local composite = names.type(catalog, dialect, resultType)
       if composite and composite.columns then
-        return vim.tbl_map(function(column)
-          return { name = column.name, column = column }
-        end, composite.columns)
+        return composite.columns
       end
-      return { returned(M.reference(dialect, relation) or fn.name, result) }
+      return { derivedColumn(M.reference(dialect, relation) or fn.name, resultType) }
     end
   end
   return {}
@@ -113,52 +100,49 @@ end
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.ScopeRelation
 ---@param seen table<dbquery.ScopeRelation, true>|nil Relations already being expanded, which a recursive CTE reaches again.
----@return dbquery.OfferedColumn[]
-function M.columns(catalog, dialect, relation, seen)
+---@return dbquery.Column[]
+function M.of(catalog, dialect, relation, seen)
   seen = seen or {}
   if seen[relation] then
     return {}
   end
   seen[relation] = true
 
-  local found = {}
   if relation.kind == "table" and not relation.columns then
-    local table = catalog and relation.name and names.relation(catalog, dialect, relation.name)
-    for _, column in ipairs(table and table.columns or {}) do
-      found[#found + 1] = { name = column.name, column = column, relation = table }
-    end
-    return found
+    local catalogRelation = catalog and relation.name and names.relation(catalog, dialect, relation.name)
+    return catalogRelation and catalogRelation.columns or {}
   end
   if relation.kind == "function" and not relation.columns then
     return catalog and relation.name and functionColumns(catalog, dialect, relation) or {}
   end
+  local columns = {}
   for _, name in ipairs(relation.columns or {}) do
     if name == "*" then
       for _, source in ipairs(relation.sources or {}) do
-        vim.list_extend(found, M.columns(catalog, dialect, source, seen))
+        vim.list_extend(columns, M.of(catalog, dialect, source, seen))
       end
     else
-      found[#found + 1] = { name = names.parts(dialect, name)[1].text }
+      columns[#columns + 1] = derivedColumn(names.parts(dialect, name)[1].text)
     end
   end
-  return found
+  return columns
 end
 
---- Returns the catalog column a dotted name refers to among the relations in
---- `scope`, or nil when none of them offers it.
----@param catalog dbquery.Catalog
+--- Returns the column a dotted name refers to among the relations in `scope`,
+--- or nil when none of them offers it.
+---@param catalog dbquery.Catalog|nil
 ---@param dialect dbquery.Dialect
 ---@param scope dbquery.ScopeRelation[]
----@param written string
+---@param name string
 ---@return dbquery.Column|nil
-function M.scopeColumn(catalog, dialect, scope, written)
-  local parts = names.parts(dialect, written)
+function M.find(catalog, dialect, scope, name)
+  local parts = names.parts(dialect, name)
   local qualifier = parts[#parts - 1]
   for _, relation in ipairs(scope) do
     if qualifier == nil or names.matches(dialect, qualifier, M.reference(dialect, relation), true) then
-      for _, offered in ipairs(M.columns(catalog, dialect, relation)) do
-        if offered.column and names.matches(dialect, parts[#parts], offered.name, true) then
-          return offered.column
+      for _, column in ipairs(M.of(catalog, dialect, relation)) do
+        if names.matches(dialect, parts[#parts], column.name, true) then
+          return column
         end
       end
     end

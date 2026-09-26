@@ -42,9 +42,9 @@ local function expressionEnd(entry)
   end
 
   local previous = entry[last - 1]
-  local implicit = last >= 2 and syntax.isName(entry[last]) and previous.kind ~= "." and previous.kind ~= "operator"
+  local implicitAlias = last >= 2 and syntax.isName(entry[last]) and previous.kind ~= "." and previous.kind ~= "operator"
     and not lex.isWord(previous, "over")
-  if implicit then
+  if implicitAlias then
     return last - 1, entry[last]
   end
   return last, nil
@@ -108,9 +108,9 @@ function M.outputs(group)
     entry = {}
   end
   for index, item in ipairs(group.items) do
-    local listed = clauses[index] == "select" or clauses[index] == "returning"
-    local keyword = lex.isWord(item, "select") or lex.isWord(item, "distinct") or lex.isWord(item, "returning")
-    if blocks[index] == 1 and listed and not keyword then
+    local inOutputList = clauses[index] == "select" or clauses[index] == "returning"
+    local listKeyword = lex.isWord(item, "select") or lex.isWord(item, "distinct") or lex.isWord(item, "returning")
+    if blocks[index] == 1 and inOutputList and not listKeyword then
       if item.kind == "," then
         close()
       else

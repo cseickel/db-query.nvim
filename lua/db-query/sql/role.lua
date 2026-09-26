@@ -5,7 +5,7 @@ table, or the inside of a filter, over, or within group clause.
 ]]
 
 local lex = require("db-query.sql.lex")
-local scope = require("db-query.sql.relations")
+local relations = require("db-query.sql.relations")
 local syntax = require("db-query.sql.syntax")
 
 local M = {}
@@ -36,9 +36,9 @@ local function listedTable(group, parent)
   local name, first = syntax.nameBefore(parent.items, group.index - 1)
   local before = parent.items[first - 1]
   if lex.isWord(before, "using") then
-    local table, tableFirst = syntax.nameBefore(parent.items, first - 2)
-    if table then
-      name, before = table, parent.items[tableFirst - 1]
+    local usingTable, usingFirst = syntax.nameBefore(parent.items, first - 2)
+    if usingTable then
+      name, before = usingTable, parent.items[usingFirst - 1]
     end
   end
   if lex.isWord(before, "on") or lex.isWord(before, "references") or lex.isWord(before, "copy") then
@@ -60,26 +60,26 @@ function M.of(group)
   end
 
   local previous = parent.items[group.index - 1]
-  local target = scope.insertTarget(parent)
-  if target and group == target.columnGroup then
-    return { role = "insert_columns", insert = target }
+  local insertTarget = relations.insertTarget(parent)
+  if insertTarget and group == insertTarget.columnGroup then
+    return { role = "insert_columns", insert = insertTarget }
   end
   local within = lex.isWord(previous, "group") and lex.isWord(parent.items[group.index - 2], "within")
   if lex.isWord(previous, "filter") or lex.isWord(previous, "over") or within then
     return { role = "clause" }
   end
   local clauses = syntax.clauses(parent)
-  local row = lex.isWord(previous, "values") or (previous ~= nil and previous.kind == ",")
-  if target and row and clauses[group.index] == "values" then
-    return { role = "values_row", insert = target }
+  local startsRow = lex.isWord(previous, "values") or (previous ~= nil and previous.kind == ",")
+  if insertTarget and startsRow and clauses[group.index] == "values" then
+    return { role = "values_row", insert = insertTarget }
   end
 
-  local table = clauses[group.index] ~= "from" and listedTable(group, parent)
-  if table then
-    return { role = "columns_of", table = table }
+  local listed = clauses[group.index] ~= "from" and listedTable(group, parent)
+  if listed then
+    return { role = "columns_of", table = listed }
   end
-  local keyword = previous ~= nil and previous.kind == "word" and group.dialect.callable[previous.lower]
-  if group.open == "(" and (syntax.isName(previous) or keyword) then
+  local callableKeyword = previous ~= nil and previous.kind == "word" and group.dialect.callable[previous.lower]
+  if group.open == "(" and (syntax.isName(previous) or callableKeyword) then
     return { role = "call" }
   end
   return { role = "parens" }

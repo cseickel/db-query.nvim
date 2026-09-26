@@ -11,22 +11,6 @@ local names = require("db-query.lsp.names")
 
 local M = {}
 
----@param arg dbquery.Argument
----@return string
-local function argumentLabel(arg)
-  local parts = {}
-  if arg.mode ~= "in" then
-    parts[#parts + 1] = arg.mode
-  end
-  parts[#parts + 1] = arg.name
-  parts[#parts + 1] = arg.type
-  local text = table.concat(parts, " ")
-  if text == "" then
-    text = "value"
-  end
-  return arg.default and ("[" .. text .. "]") or text
-end
-
 --- Returns the parameter an argument number points at, counting from 0. An
 --- argument past the last parameter that does not repeat points at `count`,
 --- which the protocol reads as no parameter.
@@ -34,7 +18,7 @@ end
 ---@param count integer
 ---@param variadic boolean
 ---@return integer
-local function active(argument, count, variadic)
+local function activeParameter(argument, count, variadic)
   if argument > count then
     return (variadic and count > 0) and count - 1 or count
   end
@@ -47,37 +31,43 @@ end
 ---@return lsp.SignatureInformation
 local function overload(name, fn, argument)
   local args = describe.passed(fn)
-  local labels = vim.tbl_map(argumentLabel, args)
-  local label = name .. "(" .. table.concat(labels, ", ") .. ")" .. (fn.result and (" → " .. fn.result) or "")
-  local parameters, at = {}, #name + 1
-  for index, text in ipairs(labels) do
-    parameters[index] = { label = { at, at + #text } }
-    at = at + #text + 2
+  local argLabels = vim.tbl_map(describe.argument, args)
+  local label = name .. "(" .. table.concat(argLabels, ", ") .. ")" .. (fn.result and (" → " .. fn.result) or "")
+  local parameters, offset = {}, #name + 1
+  for index, argLabel in ipairs(argLabels) do
+    parameters[index] = { label = { offset, offset + #argLabel } }
+    offset = offset + #argLabel + 2
   end
-  local last = args[#args]
+  local lastArg = args[#args]
   return {
     label = label,
     documentation = fn.comment,
     parameters = parameters,
-    activeParameter = active(argument, #args, last ~= nil and last.mode == "variadic"),
+    activeParameter = activeParameter(argument, #args, lastArg ~= nil and lastArg.mode == "variadic"),
   }
 end
 
+--- Returns the signature of a grammar form. A parameter whose name the label
+--- does not hold is labeled by its name alone.
 ---@param grammar dbquery.GrammarSignature
 ---@param argument integer
 ---@return lsp.SignatureInformation
 local function form(grammar, argument)
   local parameters = {}
-  local from = grammar.label:find("(", 1, true)
+  local searchFrom = grammar.label:find("(", 1, true)
   for index, name in ipairs(grammar.parameters) do
-    local first = grammar.label:find(name, from, true)
-    parameters[index] = { label = { first - 1, first - 1 + #name } }
-    from = first + #name
+    local start = grammar.label:find(name, searchFrom, true)
+    if start then
+      parameters[index] = { label = { start - 1, start - 1 + #name } }
+      searchFrom = start + #name
+    else
+      parameters[index] = { label = name }
+    end
   end
   return {
     label = grammar.label,
     parameters = parameters,
-    activeParameter = #parameters > 0 and active(argument, #parameters, grammar.variadic) or nil,
+    activeParameter = #parameters > 0 and activeParameter(argument, #parameters, grammar.variadic) or nil,
   }
 end
 

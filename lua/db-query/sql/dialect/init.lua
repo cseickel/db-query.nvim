@@ -53,7 +53,7 @@ local M = {}
 ---
 --- Every `dbquery.Clause` name holds the words that may follow a value or a
 --- name in that clause: `where` holds the clauses a query goes on with after
---- its where clause, `from` holds those plus the joins and `as`. Seven keys
+--- its where clause, `from` holds those plus the joins and `as`. These keys
 --- are not clauses:
 ---
 --- - `expression`: words that open a value.
@@ -97,7 +97,7 @@ local M = {}
 ---@field folds "lower"|"none"|nil
 ---@field inserts dbquery.InsertValues|nil Replaces the base dialect's.
 ---@field signatures table<string, dbquery.GrammarSignature>|nil Replaces the base dialect's, since a dialect may lack a form its base has.
----@field keywords dbquery.Keywords|nil Replaces the base dialect's, since a dialect may lack a word its base has.
+---@field keywords dbquery.Keywords|nil Each key replaces the base dialect's words for that key, since a dialect may lack a word its base has. A key given `{}` offers nothing there.
 ---@field lex table|nil Rules of `dbquery.LexRules`, each replacing the base dialect's.
 ---@field commands dbquery.Commands|nil
 ---@field reserved table<string, true>|nil Added.
@@ -117,11 +117,19 @@ M.GROUP = "(...)"
 ---@param text string
 ---@return table<string, true>
 function M.set(text)
-  local found = {}
+  local words = {}
   for word in text:gmatch("%S+") do
-    found[word] = true
+    words[word] = true
   end
-  return found
+  return words
+end
+
+--- Returns the words of `base` and the whitespace-separated words of `text`.
+---@param base table<string, true>
+---@param text string
+---@return table<string, true>
+function M.with(base, text)
+  return vim.tbl_extend("force", {}, base, M.set(text))
 end
 
 --- Returns the words of `base` that `text` does not name.
@@ -129,11 +137,23 @@ end
 ---@param text string
 ---@return table<string, true>
 function M.without(base, text)
-  local found = vim.tbl_extend("force", {}, base)
+  local remaining = vim.tbl_extend("force", {}, base)
   for word in text:gmatch("%S+") do
-    found[word] = nil
+    remaining[word] = nil
   end
-  return found
+  return remaining
+end
+
+--- Returns `keywords` with the words `text` names removed from every key.
+---@param keywords dbquery.Keywords
+---@param text string
+---@return dbquery.Keywords
+function M.dropEverywhere(keywords, text)
+  local dropped = {}
+  for key, words in pairs(keywords) do
+    dropped[key] = M.without(words, text)
+  end
+  return dropped
 end
 
 ---@param base table<string, true>
@@ -152,7 +172,7 @@ function M.derive(base, changes)
     name = changes.name,
     folds = changes.folds or base.folds,
     signatures = changes.signatures or base.signatures,
-    keywords = changes.keywords or base.keywords,
+    keywords = vim.tbl_extend("force", base.keywords, changes.keywords or {}),
     lex = vim.tbl_extend("force", base.lex, changes.lex or {}),
     commands = changes.commands or base.commands,
     reserved = union(base.reserved, changes.reserved),

@@ -110,15 +110,6 @@ local function checkColumn(column, at)
   expect(column.comment, "string", at .. ".comment", true)
 end
 
----@param argument table
----@param at string
-local function checkArgument(argument, at)
-  expect(argument.name, "string", at .. ".name", true)
-  expect(argument.type, "string", at .. ".type", true)
-  expect(argument.mode, "string", at .. ".mode")
-  expect(argument.default, "boolean", at .. ".default")
-end
-
 --- Returns what is wrong with `catalog`, or nil when it has the catalog's
 --- shape.
 ---@param catalog any
@@ -142,14 +133,19 @@ function M.problem(catalog)
       expect(fn.kind, "string", at .. ".kind")
       expect(fn.returnsSet, "boolean", at .. ".returnsSet")
       expect(fn.result, "string", at .. ".result", true)
-      every(fn.args, at .. ".args", checkArgument)
+      every(fn.args, at .. ".args", function(argument, argumentAt)
+        expect(argument.name, "string", argumentAt .. ".name", true)
+        expect(argument.type, "string", argumentAt .. ".type", true)
+        expect(argument.mode, "string", argumentAt .. ".mode")
+        expect(argument.default, "boolean", argumentAt .. ".default")
+      end)
     end)
-    every(catalog.types, "types", function(item, at)
-      qualified(item, at)
-      expect(item.schema, "string", at .. ".schema")
-      expect(item.labels, "table", at .. ".labels", true)
-      if item.columns ~= nil then
-        every(item.columns, at .. ".columns", checkColumn)
+    every(catalog.types, "types", function(typeEntry, at)
+      qualified(typeEntry, at)
+      expect(typeEntry.schema, "string", at .. ".schema")
+      expect(typeEntry.labels, "table", at .. ".labels", true)
+      if typeEntry.columns ~= nil then
+        every(typeEntry.columns, at .. ".columns", checkColumn)
       end
     end)
   end)

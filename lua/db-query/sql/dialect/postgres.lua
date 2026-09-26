@@ -1,36 +1,31 @@
 --[[
-Postgres sql as the server reads it, with no client commands. The sqlite and
-duckdb dialects derive from it, changing only the parameter forms.
+Postgres sql as the server reads it, with no client commands.
 ]]
 
 local dialect = require("db-query.sql.dialect")
 local standard = require("db-query.sql.dialect.standard")
 
-local set = dialect.set
+local set, with = dialect.set, dialect.with
 
 return dialect.derive(standard, {
   name = "postgres",
-  signatures = vim.tbl_extend("force", standard.signatures, {
-    greatest = { label = "greatest(value, ...)", parameters = { "value" }, variadic = true },
-    least = { label = "least(value, ...)", parameters = { "value" }, variadic = true },
-  }),
-  keywords = vim.tbl_extend("force", standard.keywords, {
-    start = vim.tbl_extend("force", standard.keywords.start, set("merge comment copy import truncate explain")),
-    with = vim.tbl_extend("force", standard.keywords.with, set("materialized not")),
-    select = vim.tbl_extend("force", standard.keywords.select, set("returning")),
-    from = vim.tbl_extend("force", standard.keywords.from, set("returning tablesample")),
-    where = vim.tbl_extend("force", standard.keywords.where, set("returning")),
-    order_by = vim.tbl_extend("force", standard.keywords.order_by, set("nulls first last using")),
-    insert_target = vim.tbl_extend("force", standard.keywords.insert_target, set("overriding")),
-    delete_target = vim.tbl_extend("force", standard.keywords.delete_target, set("returning")),
-    merge_when = vim.tbl_extend("force", standard.keywords.merge_when, set("by source target do nothing")),
+  keywords = {
+    start = with(standard.keywords.start, "merge comment copy import truncate explain"),
+    with = with(standard.keywords.with, "materialized not"),
+    select = with(standard.keywords.select, "returning"),
+    from = with(standard.keywords.from, "returning tablesample"),
+    where = with(standard.keywords.where, "returning"),
+    order_by = with(standard.keywords.order_by, "nulls first last using"),
+    insert_target = with(standard.keywords.insert_target, "overriding"),
+    delete_target = with(standard.keywords.delete_target, "returning"),
+    merge_when = with(standard.keywords.merge_when, "by source target do nothing"),
     conflict = set("do"),
     conflict_update = set("set"),
-    values = vim.tbl_extend("force", standard.keywords.values, set("conflict do nothing update returning")),
-    set = vim.tbl_extend("force", standard.keywords.set, set("from returning")),
-    expression = vim.tbl_extend("force", standard.keywords.expression, set("array interval")),
-    operator = vim.tbl_extend("force", standard.keywords.operator, set("ilike collate")),
-  }),
+    values = with(standard.keywords.values, "conflict do nothing update returning"),
+    set = with(standard.keywords.set, "from returning"),
+    expression = with(standard.keywords.expression, "array interval"),
+    operator = with(standard.keywords.operator, "ilike collate"),
+  },
   lex = {
     escapeStrings = true,
     nestedComments = true,

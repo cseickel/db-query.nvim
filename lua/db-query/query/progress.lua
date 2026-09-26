@@ -5,13 +5,10 @@ The lines the process is about get the run-status mark in the running color: a
 spinner beside the first line, and an elbow under the last turning to what it
 is doing, a timer, and the cancel key. The cancel key is bound while it runs.
 All state is buffer-local, so each buffer shows one process at a time.
-
-`statusline()` provides the spinner, what is running, and the timer for a winbar
-or statusline, which the user would have to configure themselves.
 ]]
 
 local config = require("db-query.config")
-local main = require("db-query.mainloop")
+local mainloop = require("db-query.mainloop")
 local runStatus = require("db-query.query.status")
 
 --- Where a progress mark draws, and what it says the process is doing.
@@ -26,7 +23,7 @@ local runStatus = require("db-query.query.status")
 ---@field key string Cancel keybinding.
 ---@field process dbquery.Process
 ---@field width integer The elbow's width, measured when the progress is attached.
----@field timer uv.uv_timer_t|nil Nil after stop().
+---@field stopTimer fun()|nil Nil after stop().
 local Progress = {}
 Progress.__index = Progress
 
@@ -58,16 +55,15 @@ end
 
 --- Draws the mark over the lines where edits have moved them.
 function Progress:draw()
-  local placed = vim.api.nvim_buf_get_extmark_by_id(self.buf, SPANS, SPAN, { details = true })
-  local first, details = placed[1], placed[3]
-  if not (first and details) then
+  local first, last = runStatus.spanRows(self.buf, SPANS, SPAN)
+  if not (first and last) then
     return
   end
   local seconds = self.process:elapsed()
   ---@type dbquery.Mark
   local mark = {
     first = first,
-    last = math.max(first, details.end_row or first),
+    last = last,
     status = "running",
     sign = frameAt(seconds),
     text = string.format("%s %.1fs   %s to cancel", self.label, seconds, self.key),
@@ -88,31 +84,15 @@ function Progress:statusline()
   return Progress.format(self.label, self.process:elapsed())
 end
 
---- Advances the spinner and triggers a redraw. Skipped if the progress has
---- stopped, which a timer callback scheduled before the process ended can be.
-function Progress:tick()
-  if not self.timer then
-    return
-  end
-  if vim.api.nvim_buf_is_loaded(self.buf) then
-    self:draw()
-  end
-  vim.api.nvim__redraw({ statusline = true, winbar = true })
-end
-
---- Removes the mark and the keybinding.
----
---- A second call finds `timer` nil and does nothing. A replaced progress is
---- stopped when its successor is attached and stopped again when its own
---- process finishes, and that second call would otherwise delete the
---- successor's keymap and clear its extmarks.
+--- Removes the mark and the keybinding. A second call does nothing. Without
+--- that check, a replaced progress stopped again when its own process finished
+--- would delete its successor's keymap and marks.
 function Progress:stop()
-  if not self.timer then
+  if not self.stopTimer then
     return
   end
-  self.timer:stop()
-  self.timer:close()
-  self.timer = nil
+  self.stopTimer()
+  self.stopTimer = nil
 
   if vim.api.nvim_buf_is_loaded(self.buf) then
     pcall(vim.keymap.del, MODES, self.key, { buffer = self.buf })
@@ -123,7 +103,7 @@ function Progress:stop()
 end
 
 --- Creates the progress of `process` at `place`, drawing its mark and binding
---- the cancel key. Stops automatically when the process finishes.
+--- the cancel key. Stops when the process finishes.
 ---@param process dbquery.Process
 ---@param place dbquery.Place
 ---@return dbquery.Progress
@@ -133,31 +113,22 @@ function Progress.attach(process, place)
     label = place.label,
     key = config.values.cancel,
     process = process,
-    timer = vim.uv.new_timer(),
   }, Progress)
 
-  local bottom = vim.api.nvim_buf_line_count(self.buf) - 1
-  local first, last = math.min(place.span[1], bottom), math.min(place.span[2], bottom)
-  local lastLine = vim.api.nvim_buf_get_lines(self.buf, last, last + 1, false)[1]
-  vim.api.nvim_buf_set_extmark(self.buf, SPANS, first, 0, {
-    id = SPAN,
-    end_row = last,
-    end_col = #lastLine,
-  })
-  self.width = runStatus.widthAt(self.buf, last)
+  local _, width = runStatus.followSpan(self.buf, SPANS, place.span, SPAN)
+  self.width = width
 
   vim.keymap.set(MODES, self.key, function()
     self.process:cancel()
   end, { buffer = self.buf, desc = "cancel " .. place.label })
 
   self:draw()
-  self.timer:start(
-    FRAME_TIME,
-    FRAME_TIME,
-    main.frame(function()
-      self:tick()
-    end)
-  )
+  self.stopTimer = mainloop.every(FRAME_TIME, function()
+    if vim.api.nvim_buf_is_loaded(self.buf) then
+      self:draw()
+    end
+    vim.api.nvim__redraw({ statusline = true, winbar = true })
+  end)
   process:onFinish(function()
     self:stop()
   end)

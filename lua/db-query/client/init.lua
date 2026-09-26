@@ -1,10 +1,6 @@
 --[[
-Turning a connection and a statement into a command line.
-
-Every client writes its transcript to stdout and its errors to stderr, both of
-which the caller sends to the log. Rows go to a file of their own, which the
-client writes wherever it can. Each client is a file in this directory, keyed
-here by the url schemes that reach it.
+The clients that run sql, keyed by url scheme, and the command line each runs
+a statement with.
 ]]
 
 local Process = require("db-query.query.process")
@@ -33,15 +29,15 @@ local M = {}
 ---@field kind dbquery.RowKind|nil
 ---@field path string|nil Results file, set whenever `kind` is.
 ---@field staging string|nil Whitespace-free path a client may write to instead of `path`.
----@field readonly boolean Keeps the statement from writing: a sqlite or duckdb file is opened read-only, and postgres runs it in a read-only transaction. mysql and mariadb run it in a read-only transaction too, which refuses row changes, but a `create`, `alter`, or `drop` commits that transaction and runs.
+---@field readonly boolean Runs the statement so it cannot change data.
 
 ---@class dbquery.Client
 ---@field name string Names the client in `catalog.clients`.
 ---@field catalog dbquery.CatalogFetch Built-in way to read the database's catalog.
 ---@field definition fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(ddl: string|nil, err: string|nil)) Reads the DDL of a relation, or of a column's relation, or of every overload of a function.
----@field references fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(found: dbquery.Reference[]|nil, err: string|nil)) Finds the relations and routines that depend on what `definition` would read.
----@field rows table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
----@field delimited string Extension for csv format: csv or tsv.
+---@field references fun(request: dbquery.CatalogRequest, target: dbquery.Target, done: fun(references: dbquery.Reference[]|nil, err: string|nil)) Finds the relations and routines that depend on what `definition` would read.
+---@field rowKinds table<dbquery.RowKind, boolean> Row kinds this client writes to a file.
+---@field csvExtension string Extension for csv format: csv or tsv.
 ---@field command fun(spec: dbquery.CommandSpec): dbquery.Command
 ---@field cancel? fun(connection: string, pid: integer): { argv: string[], env: table<string, string>|nil }
 ---@field embedded? boolean The database is a file the client opens itself, with no server to reach.
@@ -68,10 +64,10 @@ local CLIENTS = {
 ---@return string|nil
 function M.target(connection, kind, format)
   local client = CLIENTS[url.scheme(connection)]
-  if not (client and kind and client.rows[kind]) then
+  if not (client and kind and client.rowKinds[kind]) then
     return nil
   end
-  return format == "csv" and client.delimited or "txt"
+  return format == "csv" and client.csvExtension or "txt"
 end
 
 --- Returns true when `connection` is a file the client opens itself, with no
@@ -123,19 +119,18 @@ function M.command(spec)
   return client and client.command(spec)
 end
 
---- Sends a cancel request to the server for the session recorded in `file`.
----
---- Returns false when the client has no server-side cancel (caller should
---- SIGINT the client instead) or when no session pid has been recorded yet.
+--- Sends a cancel request to the server for the session recorded in
+--- `sessionFile`. Returns false when the client has no server-side cancel or no
+--- session pid has been recorded yet.
 ---@param connection string
----@param file string
+---@param sessionFile string
 ---@return boolean
-function M.cancel(connection, file)
+function M.cancel(connection, sessionFile)
   local client = CLIENTS[url.scheme(connection)]
   if not (client and client.cancel) then
     return false
   end
-  local pid = Process.recorded(file)
+  local pid = Process.recorded(sessionFile)
   if not pid then
     return false
   end

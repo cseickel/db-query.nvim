@@ -5,39 +5,37 @@ no record of what a view or trigger uses, so their statements are searched.
 Functions are built in, and nothing is recorded as depending on one.
 ]]
 
-local ddl = require("db-query.client.query")
-local rows = require("db-query.catalog.rows")
+local query = require("db-query.client.query")
 local sqlite = require("db-query.sql.dialect.sqlite")
 
 local STATEMENT = [[
-select json_object('schema', %s, 'name', m.name, 'routine', json('false'))
-from %s.sqlite_master m
-join pragma_foreign_key_list(m.name, %s) f
-where m.type = 'table' and lower(f."table") = lower(%s) and m.name <> %s
+select json_object('schema', :schemaText, 'name', m.name, 'routine', json('false'))
+from :schema.sqlite_master m
+join pragma_foreign_key_list(m.name, :schemaText) f
+where m.type = 'table' and lower(f."table") = lower(:name) and m.name <> :name
 union all
-select json_object('schema', %s, 'name', m.tbl_name, 'routine', json('false'), 'text', m.sql)
-from %s.sqlite_master m
-where m.type in ('view', 'trigger') and m.tbl_name <> %s and m.sql like %s escape '!']]
+select json_object('schema', :schemaText, 'name', m.tbl_name, 'routine', json('false'), 'text', m.sql)
+from :schema.sqlite_master m
+where m.type in ('view', 'trigger') and m.tbl_name <> :name and m.sql like :pattern escape '!']]
 
 ---@param request dbquery.CatalogRequest
 ---@param target dbquery.Target
----@param done fun(found: dbquery.Reference[]|nil, err: string|nil)
+---@param done fun(references: dbquery.Reference[]|nil, err: string|nil)
 return function(request, target, done)
   if target.kind == "functions" then
     return done({})
   end
   local relation = target.relation
-  local schema, name = ddl.literal(relation.schema), ddl.literal(relation.name)
-  local qualified = ddl.identifier(relation.schema)
-  local statement = string.format(
-    STATEMENT,
-    schema, qualified, schema, name, name,
-    schema, qualified, name, ddl.containing(relation.name)
-  )
-  request.query(statement, { timeout = request.timeout }, function(output, err)
-    if not output then
+  local statement = query.fill(STATEMENT, {
+    schema = query.qualified(sqlite, relation.schema),
+    schemaText = query.literal(relation.schema),
+    name = query.literal(relation.name),
+    pattern = query.containing(relation.name),
+  })
+  query.select(request, statement, function(rows, err)
+    if not rows then
       return done(nil, err)
     end
-    done(ddl.references(sqlite, rows.decode(output), relation.name))
+    done(query.references(sqlite, rows, relation.name))
   end)
 end

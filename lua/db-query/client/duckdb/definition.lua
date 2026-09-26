@@ -7,44 +7,55 @@ remade from its parameters and body, which duckdb keeps without the
 parameters' defaults. Other functions are built in and have none.
 ]]
 
-local ddl = require("db-query.client.query")
-local rows = require("db-query.catalog.rows")
+local duckdb = require("db-query.sql.dialect.duckdb")
+local query = require("db-query.client.query")
 
----@param database string
----@param schema string
----@param name string
----@return string
-local function qualified(database, schema, name)
-  return table.concat({ ddl.identifier(database), ddl.identifier(schema), ddl.identifier(name) }, ".")
+local MACROS = [[
+select json_object('type', function_type, 'parameters', parameters, 'definition', macro_definition)
+from duckdb_functions()
+where database_name = :database and schema_name = :schema and function_name = :name
+  and function_type in ('macro', 'table_macro')
+order by len(parameters), macro_definition]]
+
+local RELATION = [[
+select json_object('sql', sql, 'index', false) from duckdb_tables()
+where database_name = :database and schema_name = :schema and table_name = :name
+union all
+select json_object('sql', sql, 'index', false) from duckdb_views()
+where database_name = :database and schema_name = :schema and view_name = :name and not internal
+union all
+select json_object('sql', sql, 'index', true) from duckdb_indexes()
+where database_name = :database and schema_name = :schema and table_name = :name and sql is not null]]
+
+---@param named { database: string, schema: string, name: string }
+---@return table<string, string>
+local function literals(named)
+  return {
+    database = query.literal(named.database),
+    schema = query.literal(named.schema),
+    name = query.literal(named.name),
+  }
 end
 
 ---@param request dbquery.CatalogRequest
 ---@param fn dbquery.Function
 ---@param done fun(ddl: string|nil, err: string|nil)
-local function macros(request, fn, done)
-  local statement = string.format([[
-select json_object('type', function_type, 'parameters', parameters, 'definition', macro_definition)
-from duckdb_functions()
-where database_name = %s and schema_name = %s and function_name = %s and function_type in ('macro', 'table_macro')]],
-    ddl.literal(fn.database), ddl.literal(fn.schema), ddl.literal(fn.name))
-  request.query(statement, { timeout = request.timeout }, function(output, err)
-    if not output then
+local function macroDefinition(request, fn, done)
+  query.select(request, query.fill(MACROS, literals(fn)), function(macros, err)
+    if not macros then
       return done(nil, err)
     end
-    local found = rows.decode(output)
-    if #found == 0 then
+    if #macros == 0 then
       return done(nil, fn.name .. " is built into duckdb and has no definition")
     end
-    local name = qualified(fn.database, fn.schema, fn.name)
-    done(ddl.script(vim.tbl_map(function(row)
-      return string.format(
-        "CREATE MACRO %s(%s) AS %s%s",
-        name,
-        table.concat(vim.tbl_map(ddl.identifier, row.parameters), ", "),
-        row.type == "table_macro" and "TABLE " or "",
-        row.definition
-      )
-    end, found)))
+    local qualifiedName = query.qualified(duckdb, fn.database, fn.schema, fn.name)
+    done(query.script(vim.tbl_map(function(macro)
+      local parameters = vim.tbl_map(function(parameter)
+        return query.qualified(duckdb, parameter)
+      end, macro.parameters)
+      return "CREATE MACRO " .. qualifiedName .. "(" .. table.concat(parameters, ", ") .. ") AS "
+        .. (macro.type == "table_macro" and "TABLE " or "") .. macro.definition
+    end, macros)))
   end)
 end
 
@@ -52,26 +63,14 @@ end
 ---@param relation dbquery.Relation
 ---@param done fun(ddl: string|nil, err: string|nil)
 local function relationDefinition(request, relation, done)
-  local where = string.format(
-    "database_name = %s and schema_name = %s",
-    ddl.literal(relation.database),
-    ddl.literal(relation.schema)
-  )
-  local name = ddl.literal(relation.name)
-  local statement = table.concat({
-    string.format("select json_object('sql', sql, 'index', false) from duckdb_tables() where %s and table_name = %s", where, name),
-    string.format("select json_object('sql', sql, 'index', false) from duckdb_views() where %s and view_name = %s and not internal", where, name),
-    string.format("select json_object('sql', sql, 'index', true) from duckdb_indexes() where %s and table_name = %s and sql is not null", where, name),
-  }, "\nunion all\n")
-  request.query(statement, { timeout = request.timeout }, function(output, err)
-    if not output then
+  query.select(request, query.fill(RELATION, literals(relation)), function(rows, err)
+    if not rows then
       return done(nil, err)
     end
-    local found = rows.decode(output)
-    if #found == 0 then
-      return done(nil, relation.name .. " is no longer in " .. relation.schema)
+    if #rows == 0 then
+      return done(nil, query.missing(relation))
     end
-    table.sort(found, function(a, b)
+    table.sort(rows, function(a, b)
       if a.index ~= b.index then
         return b.index
       end
@@ -79,20 +78,19 @@ local function relationDefinition(request, relation, done)
     end)
     local statements = vim.tbl_map(function(row)
       return row.sql
-    end, found)
-    local named = qualified(relation.database, relation.schema, relation.name)
+    end, rows)
+    local qualifiedName = query.qualified(duckdb, relation.database, relation.schema, relation.name)
     if relation.comment then
-      local on = relation.kind == "view" and "VIEW" or "TABLE"
-      table.insert(statements, string.format("COMMENT ON %s %s IS %s", on, named, ddl.literal(relation.comment)))
+      local objectKind = relation.kind == "view" and "VIEW" or "TABLE"
+      table.insert(statements, "COMMENT ON " .. objectKind .. " " .. qualifiedName .. " IS " .. query.literal(relation.comment))
     end
     for _, column in ipairs(relation.columns) do
       if column.comment then
-        table.insert(statements, string.format(
-          "COMMENT ON COLUMN %s.%s IS %s", named, ddl.identifier(column.name), ddl.literal(column.comment)
-        ))
+        table.insert(statements, "COMMENT ON COLUMN " .. qualifiedName .. "." .. query.qualified(duckdb, column.name)
+          .. " IS " .. query.literal(column.comment))
       end
     end
-    done(ddl.script(statements))
+    done(query.script(statements))
   end)
 end
 
@@ -101,7 +99,7 @@ end
 ---@param done fun(ddl: string|nil, err: string|nil)
 return function(request, target, done)
   if target.kind == "functions" then
-    return macros(request, target.functions[1], done)
+    return macroDefinition(request, target.functions[1], done)
   end
   relationDefinition(request, target.relation, done)
 end

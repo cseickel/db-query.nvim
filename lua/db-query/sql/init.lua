@@ -44,23 +44,21 @@ function M.stripTerminator(dialect, sql)
   return table.concat(pieces)
 end
 
---- Returns the last `delimiter` line in `lines`, such as mysql's
---- `delimiter //`. Returns nil when the lines set no delimiter, or set it back
---- to `;`. Sql taken from below those lines needs this line sent ahead of it,
---- so the client ends its statements where the buffer does.
+--- Returns the last `delimiter` command in `lines`, such as mysql's
+--- `delimiter //`, or nil when the lines set none or set it back to `;`.
 ---@param dialect dbquery.Dialect
 ---@param lines string[]
 ---@return string|nil
 function M.delimiterCommand(dialect, lines)
-  local delimiter = dialect.commands and dialect.commands.delimiter
-  if not delimiter then
+  local delimiterOf = dialect.commands and dialect.commands.delimiter
+  if not delimiterOf then
     return nil
   end
   local command = nil
   for _, token in ipairs(lex.tokens(dialect, table.concat(lines, "\n"))) do
-    local set = token.kind == "meta" and delimiter(token.text)
-    if set then
-      command = set ~= ";" and vim.trim(token.text) or nil
+    local newDelimiter = token.kind == "meta" and delimiterOf(token.text)
+    if newDelimiter then
+      command = newDelimiter ~= ";" and vim.trim(token.text) or nil
     end
   end
   return command
@@ -81,9 +79,9 @@ end
 ---@param row integer 0-based line number.
 ---@return [integer, integer]|nil
 function M.statementAt(dialect, lines, row)
-  local starts, offset = {}, 1
+  local lineStarts, offset = {}, 1
   for index, line in ipairs(lines) do
-    starts[index] = offset
+    lineStarts[index] = offset
     offset = offset + #line + 1
   end
 
@@ -94,26 +92,26 @@ function M.statementAt(dialect, lines, row)
     end
   end
   local terminators = statements.terminators(dialect, tokens)
-  local ends, line = {}, 1
+  local endRows, line = {}, 1
   for _, token in ipairs(tokens) do
     if terminators[token] then
-      while starts[line + 1] and starts[line + 1] <= token.first do
+      while lineStarts[line + 1] and lineStarts[line + 1] <= token.first do
         line = line + 1
       end
-      ends[line - 1] = true
+      endRows[line - 1] = true
     end
   end
 
   local first, last = 0, #lines - 1
-  for at = row - 1, 0, -1 do
-    if ends[at] then
-      first = at + 1
+  for earlierRow = row - 1, 0, -1 do
+    if endRows[earlierRow] then
+      first = earlierRow + 1
       break
     end
   end
-  for at = row, #lines - 1 do
-    if ends[at] then
-      last = at
+  for laterRow = row, #lines - 1 do
+    if endRows[laterRow] then
+      last = laterRow
       break
     end
   end
@@ -172,22 +170,17 @@ local ROW_SOURCES = { select = true, ["with"] = true, table = true, values = tru
 
 local WRITES = { insert = true, update = true, delete = true, merge = true }
 
---- Returns how a single statement produces rows, or nil when it produces none.
----
---- "query" is a select, with, table, or values statement, which COPY accepts as
---- its argument. "returning" is an insert, update, delete, or merge with a
---- RETURNING clause, which some clients cannot write to a file. Text holding
---- more than one statement, or a client command such as psql's `\gset`,
---- returns nil, because a client command cannot go inside COPY. A mysql
---- `delimiter //` line is skipped, because the delimiter changes nothing
---- about the rows.
+--- Returns "query" for a statement COPY accepts (select, with, table, values),
+--- "returning" for an insert, update, delete, or merge with RETURNING, and nil
+--- otherwise. Text holding more than one statement or a client command returns
+--- nil. A mysql `delimiter` line is ignored.
 ---@param dialect dbquery.Dialect
 ---@param sql string
 ---@return dbquery.RowKind|nil
 function M.rowKind(dialect, sql)
-  local setsDelimiter = dialect.commands and dialect.commands.delimiter
+  local delimiterOf = dialect.commands and dialect.commands.delimiter
   for _, token in ipairs(lex.tokens(dialect, sql)) do
-    if token.kind == "meta" and not (setsDelimiter and setsDelimiter(token.text)) then
+    if token.kind == "meta" and not (delimiterOf and delimiterOf(token.text)) then
       return nil
     end
   end
@@ -196,21 +189,21 @@ function M.rowKind(dialect, sql)
     return nil
   end
 
-  local first = code[1] and code[1].kind == "word" and code[1].lower or ""
-  local writes, returning = false, false
+  local firstWord = code[1] and code[1].kind == "word" and code[1].lower or ""
+  local hasWrite, returning = false, false
   for _, token in ipairs(code) do
-    writes = writes or (token.kind == "word" and WRITES[token.lower] == true)
+    hasWrite = hasWrite or (token.kind == "word" and WRITES[token.lower] == true)
     returning = returning or lex.isWord(token, "returning")
   end
 
-  if ROW_SOURCES[first] then
+  if ROW_SOURCES[firstWord] then
     -- Postgres refuses a data-modifying CTE inside COPY.
-    if first == "with" and writes then
+    if firstWord == "with" and hasWrite then
       return nil
     end
     return "query"
   end
-  if WRITES[first] and returning then
+  if WRITES[firstWord] and returning then
     return "returning"
   end
   return nil

@@ -1,10 +1,6 @@
 --[[
 User commands and their argument parsing.
 
-`:DBQuery` and `:DBQueryStatement` share argument handling, differing only in
-which lines they run. `:DBOutput`, `:DBOutputDir`, and `:DBRefreshCatalog` take
-one optional word, and `:DBConnect` takes nothing.
-
 The callbacks require `db-query` at call time to avoid a circular dependency:
 this module is loaded during init.lua, before init.lua finishes.
 ]]
@@ -24,40 +20,6 @@ local function matching(lead, words)
   end, words)
 end
 
----@class dbquery.Arguments
----@field format dbquery.Format
----@field output string|true|nil Path for output, true to prompt, nil for auto-generated.
-
---- Parses command arguments. Returns nil and shows an error for a flag other
---- than `-f` and `-o`, and for `-f` given anything but text or csv.
----@param args string[]
----@return dbquery.Arguments|nil
-local function parse(args)
-  local parsed = { format = "text" }
-  local index = 1
-  while index <= #args do
-    local flag, value = args[index], args[index + 1]
-    local given = value ~= nil and not vim.startswith(value, "-")
-
-    if flag == "-f" then
-      if not (given and vim.tbl_contains(FORMATS, value)) then
-        vim.notify("db-query: -f wants " .. table.concat(FORMATS, " or "), vim.log.levels.ERROR)
-        return nil
-      end
-      parsed.format = value
-      index = index + 2
-    elseif flag == "-o" then
-      parsed.output = given and value or true
-      index = index + (given and 2 or 1)
-    else
-      vim.notify("db-query: unknown argument " .. flag, vim.log.levels.ERROR)
-      return nil
-    end
-  end
-  return parsed
-end
-
---- Completion for command arguments.
 ---@param lead string
 ---@param line string
 ---@return string[]
@@ -68,20 +30,33 @@ local function complete(lead, line)
   return matching(lead, line:match("%-f%s+%S*$") and FORMATS or FLAGS)
 end
 
---- Executes `selection` with parsed `args`. Aborts on invalid arguments.
+--- Runs `selection` with the format and output that `args` give. Shows an
+--- error and runs nothing for a flag other than `-f` and `-o`, and for `-f`
+--- given anything but text or csv.
 ---@param selection dbquery.Selection
 ---@param args string[]
 local function run(selection, args)
-  local parsed = parse(args)
-  if not parsed then
-    return
+  ---@type dbquery.ExecuteOptions
+  local opts = { range = selection.range, statement = selection.statement, format = "text" }
+  local index = 1
+  while index <= #args do
+    local flag, value = args[index], args[index + 1]
+    local hasValue = value ~= nil and not vim.startswith(value, "-")
+
+    if flag == "-f" then
+      if not (hasValue and vim.tbl_contains(FORMATS, value)) then
+        return vim.notify("db-query: -f wants " .. table.concat(FORMATS, " or "), vim.log.levels.ERROR)
+      end
+      opts.format = value
+      index = index + 2
+    elseif flag == "-o" then
+      opts.output = hasValue and value or true
+      index = index + (hasValue and 2 or 1)
+    else
+      return vim.notify("db-query: unknown argument " .. flag, vim.log.levels.ERROR)
+    end
   end
-  require("db-query").execute({
-    range = selection.range,
-    statement = selection.statement,
-    format = parsed.format,
-    output = parsed.output,
-  })
+  require("db-query").execute(opts)
 end
 
 --- Registers all user commands.

@@ -1,12 +1,6 @@
 --[[
-Matching the names sql writes against the names in a catalog.
-
-- `parts` splits a dotted name, keeping a quoted part whole.
-- `matches` says whether a part of a written name names a catalog name.
-- `relation`, `type`, `relationsIn`, and `functions` find what a name refers
-  to in the catalog, by the dialect's `folds` rule.
-- `insertable` lists the columns of a table an insert lists.
-- `quote` and `callable` write a catalog name the way sql has to spell it.
+Matches names written in sql against the catalog, and writes catalog names the
+way sql has to spell them.
 ]]
 
 local M = {}
@@ -20,30 +14,30 @@ local M = {}
 ---@param name string
 ---@return dbquery.NamePart[]
 function M.parts(dialect, name)
-  local found, index = {}, 1
+  local parts, index = {}, 1
   while index <= #name do
-    local close = dialect.lex.identifiers[name:sub(index, index)]
-    if close then
-      local text, at = {}, index + 1
-      while at <= #name do
-        local char = name:sub(at, at)
-        if char == close and name:sub(at + 1, at + 1) == close then
-          text[#text + 1], at = close, at + 2
-        elseif char == close then
+    local closeQuote = dialect.lex.identifiers[name:sub(index, index)]
+    if closeQuote then
+      local chars, cursor = {}, index + 1
+      while cursor <= #name do
+        local char = name:sub(cursor, cursor)
+        if char == closeQuote and name:sub(cursor + 1, cursor + 1) == closeQuote then
+          chars[#chars + 1], cursor = closeQuote, cursor + 2
+        elseif char == closeQuote then
           break
         else
-          text[#text + 1], at = char, at + 1
+          chars[#chars + 1], cursor = char, cursor + 1
         end
       end
-      found[#found + 1] = { text = table.concat(text), quoted = true }
-      index = at + 2
+      parts[#parts + 1] = { text = table.concat(chars), quoted = true }
+      index = cursor + 2
     else
       local dot = name:find(".", index, true) or #name + 1
-      found[#found + 1] = { text = name:sub(index, dot - 1), quoted = false }
+      parts[#parts + 1] = { text = name:sub(index, dot - 1), quoted = false }
       index = dot + 1
     end
   end
-  return found
+  return parts
 end
 
 --- Returns true when `part` names `name`. A quoted part matches exactly. An
@@ -78,33 +72,33 @@ end
 ---@param list T[]
 ---@param parts dbquery.NamePart[]
 ---@return T[]
-local function qualified(catalog, dialect, list, parts)
+local function matching(catalog, dialect, list, parts)
   for _, loose in ipairs({ false, true }) do
-    local found = {}
-    local last = parts[#parts]
+    local matches = {}
+    local namePart = parts[#parts]
     if #parts == 1 then
       for _, path in ipairs(catalog.searchPath) do
         for _, item in ipairs(list) do
           local inPath = item.schema == path.schema and (path.database == nil or item.database == path.database)
-          if inPath and M.matches(dialect, last, item.name, loose) then
-            found[#found + 1] = item
+          if inPath and M.matches(dialect, namePart, item.name, loose) then
+            matches[#matches + 1] = item
           end
         end
-        if #found > 0 then
-          return found
+        if #matches > 0 then
+          return matches
         end
       end
       for _, item in ipairs(list) do
-        if M.matches(dialect, last, item.name, loose) then
-          found[#found + 1] = item
+        if M.matches(dialect, namePart, item.name, loose) then
+          matches[#matches + 1] = item
         end
       end
       local schemas = {}
-      for _, item in ipairs(found) do
+      for _, item in ipairs(matches) do
         schemas[(item.database or "") .. "." .. (item.schema or "")] = true
       end
       if vim.tbl_count(schemas) == 1 then
-        return found
+        return matches
       end
     else
       local schema, database = parts[#parts - 1], parts[#parts - 2]
@@ -113,12 +107,12 @@ local function qualified(catalog, dialect, list, parts)
         -- duckdb's `db.table` names the database's main schema.
         local inDatabase = #parts == 2 and item.schema == "main" and M.matches(dialect, schema, item.database, loose)
         if (database == nil or M.matches(dialect, database, item.database, loose)) and (inSchema or inDatabase)
-          and M.matches(dialect, last, item.name, loose) then
-          found[#found + 1] = item
+          and M.matches(dialect, namePart, item.name, loose) then
+          matches[#matches + 1] = item
         end
       end
-      if #found > 0 then
-        return found
+      if #matches > 0 then
+        return matches
       end
     end
   end
@@ -131,7 +125,7 @@ end
 ---@param name string
 ---@return dbquery.Relation|nil
 function M.relation(catalog, dialect, name)
-  return qualified(catalog, dialect, catalog.relations, M.parts(dialect, name))[1]
+  return matching(catalog, dialect, catalog.relations, M.parts(dialect, name))[1]
 end
 
 --- Returns the catalog type a dotted name written in sql refers to.
@@ -140,7 +134,7 @@ end
 ---@param name string
 ---@return dbquery.Type|nil
 function M.type(catalog, dialect, name)
-  return qualified(catalog, dialect, catalog.types, M.parts(dialect, name))[1]
+  return matching(catalog, dialect, catalog.types, M.parts(dialect, name))[1]
 end
 
 --- Returns every overload of the function a dotted name written in sql refers to.
@@ -150,9 +144,9 @@ end
 ---@return dbquery.Function[]
 function M.functions(catalog, dialect, name)
   local parts = M.parts(dialect, name)
-  local found = qualified(catalog, dialect, catalog.functions, parts)
-  if #found > 0 or #parts > 1 then
-    return found
+  local overloads = matching(catalog, dialect, catalog.functions, parts)
+  if #overloads > 0 or #parts > 1 then
+    return overloads
   end
   -- sqlite functions belong to no schema.
   return vim.iter(catalog.functions):filter(function(fn)
@@ -180,13 +174,13 @@ function M.relationsIn(catalog, dialect, name)
   return vim.iter(catalog.relations):filter(inside):totable(), vim.iter(catalog.functions):filter(inside):totable()
 end
 
---- Returns the columns of `relation` an insert lists: every one the database
---- does not fill itself, and none it hides.
----@param relation dbquery.Relation
----@return dbquery.Column[]
-function M.insertable(relation)
-  return vim.iter(relation.columns):filter(function(column)
-    return column.generated == nil and not column.hidden
+--- Returns the database, schema, and name of `item`, leaving out the ones it
+--- has none of.
+---@param item { database: string|nil, schema: string|nil, name: string }
+---@return string[]
+function M.qualifiedParts(item)
+  return vim.iter({ "database", "schema", "name" }):map(function(key)
+    return item[key]
   end):totable()
 end
 

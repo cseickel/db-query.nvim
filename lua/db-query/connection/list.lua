@@ -1,9 +1,11 @@
 --[[
-Connection sources for the database picker.
+The connections the picker offers.
 
-Reads from vim-dadbod-ui's connections.json and `g:dbs` by default. A custom
-`connections` function in setup() replaces both sources.
+Read from vim-dadbod-ui's connections.json and `g:dbs` by default. A
+`connections` list or function in setup() replaces both sources.
 ]]
+
+local config = require("db-query.config")
 
 local M = {}
 
@@ -11,13 +13,7 @@ local M = {}
 ---@field name string
 ---@field url string
 
----@return string
-local function connectionsPath()
-  local location = vim.g.db_ui_save_location or "~/.local/share/db_ui"
-  return vim.fn.expand(location) .. "/connections.json"
-end
-
---- Appends valid entries (those with name and url strings) to `into`.
+--- Appends each entry that has a string name and url.
 ---@param into dbquery.Connection[]
 ---@param entries table
 local function collect(into, entries)
@@ -31,7 +27,8 @@ end
 ---@return dbquery.Connection[] connections
 ---@return string|nil err
 local function fromFile()
-  local path = connectionsPath()
+  local location = vim.g.db_ui_save_location or "~/.local/share/db_ui"
+  local path = vim.fn.expand(location) .. "/connections.json"
   if vim.fn.filereadable(path) == 0 then
     return {}, nil
   end
@@ -77,16 +74,14 @@ end
 
 --- Returns all connections for the picker.
 ---
---- When `configured` is provided (list or function), it replaces the default
---- sources entirely. An invalid `configured` returns an error rather than
---- falling back to defaults.
----
---- Without `configured`, connections come from the json file then `g:dbs`,
---- with duplicates (by name) skipped.
----@param configured dbquery.Connection[]|fun(): dbquery.Connection[]|nil
+--- The `connections` setting, a list or a function returning one, replaces the
+--- default sources entirely, and an invalid one returns an error rather than
+--- falling back to them. Without it, connections come from the json file then
+--- `g:dbs`, skipping a name already listed.
 ---@return dbquery.Connection[] connections
 ---@return string|nil err
-function M.list(configured)
+function M.list()
+  local configured = config.values.connections
   if configured ~= nil then
     if type(configured) == "function" then
       local called, result = pcall(configured)
@@ -113,13 +108,13 @@ function M.list(configured)
     return {}, err
   end
 
-  local taken = {}
+  local seenNames = {}
   for _, connection in ipairs(connections) do
-    taken[connection.name] = true
+    seenNames[connection.name] = true
   end
   for _, connection in ipairs(fromGlobal()) do
-    if not taken[connection.name] then
-      taken[connection.name] = true
+    if not seenNames[connection.name] then
+      seenNames[connection.name] = true
       table.insert(connections, connection)
     end
   end
@@ -127,14 +122,13 @@ function M.list(configured)
   return connections, nil
 end
 
---- Returns the connection called `name` from the same list `M.list` returns,
---- or nil and why not.
----@param configured dbquery.Connection[]|fun(): dbquery.Connection[]|nil
+--- Returns the connection called `name` from the list `M.list` returns, or nil
+--- and why not.
 ---@param name string
 ---@return dbquery.Connection|nil connection
 ---@return string|nil err
-function M.named(configured, name)
-  local connections, err = M.list(configured)
+function M.named(name)
+  local connections, err = M.list()
   if err then
     return nil, err
   end

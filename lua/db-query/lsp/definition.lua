@@ -10,95 +10,76 @@ nvim's cache, and each file's buffer runs against the same connection.
 local client = require("db-query.client")
 local config = require("db-query.config")
 local dadbod = require("db-query.connection.dadbod")
-local ddl = require("db-query.client.query")
-local output = require("db-query.query.files")
+local files = require("db-query.query.files")
+local names = require("db-query.lsp.names")
+local query = require("db-query.client.query")
 local target = require("db-query.lsp.target")
 
 local M = {}
 
---- How many DDL reads goto references runs at once.
+--- How many DDL reads goto references runs at once. Each read is a client
+--- process and, on a server, a connection of its own.
 local READS_AT_ONCE = 4
 
 ---@class dbquery.DefinitionSource
 ---@field opened dbquery.Opened
----@field resolved string
----@field owner dbquery.Client
+---@field url string
+---@field dbClient dbquery.Client
 ---@field request dbquery.CatalogRequest
----@field reply dbquery.LspReply
 
----@param found dbquery.Target
+---@param named dbquery.Target
 ---@return { database: string|nil, schema: string|nil, name: string }
-local function namedBy(found)
-  return found.kind == "functions" and found.functions[1] or found.relation
-end
-
----@param found dbquery.Target
----@return string[]
-local function qualifiedName(found)
-  local named = namedBy(found)
-  local parts = {}
-  for _, part in ipairs({ named.database or false, named.schema or false, named.name }) do
-    if part then
-      table.insert(parts, part)
-    end
-  end
-  return parts
-end
-
---- Calls `fn`, replying with its error when it throws, since it runs after a
---- query finishes, outside the request that started it.
----@param reply dbquery.LspReply
----@param fn function
----@param ... any
-local function guarded(reply, fn, ...)
-  local ok, err = pcall(fn, ...)
-  if not ok then
-    reply(err, nil)
-  end
+local function catalogObject(named)
+  return named.kind == "functions" and named.functions[1] or named.relation
 end
 
 --- Returns the connection, client, and request that read DDL for `opened`, or
---- nil when the name under the cursor names nothing in the catalog.
+--- nil when its buffer has no connection a client runs.
 ---@param opened dbquery.Opened
 ---@param reply dbquery.LspReply
 ---@return dbquery.DefinitionSource|nil
 local function sourceOf(opened, reply)
-  local resolved = dadbod.resolve(opened.written)
-  local owner = resolved and client.of(resolved)
-  if not (resolved and owner) then
+  local url = dadbod.resolve(opened.db)
+  local dbClient = url and client.of(url)
+  if not (url and dbClient) then
     return nil
   end
   return {
     opened = opened,
-    resolved = resolved,
-    owner = owner,
-    reply = reply,
+    url = url,
+    dbClient = dbClient,
     request = {
-      client = owner.name,
-      connection = resolved,
+      client = dbClient.name,
+      connection = url,
       timeout = config.values.catalog.timeout,
       query = function(statement, opts, callback)
         client.read({
-          connection = resolved,
+          connection = url,
           statement = statement,
           timeout = (opts or {}).timeout,
           readonly = true,
         }, function(text, err)
-          guarded(reply, callback, text, err)
+          -- The callback runs once the query finishes, outside the request
+          -- that started it, so an error it throws is sent as the reply.
+          local ok, callbackErr = pcall(callback, text, err)
+          if not ok then
+            reply(callbackErr, nil)
+          end
         end)
       end,
     },
   }
 end
 
---- Writes `text` to `path`, and over its buffer when that is loaded, gives the
---- buffer the connection of `opened`'s, and returns the file's uri and lines.
+--- Writes `text` to `path` and to its buffer if loaded, sets that buffer's
+--- connection to `opened`'s, and returns the file's uri and lines. Throws when
+--- the file cannot be written.
 ---@param path string
 ---@param text string
 ---@param opened dbquery.Opened
 ---@return string uri
 ---@return string[] lines
-local function written(path, text, opened)
+local function writeDefinition(path, text, opened)
   local lines = vim.split((text:gsub("\n$", "")), "\n", { plain = true })
   if vim.fn.writefile(lines, path) ~= 0 then
     error("cannot write " .. path, 0)
@@ -109,29 +90,31 @@ local function written(path, text, opened)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modified = false
   end
-  vim.b[buf].db = opened.written
+  vim.b[buf].db = opened.db
   vim.b[buf].db_name = vim.b[opened.buf].db_name
   return uri, lines
 end
 
---- Reads the DDL of `found` into its file and calls `done` with the file's
+--- Reads the DDL of `named` into its file and calls `done` with the file's
 --- location: the first line naming `mentioned`, or the first line.
 ---@param source dbquery.DefinitionSource
----@param found dbquery.Target
+---@param named dbquery.Target
 ---@param mentioned string|nil
 ---@param done fun(location: lsp.Location|nil, err: string|nil)
-local function locationOf(source, found, mentioned, done)
-  source.owner.definition(source.request, found, function(text, err)
+local function locationOf(source, named, mentioned, done)
+  source.dbClient.definition(source.request, named, function(text, err)
     if not text then
       return done(nil, err)
     end
-    local ok, uri, lines = pcall(written, output.definition(source.resolved, qualifiedName(found)), text, source.opened)
+    local path = files.definition(source.url, names.qualifiedParts(catalogObject(named)))
+    local ok, uriOrErr, lines = pcall(writeDefinition, path, text, source.opened)
     if not ok then
-      return done(nil, uri)
+      return done(nil, uriOrErr)
     end
+    local uri = uriOrErr
     local line = 0
     for index, content in ipairs(mentioned and lines or {}) do
-      if ddl.mentions(source.opened.document.dialect, content, mentioned) then
+      if query.mentions(source.opened.document.dialect, content, mentioned) then
         line = index - 1
         break
       end
@@ -143,7 +126,7 @@ end
 
 ---@param err string|nil
 ---@return lsp.ResponseError
-local function failed(err)
+local function requestFailed(err)
   return { code = vim.lsp.protocol.ErrorCodes.RequestFailed, message = "db-query: " .. tostring(err) }
 end
 
@@ -154,14 +137,14 @@ end
 ---@param context dbquery.CursorContext
 ---@param reply dbquery.LspReply
 function M.locate(opened, context, reply)
-  local found = target.at(opened, context)
-  local source = found and sourceOf(opened, reply)
-  if not (found and source) then
+  local named = target.at(opened, context)
+  local source = named and sourceOf(opened, reply)
+  if not (named and source) then
     return reply(nil, nil)
   end
-  locationOf(source, found, nil, function(location, err)
+  locationOf(source, named, nil, function(location, err)
     if not location then
-      return reply(failed(err), nil)
+      return reply(requestFailed(err), nil)
     end
     reply(nil, location)
   end)
@@ -193,20 +176,21 @@ end
 ---@param declaration boolean
 ---@param reply dbquery.LspReply
 function M.references(opened, context, declaration, reply)
-  local found = target.at(opened, context)
-  local source = found and sourceOf(opened, reply)
-  if not (found and source and opened.catalog) then
+  local named = target.at(opened, context)
+  local source = named and sourceOf(opened, reply)
+  local catalog = opened.catalog
+  if not (named and source and catalog) then
     return reply(nil, nil)
   end
-  local mentioned = namedBy(found).name
+  local mentioned = catalogObject(named).name
 
-  source.owner.references(source.request, found, function(references, err)
+  source.dbClient.references(source.request, named, function(references, err)
     if not references then
-      return reply(failed(err), nil)
+      return reply(requestFailed(err), nil)
     end
-    local targets = declaration and { found } or {}
+    local targets = declaration and { named } or {}
     for _, reference in ipairs(references) do
-      local referring = targetOf(opened.catalog, reference)
+      local referring = targetOf(catalog, reference)
       if referring then
         table.insert(targets, referring)
       end
@@ -216,16 +200,6 @@ function M.references(opened, context, declaration, reply)
     end
 
     local locations, started, pending, firstErr = {}, 0, #targets, nil
-    local function finish()
-      local answered = vim.tbl_filter(function(item)
-        return item ~= false
-      end, locations)
-      if #answered == 0 then
-        return reply(failed(firstErr), nil)
-      end
-      reply(nil, answered)
-    end
-    -- Each read is a client process and, on a server, a connection of its own.
     local function startNext()
       if started == #targets then
         return
@@ -236,10 +210,16 @@ function M.references(opened, context, declaration, reply)
         locations[index] = location or false
         firstErr = firstErr or locationErr
         pending = pending - 1
-        if pending == 0 then
-          return finish()
+        if pending > 0 then
+          return startNext()
         end
-        startNext()
+        local answered = vim.tbl_filter(function(item)
+          return item ~= false
+        end, locations)
+        if #answered == 0 then
+          return reply(requestFailed(firstErr), nil)
+        end
+        reply(nil, answered)
       end)
     end
     for _ = 1, math.min(READS_AT_ONCE, #targets) do

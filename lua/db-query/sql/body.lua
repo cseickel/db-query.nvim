@@ -1,13 +1,5 @@
 --[[
-Code nested inside a statement.
-
-- `at` finds the `do` block or function body holding the cursor, and the
-  parameters and variables in scope there.
-- `stringAt` returns the string holding the cursor.
-- `inLiteral` says whether the cursor is inside a string, a comment, a client
-  command, or a dollar quote.
-- `innerStatement` narrows a statement with a block, such as a `begin atomic`
-  function, to the statement of its body holding the cursor.
+The body of a `do` block or function, and the variables in scope inside it.
 ]]
 
 local lex = require("db-query.sql.lex")
@@ -20,22 +12,7 @@ local M = {}
 ---@field offset integer Bytes of the enclosing text before the body.
 ---@field variables dbquery.ScopeRelation[] Parameters, declared variables, loop variables, and `new` and `old`.
 
-local MODES = { ["in"] = true, out = true, inout = true, variadic = true }
-
---- Returns the index of the first token of the statement holding `tokens[index]`.
----@param dialect dbquery.Dialect
----@param tokens dbquery.Token[]
----@param index integer
----@return integer
-local function statementStart(dialect, tokens, index)
-  local terminators = statements.terminators(dialect, tokens)
-  for at = index - 1, 1, -1 do
-    if terminators[tokens[at]] then
-      return at + 1
-    end
-  end
-  return 1
-end
+local PARAMETER_MODES = { ["in"] = true, out = true, inout = true, variadic = true }
 
 --- Returns the named parameters of the function whose body is `tokens[index]`.
 ---@param tokens dbquery.Token[]
@@ -56,11 +33,11 @@ local function parameters(tokens, start, index)
   end
 
   local variables, entry, depth = {}, {}, 0
-  local function read()
-    local first = entry[1] and MODES[entry[1].lower] and 2 or 1
-    local name, type = entry[first], entry[first + 1]
-    if lex.isIdentifier(name) and lex.isIdentifier(type) and not lex.isWord(type, "default") then
-      variables[#variables + 1] = { kind = "variable", alias = name.text }
+  local function addParameter()
+    local first = entry[1] and PARAMETER_MODES[entry[1].lower] and 2 or 1
+    local nameToken, typeToken = entry[first], entry[first + 1]
+    if lex.isIdentifier(nameToken) and lex.isIdentifier(typeToken) and not lex.isWord(typeToken, "default") then
+      variables[#variables + 1] = { kind = "variable", alias = nameToken.text }
     end
     entry = {}
   end
@@ -75,13 +52,13 @@ local function parameters(tokens, start, index)
       depth = depth - 1
     end
     if token.kind == "," and depth == 0 then
-      read()
+      addParameter()
     elseif token.kind ~= "comment" then
       entry[#entry + 1] = token
     end
   end
   if #entry > 0 then
-    read()
+    addParameter()
   end
   return variables
 end
@@ -128,18 +105,25 @@ function M.at(document, cursor)
       if cursor < first or cursor > last + 1 then
         return nil
       end
-      local before = index - 1
-      while before >= 1 and tokens[before].kind == "comment" do
-        before = before - 1
+      local previousIndex = index - 1
+      while previousIndex >= 1 and tokens[previousIndex].kind == "comment" do
+        previousIndex = previousIndex - 1
       end
-      if not (lex.isWord(tokens[before], "do") or lex.isWord(tokens[before], "as")) then
+      if not (lex.isWord(tokens[previousIndex], "do") or lex.isWord(tokens[previousIndex], "as")) then
         return nil
       end
 
-      local inner = text:sub(first, last)
-      local start = statementStart(dialect, tokens, index)
+      local bodyText = text:sub(first, last)
+      local terminators = statements.terminators(dialect, tokens)
+      local start = 1
+      for at = index - 1, 1, -1 do
+        if terminators[tokens[at]] then
+          start = at + 1
+          break
+        end
+      end
       local variables = parameters(tokens, start, index)
-      vim.list_extend(variables, declarations(lex.code(lex.tokens(dialect, inner))))
+      vim.list_extend(variables, declarations(lex.code(lex.tokens(dialect, bodyText))))
       for at = start, index - 1 do
         if lex.isWord(tokens[at], "returns") and lex.isWord(tokens[at + 1], "trigger") then
           variables[#variables + 1] = { kind = "trigger_row", alias = "new" }
@@ -147,77 +131,10 @@ function M.at(document, cursor)
           break
         end
       end
-      return { text = inner, offset = first - 1, variables = variables }
+      return { text = bodyText, offset = first - 1, variables = variables }
     end
   end
   return nil
-end
-
---- Returns the string token holding `cursor`, or nil when the cursor is in no
---- string. A string still being typed has no closing quote and runs to the end
---- of what is written.
----@param tokens dbquery.Token[]
----@param cursor integer
----@return dbquery.Token|nil
-function M.stringAt(tokens, cursor)
-  for _, token in ipairs(tokens) do
-    if token.kind == "string" and token.first < cursor and (cursor <= token.last or token.open) then
-      return token
-    end
-  end
-  return nil
-end
-
---- Returns true when `cursor` is inside a string, comment, client command, or
---- dollar quote.
----@param tokens dbquery.Token[]
----@param cursor integer
----@return boolean
-function M.inLiteral(tokens, cursor)
-  for _, token in ipairs(tokens) do
-    local literal = token.kind == "string" or token.kind == "comment" or token.kind == "dollar" or token.kind == "meta"
-    if literal and token.first < cursor and (cursor <= token.last or token.open) then
-      return true
-    end
-  end
-  return false
-end
-
---- Returns the statement of a block's body holding `marker`, or `statement`
---- itself when the marker is outside every block.
----@param dialect dbquery.Dialect
----@param statement dbquery.Token[]
----@param marker dbquery.Token
----@return dbquery.Token[]
-function M.innerStatement(dialect, statement, marker)
-  local markerIndex = 1
-  for index, token in ipairs(statement) do
-    if token == marker then
-      markerIndex = index
-    end
-  end
-  if markerIndex == 1 or statements.blockDepths(dialect, statement)[markerIndex - 1] == 0 then
-    return statement
-  end
-
-  local first, last = 1, #statement
-  for index = markerIndex - 1, 1, -1 do
-    local opener = statements.opensBlock(dialect, statement, index)
-    if statement[index].kind == ";" or opener then
-      first = index + (opener or 1)
-      break
-    end
-  end
-  for index = markerIndex + 1, #statement do
-    if statement[index].kind == ";" then
-      last = index - 1
-      break
-    end
-  end
-  if lex.isWord(statement[last], "end") then
-    last = last - 1
-  end
-  return vim.list_slice(statement, first, last)
 end
 
 return M

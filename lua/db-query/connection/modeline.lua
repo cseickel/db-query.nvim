@@ -22,16 +22,16 @@ local KEY = "connection"
 ---@field text string The whole line.
 ---@field connection string|nil The name it gives, nil when it gives none.
 
---- Returns the connection name set in `line` after column `index`, with the
+--- Returns the connection name set in `line` after column `from`, with the
 --- first and last column of its value, brackets included.
 ---@param line string
----@param index integer
+---@param from integer
 ---@return string|nil name
 ---@return integer first
 ---@return integer last
-local function setting(line, index)
+local function setting(line, from)
   while true do
-    local _, equals, key = line:find("%f[%w_]([%w_]+)=", index)
+    local _, equals, key = line:find("%f[%w_]([%w_]+)=", from)
     if not key then
       return nil, 0, 0
     end
@@ -52,7 +52,7 @@ local function setting(line, index)
     if vim.startswith(KEY, key) and value ~= "" then
       return value, first, last
     end
-    index = last + 1
+    from = last + 1
   end
 end
 
@@ -61,23 +61,23 @@ end
 ---@param buf integer
 ---@return dbquery.Modeline|nil
 function M.find(buf)
-  local count = vim.api.nvim_buf_line_count(buf)
-  local found = nil
+  local lineCount = vim.api.nvim_buf_line_count(buf)
+  local modeline = nil
 
   ---@param first integer
   ---@param last integer
   local function scan(first, last)
     for offset, line in ipairs(vim.api.nvim_buf_get_lines(buf, first, last, false)) do
-      local index = line:match(MARKER)
-      if index then
-        found = { row = first + offset - 1, text = line, connection = (setting(line, index)) }
+      local afterMarker = line:match(MARKER)
+      if afterMarker then
+        modeline = { row = first + offset - 1, text = line, connection = (setting(line, afterMarker)) }
       end
     end
   end
 
-  scan(0, math.min(REACH, count))
-  scan(math.max(REACH, count - REACH), count)
-  return found
+  scan(0, math.min(REACH, lineCount))
+  scan(math.max(REACH, lineCount - REACH), lineCount)
+  return modeline
 end
 
 --- Replaces the connection `modeline` names with `name`, keeping the key as

@@ -7,9 +7,7 @@ query that ran last also gets the run-status elbow, turning under the query to
 the outcome, until the buffer next enters insert mode.
 
 A run replaces every mark its lines overlap, when it starts and again when it
-finishes, so each query keeps only its last run. Each run has an extmark
-following its lines through edits, and everything is drawn again from those
-marks whenever the buffer changes outside insert mode. Deleting a query's text
+finishes, so each query keeps only its last run. Deleting a query's text
 deletes its marks.
 ]]
 
@@ -42,38 +40,23 @@ vim.diagnostic.config({ underline = false, virtual_text = false, virtual_lines =
 ---@type table<integer, table<integer, dbquery.FinishedRun|false>>
 local runs = {}
 
---- The mark of the run each buffer finished last, which gets the elbow until
+--- The extmark of the run each buffer finished last, which gets the elbow until
 --- the buffer enters insert mode.
 ---@type table<integer, integer>
 local latest = {}
-
---- Returns the first and last row of extmark `mark`, or nil once it is gone or
---- its text was deleted.
----@param buf integer
----@param mark integer
----@return integer|nil first
----@return integer|nil last
-local function rows(buf, mark)
-  local placed = vim.api.nvim_buf_get_extmark_by_id(buf, SPANS, mark, { details = true })
-  local first, details = placed[1], placed[3]
-  if not (first and details) or details.invalid then
-    return nil, nil
-  end
-  return first, math.max(first, details.end_row or first)
-end
 
 --- Publishes `buf`'s diagnostics and draws its marks where their lines are now.
 ---@param buf integer
 local function publish(buf)
   vim.api.nvim_buf_clear_namespace(buf, DRAWN, 0, -1)
-  local list = {}
-  for mark, run in pairs(runs[buf] or {}) do
-    local first, last = rows(buf, mark)
+  local diagnostics = {}
+  for extmark, run in pairs(runs[buf] or {}) do
+    local first, last = runStatus.spanRows(buf, SPANS, extmark)
     if run and first and last then
       run.diagnostic.lnum, run.diagnostic.end_lnum = first, last
-      table.insert(list, run.diagnostic)
+      table.insert(diagnostics, run.diagnostic)
       ---@type dbquery.Mark
-      local drawn = {
+      local mark = {
         first = first,
         last = last,
         status = run.status,
@@ -81,13 +64,13 @@ local function publish(buf)
         text = run.diagnostic.message,
         width = run.width,
       }
-      runStatus.drawSign(buf, DRAWN, drawn)
-      if mark == latest[buf] then
-        runStatus.drawElbow(buf, DRAWN, drawn)
+      runStatus.drawSign(buf, DRAWN, mark)
+      if extmark == latest[buf] then
+        runStatus.drawElbow(buf, DRAWN, mark)
       end
     end
   end
-  vim.diagnostic.set(DIAGNOSTICS, buf, list)
+  vim.diagnostic.set(DIAGNOSTICS, buf, diagnostics)
 end
 
 --- Forgets `buf`'s runs, finished or running, whose lines overlap rows `first`
@@ -96,11 +79,11 @@ end
 ---@param first integer
 ---@param last integer
 local function forget(buf, first, last)
-  for mark in pairs(runs[buf]) do
-    local top, bottom = rows(buf, mark)
+  for extmark in pairs(runs[buf]) do
+    local top, bottom = runStatus.spanRows(buf, SPANS, extmark)
     if not (top and bottom) or not (bottom < first or top > last) then
-      vim.api.nvim_buf_del_extmark(buf, SPANS, mark)
-      runs[buf][mark] = nil
+      vim.api.nvim_buf_del_extmark(buf, SPANS, extmark)
+      runs[buf][extmark] = nil
     end
   end
 end
@@ -144,38 +127,30 @@ end
 ---@param process dbquery.Process
 function M.track(buf, span, process)
   local tracked = runsOf(buf)
-  local bottom = vim.api.nvim_buf_line_count(buf) - 1
-  local first, last = math.min(span[1], bottom), math.min(span[2], bottom)
-  forget(buf, first, last)
+  local extmark, width = runStatus.followSpan(buf, SPANS, span)
+  local first, last = runStatus.spanRows(buf, SPANS, extmark)
+  forget(buf, first or span[1], last or span[2])
   latest[buf] = nil
   publish(buf)
-
-  local lastLine = vim.api.nvim_buf_get_lines(buf, last, last + 1, false)[1]
-  local mark = vim.api.nvim_buf_set_extmark(buf, SPANS, first, 0, {
-    end_row = last,
-    end_col = #lastLine,
-    invalidate = true,
-  })
-  tracked[mark] = false
-  local width = runStatus.widthAt(buf, last)
+  tracked[extmark] = false
 
   process:onFinish(function()
     -- A later run over these lines has already forgotten this one.
-    if not vim.api.nvim_buf_is_loaded(buf) or tracked[mark] == nil then
+    if not vim.api.nvim_buf_is_loaded(buf) or tracked[extmark] == nil then
       return
     end
-    tracked[mark] = nil
-    local top, bottomRow = rows(buf, mark)
-    if not (top and bottomRow) then
-      vim.api.nvim_buf_del_extmark(buf, SPANS, mark)
+    tracked[extmark] = nil
+    local top, bottom = runStatus.spanRows(buf, SPANS, extmark)
+    if not (top and bottom) then
+      vim.api.nvim_buf_del_extmark(buf, SPANS, extmark)
       return
     end
-    forget(buf, top, bottomRow)
-    tracked[mark] = {
+    forget(buf, top, bottom)
+    tracked[extmark] = {
       status = process.status,
       diagnostic = {
         lnum = top,
-        end_lnum = bottomRow,
+        end_lnum = bottom,
         col = 0,
         severity = SEVERITY[process.status],
         message = runStatus.summary(process),
@@ -183,7 +158,7 @@ function M.track(buf, span, process)
       },
       width = width,
     }
-    latest[buf] = mark
+    latest[buf] = extmark
     publish(buf)
   end)
 end

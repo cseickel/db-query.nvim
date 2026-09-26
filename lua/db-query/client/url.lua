@@ -15,10 +15,10 @@ function M.scheme(url)
 end
 
 --- Decodes percent-escapes.
----@param text string
+---@param encoded string
 ---@return string
-function M.decoded(text)
-  return (text:gsub("%%(%x%x)", function(hex)
+function M.decoded(encoded)
+  return (encoded:gsub("%%(%x%x)", function(hex)
     return string.char(tonumber(hex, 16))
   end))
 end
@@ -46,19 +46,19 @@ end
 ---@return string url
 ---@return { key: string, value: string }[] params
 function M.query(url)
-  local whole = url:gsub("#.*$", "")
-  local base, query = whole:match("^([^?]*)%?(.*)$")
+  local withoutFragment = url:gsub("#.*$", "")
+  local base, query = withoutFragment:match("^([^?]*)%?(.*)$")
   if not base then
-    return whole, {}
+    return withoutFragment, {}
   end
 
   local params = {}
-  for item in query:gmatch("[^&;]+") do
-    local key, value = item:match("^([^=]+)=(.*)$")
+  for param in query:gmatch("[^&;]+") do
+    local key, value = param:match("^([^=]+)=(.*)$")
     if key then
       table.insert(params, { key = key, value = M.decoded((value:gsub("%+", " "))) })
-    elseif not item:find("=", 1, true) then
-      table.insert(params, { key = item, value = "1" })
+    elseif not param:find("=", 1, true) then
+      table.insert(params, { key = param, value = "1" })
     end
   end
   return base, params
@@ -80,23 +80,23 @@ local function withoutPasswordParam(url)
     return url, nil
   end
 
-  local kept, found = {}, nil
-  for item in query:gmatch("[^&]+") do
-    local key, value = item:match("^([^=]*)=(.*)$")
+  local kept, password = {}, nil
+  for param in query:gmatch("[^&]+") do
+    local key, value = param:match("^([^=]*)=(.*)$")
     if key and M.decoded(key) == "password" then
-      found = M.decoded(value)
+      password = M.decoded(value)
     else
-      table.insert(kept, item)
+      table.insert(kept, param)
     end
   end
 
-  if not found then
+  if not password then
     return url, nil
   end
   if #kept == 0 then
-    return head, found
+    return head, password
   end
-  return head .. "?" .. table.concat(kept, "&"), found
+  return head .. "?" .. table.concat(kept, "&"), password
 end
 
 --- Returns `url` with the password in its credentials removed, and that

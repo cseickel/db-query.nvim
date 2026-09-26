@@ -4,7 +4,7 @@ Extracting sql from a buffer.
 `capture` reads the lines the query comes from: the whole buffer, a command
 range, the visual selection, or the buffer and cursor row for the statement at
 the cursor. It runs first, while the selection and cursor are still where the
-user left them. `text` turns a capture into the sql to run, and finds the
+user left them. `sql` turns a capture into the sql to run, and finds the
 statement at the cursor once the connection says which dialect to read it by.
 ]]
 
@@ -32,24 +32,6 @@ local M = {}
 
 ---@alias dbquery.Capture dbquery.LinesCapture|dbquery.StatementCapture
 
---- Returns the visual selection text and line span.
----@return string[] lines
----@return [integer, integer] span
-local function visual()
-  local mode = vim.fn.mode()
-  local from, to = vim.fn.getpos("v"), vim.fn.getpos(".")
-  if not (mode == "v" or mode == "V" or mode == "\22") then
-    mode = vim.fn.visualmode()
-    if mode == "" then
-      return {}, { 0, 0 }
-    end
-    from, to = vim.fn.getpos("'<"), vim.fn.getpos("'>")
-  end
-
-  local lines = vim.fn.getregion(from, to, { type = mode })
-  return lines, { math.min(from[2], to[2]) - 1, math.max(from[2], to[2]) - 1 }
-end
-
 ---@param lines string[]
 ---@param span [integer, integer]
 ---@return dbquery.LinesCapture
@@ -74,7 +56,18 @@ function M.capture(opts)
     return linesCapture(vim.api.nvim_buf_get_lines(0, span[1], span[2] + 1, false), span)
   end
   if opts.visual then
-    return linesCapture(visual())
+    -- A selection that already ended is read from its marks.
+    local mode = vim.fn.mode()
+    local from, to = vim.fn.getpos("v"), vim.fn.getpos(".")
+    if not (mode == "v" or mode == "V" or mode == "\22") then
+      mode = vim.fn.visualmode()
+      if mode == "" then
+        return linesCapture({}, { 0, 0 })
+      end
+      from, to = vim.fn.getpos("'<"), vim.fn.getpos("'>")
+    end
+    local span = { math.min(from[2], to[2]) - 1, math.max(from[2], to[2]) - 1 }
+    return linesCapture(vim.fn.getregion(from, to, { type = mode }), span)
   end
   local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
   return linesCapture(lines, { 0, #lines - 1 })
@@ -95,22 +88,22 @@ end
 ---@param dialect dbquery.Dialect
 ---@return string sql
 ---@return [integer, integer] span
-function M.text(capture, dialect)
+function M.sql(capture, dialect)
   local lines, span, above
   if capture.kind == "lines" then
     lines, span, above = capture.lines, capture.span, capture.above
   else
-    local found = sql.statementAt(dialect, capture.lines, capture.row)
-    if not found then
+    local statementSpan = sql.statementAt(dialect, capture.lines, capture.row)
+    if not statementSpan then
       return "", { 0, 0 }
     end
-    lines, span = vim.list_slice(capture.lines, found[1] + 1, found[2] + 1), found
-    above = vim.list_slice(capture.lines, 1, found[1])
+    lines, span = vim.list_slice(capture.lines, statementSpan[1] + 1, statementSpan[2] + 1), statementSpan
+    above = vim.list_slice(capture.lines, 1, statementSpan[1])
   end
 
-  local text = vim.trim(table.concat(lines, "\n"))
-  local command = text ~= "" and sql.delimiterCommand(dialect, above)
-  return command and (command .. "\n" .. text) or text, span
+  local sqlText = vim.trim(table.concat(lines, "\n"))
+  local command = sqlText ~= "" and sql.delimiterCommand(dialect, above)
+  return command and (command .. "\n" .. sqlText) or sqlText, span
 end
 
 return M

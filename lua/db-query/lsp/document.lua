@@ -1,10 +1,5 @@
 --[[
 The buffer a request is about, read when the request arrives.
-
-- `capture` reads the buffer's lines and connection. It only reads, so it runs
-  under textlock, where completion requests arrive.
-- `open` resolves the connection to its dialect and catalog, on the main loop.
-- `offset` and `position` convert between LSP positions and byte offsets.
 ]]
 
 local catalog = require("db-query.catalog")
@@ -17,7 +12,7 @@ local M = {}
 ---@class dbquery.Captured
 ---@field buf integer
 ---@field lines string[]
----@field written string|nil The buffer's `b:db`.
+---@field db string|nil The buffer's `b:db`.
 ---@field filetype string
 
 ---@class dbquery.Opened : dbquery.Captured
@@ -25,9 +20,10 @@ local M = {}
 ---@field catalog dbquery.Catalog|nil Nil until the connection's catalog has been read.
 
 --- Returns the current buffer's lines and connection when `uri` names it, and
---- nil otherwise. An unnamed buffer's uri is `file://` whichever buffer it is,
---- so a request about one is taken to be about the current buffer, which is
---- the buffer every completion, hover, and signature request is made from.
+--- nil otherwise. It only reads, so it runs under textlock, where completion
+--- requests arrive. An unnamed buffer's uri is `file://` whichever buffer it
+--- is, so a request about one is taken to be about the current buffer, which
+--- is the buffer every completion, hover, and signature request is made from.
 ---@param uri string
 ---@return dbquery.Captured|nil
 function M.capture(uri)
@@ -35,11 +31,11 @@ function M.capture(uri)
   if vim.uri_from_bufnr(buf) ~= uri then
     return nil
   end
-  local written = vim.b[buf].db
+  local db = vim.b[buf].db
   return {
     buf = buf,
     lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false),
-    written = type(written) == "string" and written or nil,
+    db = type(db) == "string" and db or nil,
     filetype = vim.bo[buf].filetype,
   }
 end
@@ -50,20 +46,15 @@ end
 ---@param captured dbquery.Captured
 ---@return dbquery.Opened
 function M.open(captured)
-  local resolved = dadbod.resolve(captured.written)
-  local found = resolved and client.of(resolved)
-  local dialect = found and found.dialect
+  local url = dadbod.resolve(captured.db)
+  local dbClient = url and client.of(url)
+  local dialect = dbClient and dbClient.dialect
     or require("db-query.sql.dialect." .. (captured.filetype == "mysql" and "mysql" or "standard"))
   local text = table.concat(captured.lines, "\n")
-  ---@type dbquery.Opened
-  return {
-    buf = captured.buf,
-    lines = captured.lines,
-    written = captured.written,
-    filetype = captured.filetype,
+  return vim.tbl_extend("force", captured, {
     document = { dialect = dialect, text = text, tokens = lex.tokens(dialect, text) },
-    catalog = found and catalog.get(resolved) or nil,
-  }
+    catalog = dbClient and catalog.get(url) or nil,
+  })
 end
 
 --- Returns the byte offset in the joined lines that an LSP position, counted

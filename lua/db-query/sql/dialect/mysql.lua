@@ -6,7 +6,7 @@ comments, `@variables`, and the insert, replace, and join forms mysql adds.
 local dialect = require("db-query.sql.dialect")
 local standard = require("db-query.sql.dialect.standard")
 
-local set = dialect.set
+local set, with, without = dialect.set, dialect.with, dialect.without
 
 ---@param state dbquery.ClauseState
 ---@return boolean
@@ -14,27 +14,8 @@ local function atStart(state)
   return state.clause == "start"
 end
 
-local HINT = set("use force ignore")
-local KEY = set("index key")
-
---- Returns the delimiter a `delimiter` command sets: its argument, quoted or up
---- to whitespace. Returns nil for any other command.
----@param text string
----@return string|nil
-local function delimiter(text)
-  if not text:sub(1, 10):lower():match("^delimiter%s") then
-    return nil
-  end
-  local rest = text:match("^%a+%s+(.-)%s*$")
-  if rest == "" then
-    return nil
-  end
-  local quote = rest:sub(1, 1)
-  if quote == "'" or quote == '"' or quote == "`" then
-    return rest:match("^" .. quote .. "(.-)" .. quote)
-  end
-  return rest:match("^%S+")
-end
+local INDEX_HINT = set("use force ignore")
+local INDEX_WORD = set("index key")
 
 --- The client's own commands: `\g` and `\G`, and `delimiter`, which the client
 --- reads only at the start of a line and in any letter case. Each of them sends
@@ -53,38 +34,38 @@ local COMMANDS = {
   sends = function()
     return true
   end,
-  delimiter = delimiter,
+  -- A `delimiter` command sets its argument, quoted or up to whitespace.
+  delimiter = function(text)
+    if not text:sub(1, 10):lower():match("^delimiter%s") then
+      return nil
+    end
+    local rest = text:match("^%a+%s+(.-)%s*$")
+    if rest == "" then
+      return nil
+    end
+    local quote = rest:sub(1, 1)
+    if quote == "'" or quote == '"' or quote == "`" then
+      return rest:match("^" .. quote .. "(.-)" .. quote)
+    end
+    return rest:match("^%S+")
+  end,
 }
+
+local keywords = dialect.dropEverywhere(standard.keywords, "fetch")
 
 return dialect.derive(standard, {
   name = "mysql",
   folds = "none",
-  signatures = vim.tbl_extend("force", standard.signatures, {
-    greatest = { label = "greatest(value, ...)", parameters = { "value" }, variadic = true },
-    least = { label = "least(value, ...)", parameters = { "value" }, variadic = true },
-  }),
-  keywords = vim.tbl_extend("force", standard.keywords, {
-    start = vim.tbl_extend("force", standard.keywords.start, set("replace truncate explain rename")),
-    from = vim.tbl_extend(
-      "force",
-      dialect.without(standard.keywords.from, "full outer fetch"),
-      set("straight_join use force ignore index")
-    ),
-    select = dialect.without(standard.keywords.select, "fetch"),
-    where = dialect.without(standard.keywords.where, "fetch"),
-    group_by = dialect.without(standard.keywords.group_by, "fetch"),
-    having = dialect.without(standard.keywords.having, "fetch"),
-    window = dialect.without(standard.keywords.window, "fetch"),
-    order_by = dialect.without(standard.keywords.order_by, "fetch"),
-    limit = dialect.without(standard.keywords.limit, "fetch"),
-    offset = dialect.without(standard.keywords.offset, "fetch"),
+  keywords = vim.tbl_extend("force", keywords, {
+    start = with(keywords.start, "replace truncate explain rename"),
+    from = with(without(keywords.from, "full outer"), "straight_join use force ignore index"),
     fetch = {},
-    insert_target = vim.tbl_extend("force", standard.keywords.insert_target, set("set")),
+    insert_target = with(keywords.insert_target, "set"),
     merge_when = {},
     merge_target = {},
-    values = vim.tbl_extend("force", standard.keywords.values, set("duplicate key update")),
-    operator = vim.tbl_extend("force", dialect.without(standard.keywords.operator, "similar"), set("regexp rlike div xor")),
-    call = dialect.without(standard.keywords.call, "within"),
+    values = with(keywords.values, "duplicate key update"),
+    operator = with(without(keywords.operator, "similar"), "regexp rlike div xor"),
+    call = without(keywords.call, "within"),
   }),
   commands = COMMANDS,
   lex = {
@@ -115,9 +96,9 @@ return dialect.derive(standard, {
   callable = set("replace insert"),
   fromSuffixes = {
     { "partition", dialect.GROUP },
-    { HINT, KEY, dialect.GROUP },
-    { HINT, KEY, "for", "join", dialect.GROUP },
-    { HINT, KEY, "for", set("order group"), "by", dialect.GROUP },
+    { INDEX_HINT, INDEX_WORD, dialect.GROUP },
+    { INDEX_HINT, INDEX_WORD, "for", "join", dialect.GROUP },
+    { INDEX_HINT, INDEX_WORD, "for", set("order group"), "by", dialect.GROUP },
   },
   inserts = { default = true, uuid = "uuid()" },
 })

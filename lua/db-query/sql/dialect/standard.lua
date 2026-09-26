@@ -88,6 +88,8 @@ local KEYWORDS = {
 local SIGNATURES = {
   coalesce = { label = "coalesce(value, ...)", parameters = { "value" }, variadic = true },
   nullif = { label = "nullif(value1, value2)", parameters = { "value1", "value2" }, variadic = false },
+  greatest = { label = "greatest(value, ...)", parameters = { "value" }, variadic = true },
+  least = { label = "least(value, ...)", parameters = { "value" }, variadic = true },
   cast = { label = "cast(value as type)", parameters = {}, variadic = false },
   extract = { label = "extract(field from source)", parameters = {}, variadic = false },
   substring = { label = "substring(string from start for count)", parameters = {}, variadic = false },

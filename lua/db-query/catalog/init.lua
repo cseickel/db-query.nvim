@@ -1,25 +1,14 @@
 --[[
 The catalog of each database, read in the background and saved to disk for the
-next session.
-
-- `get` returns what is known of a connection's catalog, and starts the first
-  read of it. The first call for a database loads what the last session saved.
-- `refresh` reads it again, replacing a read still under way.
-- `cancel` stops the read under way and keeps the catalog from before it.
-- `reading` says how long a read has been running, for a statusline.
-
-Nothing waits on a read. Until one finishes, `get` returns the catalog from
-before it, or nil.
-
-Each client file holds a built-in `catalog` function. The `catalog.clients`
-setting replaces it for the clients it names.
+next session. Nothing waits on a read: until one finishes, `get` returns the
+catalog from before it, or nil.
 ]]
 
 local client = require("db-query.client")
 local config = require("db-query.config")
-local main = require("db-query.mainloop")
-local output = require("db-query.query.files")
+local mainloop = require("db-query.mainloop")
 local Progress = require("db-query.query.progress")
+local saved = require("db-query.catalog.saved")
 local shape = require("db-query.catalog.shape")
 local url = require("db-query.client.url")
 
@@ -47,14 +36,15 @@ local M = {}
 ---@type table<string, dbquery.CatalogEntry>
 local entries = {}
 
-local NOTICE_AFTER = 2000
+local NOTICE_AFTER_MS = 2000
 
---- Redraws winbars and statuslines while any read runs, so `statusline` spins.
----@type uv.uv_timer_t|nil
-local ticker = nil
+--- Stops the timer redrawing winbars and statuslines while any read runs, so
+--- `statusline` spins. Nil while no read runs.
+---@type fun()|nil
+local stopRedraws = nil
 
 ---@return boolean
-local function reading()
+local function anyReading()
   for _, entry in pairs(entries) do
     if entry.started then
       return true
@@ -64,120 +54,28 @@ local function reading()
 end
 
 --- Starts the redraw timer when a read is under way, and stops it when none is.
-local function tick()
-  if reading() and not ticker then
-    ticker = vim.uv.new_timer()
-    ticker:start(Progress.FRAME_TIME, Progress.FRAME_TIME, main.frame(function()
+local function updateRedraws()
+  if anyReading() and not stopRedraws then
+    stopRedraws = mainloop.every(Progress.FRAME_TIME, function()
       vim.api.nvim__redraw({ statusline = true, winbar = true })
-    end))
-  elseif ticker and not reading() then
-    ticker:stop()
-    ticker:close()
-    ticker = nil
+    end)
+  elseif stopRedraws and not anyReading() then
+    stopRedraws()
+    stopRedraws = nil
     vim.api.nvim__redraw({ statusline = true, winbar = true })
   end
 end
 
---- Returns what names `connection`'s database: its file for a client that
---- opens one, and its url without the password otherwise.
----@param connection string
----@param found dbquery.Client
+--- Returns what names `resolved`'s database: its file for a client that opens
+--- one, and its url without the password otherwise.
+---@param resolved string
+---@param dbClient dbquery.Client
 ---@return string
-local function keyOf(connection, found)
-  if found.embedded then
-    return url.scheme(connection) .. ":" .. url.filePath(connection)
+local function keyOf(resolved, dbClient)
+  if dbClient.embedded then
+    return url.scheme(resolved) .. ":" .. url.filePath(resolved)
   end
-  return (url.withoutPassword(connection))
-end
-
---- The version of `dbquery.Catalog` a saved file holds. Raise it with every
---- change to the shape, and add the step from the old version to `UPGRADES`.
-local VERSION = 2
-
---- Steps a saved catalog from the version it is keyed by to the next one.
---- Leave a version out, or return nil from its step, when the change needs
---- data only a fresh read has, and the saved file is discarded.
----@type table<integer, fun(catalog: table): table|nil>
-local UPGRADES = {
-  -- Version 2 added the fields of composite types, which the next read fills.
-  [1] = function(catalog)
-    return catalog
-  end,
-}
-
----@class dbquery.SavedCatalog
----@field version integer
----@field catalog dbquery.Catalog
-
---- Returns the catalog saved for `key` by an earlier session, upgraded to
---- `VERSION`, or nil when there is none or it cannot be used.
----@param key string
----@return dbquery.Catalog|nil
-local function load(key)
-  local file = io.open(output.catalog(key), "r")
-  if not file then
-    return nil
-  end
-  local text = file:read("*a")
-  file:close()
-  local ok, saved = pcall(vim.json.decode, text, { luanil = { object = true } })
-  if not (ok and type(saved) == "table" and type(saved.version) == "number" and saved.version <= VERSION) then
-    return nil
-  end
-  local catalog, version = saved.catalog, saved.version
-  while catalog and version < VERSION do
-    local upgrade = UPGRADES[version]
-    catalog = upgrade and upgrade(catalog)
-    version = version + 1
-  end
-  if not catalog or shape.problem(catalog) then
-    return nil
-  end
-  return catalog
-end
-
---- Saves `catalog` for `key`, through a file of this nvim's own renamed into
---- place, so two nvims saving at once never leave a mixed file.
----@param key string
----@param catalog dbquery.Catalog
-local function save(key, catalog)
-  local path = output.catalog(key)
-  local function failed(err)
-    vim.notify("db-query: cannot save the catalog to " .. path .. ": " .. tostring(err), vim.log.levels.ERROR)
-  end
-
-  ---@type dbquery.SavedCatalog
-  local saved = { version = VERSION, catalog = catalog }
-  local encoded, text = pcall(vim.json.encode, saved)
-  if not encoded then
-    return failed(text)
-  end
-  local partial = path .. "." .. vim.uv.os_getpid()
-  local file, err = io.open(partial, "w")
-  if not file then
-    return failed(err)
-  end
-  local wrote, writeErr = file:write(text)
-  local closed, closeErr = file:close()
-  local renamed, renameErr = nil, writeErr or closeErr
-  if wrote and closed then
-    renamed, renameErr = vim.uv.fs_rename(partial, path)
-  end
-  if not renamed then
-    os.remove(partial)
-    failed(renameErr)
-  end
-end
-
---- Returns the entry for `key`, creating it with the catalog an earlier session
---- saved.
----@param key string
----@return dbquery.CatalogEntry
-local function entryOf(key)
-  if not entries[key] then
-    entries[key] = { catalog = load(key), generation = 0, processes = {} }
-  end
-  return entries[key]
+  return (url.withoutPassword(resolved))
 end
 
 ---@param entry dbquery.CatalogEntry
@@ -188,47 +86,50 @@ local function stop(entry)
   entry.processes = {}
 end
 
---- Reads the catalog of `connection` again, replacing any read still running,
+--- Reads the catalog of `resolved` again, replacing any read still running,
 --- and keeps the result when it has the catalog's shape. A read that fails
 --- keeps the catalog from before it and shows why.
----@param connection string Resolved url.
-function M.refresh(connection)
-  local found = client.of(connection)
-  if not found then
+---@param resolved string Resolved url.
+function M.refresh(resolved)
+  local dbClient = client.of(resolved)
+  if not dbClient then
     return
   end
-  local key = keyOf(connection, found)
-  local entry = entryOf(key)
+  local key = keyOf(resolved, dbClient)
+  if not entries[key] then
+    entries[key] = { catalog = saved.load(key), generation = 0, processes = {} }
+  end
+  local entry = entries[key]
   stop(entry)
   entry.generation = entry.generation + 1
 
   -- Opening a missing file read-only fails, and until something creates it the
   -- database holds nothing.
-  local file = found.embedded and url.filePath(connection) or ""
+  local file = dbClient.embedded and url.filePath(resolved) or ""
   if file ~= "" and not vim.uv.fs_stat(file) then
     entry.catalog = { searchPath = {}, relations = {}, functions = {}, types = {} }
     entry.started = nil
-    return tick()
+    return updateRedraws()
   end
 
   local generation, finished = entry.generation, false
-  local custom = config.values.catalog.clients[found.name]
+  local custom = config.values.catalog.clients[dbClient.name]
   entry.started = vim.uv.hrtime()
-  tick()
+  updateRedraws()
 
   local function current()
     return not finished and entry.generation == generation
   end
 
-  vim.defer_fn(main.wrap(function()
+  vim.defer_fn(mainloop.wrap(function()
     if current() then
       vim.notify("db-query: reading the catalog of " .. key)
     end
-  end), NOTICE_AFTER)
+  end), NOTICE_AFTER_MS)
 
   -- A catalog function of the user's own may call done from anywhere.
   ---@type fun(catalog: dbquery.Catalog|nil, err: string|nil)
-  local done = main.wrap(function(catalog, err)
+  local done = mainloop.wrap(function(catalog, err)
     if not current() then
       return
     end
@@ -236,7 +137,7 @@ function M.refresh(connection)
     stop(entry)
     local seconds = (vim.uv.hrtime() - entry.started) / 1e9
     entry.started = nil
-    tick()
+    updateRedraws()
     local problem = err or (catalog == nil and "no catalog was returned") or shape.problem(catalog)
     if problem then
       return vim.notify(
@@ -246,7 +147,7 @@ function M.refresh(connection)
     end
     entry.catalog = catalog
     vim.notify(string.format("db-query: read the catalog of %s in %.1fs", key, seconds))
-    save(key, catalog)
+    saved.save(key, catalog)
   end)
 
   --- Calls `fn`, failing this read when it throws. A callback runs long after
@@ -260,15 +161,15 @@ function M.refresh(connection)
 
   ---@type dbquery.CatalogRequest
   local request = {
-    client = found.name,
-    connection = connection,
+    client = dbClient.name,
+    connection = resolved,
     timeout = not custom and config.values.catalog.timeout or nil,
     query = function(statement, opts, callback)
       if not current() then
         return
       end
       local process = client.read({
-        connection = connection,
+        connection = resolved,
         statement = statement,
         timeout = (opts or {}).timeout,
         readonly = true,
@@ -283,15 +184,15 @@ function M.refresh(connection)
     end,
   }
 
-  guarded(custom or found.catalog, request, done)
+  guarded(custom or dbClient.catalog, request, done)
 end
 
---- Stops the read of `connection`'s catalog under way, keeping the catalog from
+--- Stops the read of `resolved`'s catalog under way, keeping the catalog from
 --- before it.
----@param connection string Resolved url.
-function M.cancel(connection)
-  local found = client.of(connection)
-  local key = found and keyOf(connection, found)
+---@param resolved string Resolved url.
+function M.cancel(resolved)
+  local dbClient = client.of(resolved)
+  local key = dbClient and keyOf(resolved, dbClient)
   local entry = key and entries[key]
   if not (entry and entry.started) then
     return vim.notify("db-query: no catalog read is running for this database", vim.log.levels.WARN)
@@ -299,38 +200,38 @@ function M.cancel(connection)
   stop(entry)
   entry.generation = entry.generation + 1
   entry.started = nil
-  tick()
+  updateRedraws()
   vim.notify("db-query: cancelled the read of the catalog of " .. key)
 end
 
---- Returns the seconds a read of `connection`'s catalog has been running, or
---- nil when none is. Resolves nothing unless some read is running, because a
---- statusline asks on every redraw.
----@param connection fun(): string|nil Returns the resolved url.
+--- Returns the seconds a read of a connection's catalog has been running, or
+--- nil when none is. Calls `resolveUrl` only while some read is running,
+--- because a statusline asks on every redraw.
+---@param resolveUrl fun(): string|nil Returns the resolved url.
 ---@return number|nil
-function M.reading(connection)
-  if not reading() then
+function M.reading(resolveUrl)
+  if not anyReading() then
     return nil
   end
-  local resolved = connection()
-  local found = resolved and client.of(resolved)
-  local entry = found and entries[keyOf(resolved, found)]
+  local resolved = resolveUrl()
+  local dbClient = resolved and client.of(resolved)
+  local entry = dbClient and entries[keyOf(resolved, dbClient)]
   return entry and entry.started and (vim.uv.hrtime() - entry.started) / 1e9 or nil
 end
 
---- Returns the last catalog read for `connection`, or nil when none has been.
+--- Returns the last catalog read for `resolved`, or nil when none has been.
 --- Starts the first read, and never starts another: a failed read waits for
 --- `refresh`, so an unreachable database is not asked again on every call.
----@param connection string Resolved url.
+---@param resolved string Resolved url.
 ---@return dbquery.Catalog|nil
-function M.get(connection)
-  local found = client.of(connection)
-  if not found then
+function M.get(resolved)
+  local dbClient = client.of(resolved)
+  if not dbClient then
     return nil
   end
-  local key = keyOf(connection, found)
+  local key = keyOf(resolved, dbClient)
   if not entries[key] then
-    M.refresh(connection)
+    M.refresh(resolved)
   end
   return entries[key] and entries[key].catalog
 end

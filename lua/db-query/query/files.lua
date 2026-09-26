@@ -1,15 +1,13 @@
 --[[
-Output file paths and cleanup.
+Every file the plugin writes, and which of them it deletes.
 
-Row data goes to the output directory, which the user chooses. Logs go to a
-directory per buffer under one named by nvim's pid, in nvim's cache and never
-anywhere else, and so do the files goto definition opens.
-Saved catalogs go to the `catalog` subdirectory of the same cache, shared by
-every nvim. On startup, sweep() removes directories for nvims that have exited
-and the partly written catalogs they left.
-
-The `output_dir` config and `:DBOutputDir` command set the output directory.
-Files in a user-specified directory are not auto-deleted.
+Row data goes to the output directory, which the user chooses with `output_dir`
+or `:DBOutputDir`. Files in a directory the user chose are not deleted. Logs,
+staging files, and the files goto definition opens go to a directory named by
+nvim's pid in nvim's cache, and never anywhere else. Saved catalogs go to the
+`catalog` subdirectory of the same cache, shared by every nvim. On startup,
+`sweep` removes the directories of nvims that have exited and the partly
+written catalogs they left.
 ]]
 
 local config = require("db-query.config")
@@ -17,32 +15,28 @@ local config = require("db-query.config")
 local M = {}
 
 local ROOT = vim.fn.stdpath("cache") .. "/db-query"
-local MINE = ROOT .. "/" .. vim.fn.getpid()
-local CATALOG = ROOT .. "/catalog"
+local SESSION_DIR = ROOT .. "/" .. vim.fn.getpid()
+local CATALOG_DIR = ROOT .. "/catalog"
 
+--- The output directory `:DBOutputDir` set, nil until it sets one.
 ---@type string|nil
-local asked = nil
+local sessionDirectory = nil
 
 --- Counts staging files, so each run gets its own.
-local staged = 0
+local stagingCount = 0
 
 local EXTENSIONS = { csv = true, tsv = true, txt = true }
 
 ---@return string
 function M.directory()
-  return asked or config.values.output_dir or MINE
+  return sessionDirectory or config.values.output_dir or SESSION_DIR
 end
 
----@return boolean
-local function clearing()
-  return asked == nil and config.values.output_cleanup
-end
-
---- Returns the base name for output files from `srcName`, defaulting to "query".
----@param srcName string
+--- Returns the base name for output files from `bufName`, defaulting to "query".
+---@param bufName string
 ---@return string
-local function baseName(srcName)
-  local name = vim.fn.fnamemodify(srcName, ":t:r")
+local function baseName(bufName)
+  local name = vim.fn.fnamemodify(bufName, ":t:r")
   if name == "" then
     return "query"
   end
@@ -68,68 +62,63 @@ end
 
 --- Returns the output path without extension.
 ---
---- Without `chosen`, returns `cwd/baseName(srcName)`. With `chosen`, resolves
+--- Without `chosen`, returns `cwd/baseName(bufName)`. With `chosen`, resolves
 --- relative paths from cwd. A trailing slash or existing directory appends the
 --- base name (e.g., `-o ~/exports/` becomes `~/exports/bufname`).
----@param srcName string Full path of the source buffer.
+---@param bufName string Full path of the sql buffer.
 ---@param chosen string|nil
 ---@return string
-function M.destination(srcName, chosen)
+function M.destination(bufName, chosen)
   if not chosen then
-    return vim.fs.joinpath(vim.fn.getcwd(), baseName(srcName))
+    return vim.fs.joinpath(vim.fn.getcwd(), baseName(bufName))
   end
 
   local named = chosen:sub(-1) ~= "/"
-  local full = vim.fs.normalize(chosen)
-  if not vim.startswith(full, "/") then
-    full = vim.fs.joinpath(vim.fn.getcwd(), full)
+  local fullPath = vim.fs.normalize(chosen)
+  if not vim.startswith(fullPath, "/") then
+    fullPath = vim.fs.joinpath(vim.fn.getcwd(), fullPath)
   end
-  if named and vim.fn.isdirectory(full) == 0 then
-    return full
+  if named and vim.fn.isdirectory(fullPath) == 0 then
+    return fullPath
   end
-  return vim.fs.joinpath(full, baseName(srcName))
+  return vim.fs.joinpath(fullPath, baseName(bufName))
 end
 
 --- Sets the output directory for this session. Files there are not auto-deleted.
 --- An empty `path` resets to the configured default.
 ---@param path string
 function M.setDirectory(path)
-  local full = path ~= "" and vim.fs.normalize(path) or nil
-  if full and not (pcall(vim.fn.mkdir, full, "p") and vim.fn.isdirectory(full) == 1) then
-    return vim.notify("db-query: cannot write in " .. full, vim.log.levels.ERROR)
+  local fullPath = path ~= "" and vim.fs.normalize(path) or nil
+  if fullPath and not (pcall(vim.fn.mkdir, fullPath, "p") and vim.fn.isdirectory(fullPath) == 1) then
+    return vim.notify("db-query: cannot write in " .. fullPath, vim.log.levels.ERROR)
   end
 
-  asked = full
+  sessionDirectory = fullPath
   vim.notify("db-query: output goes to " .. M.directory())
 end
 
 --- Returns the log for buffer `buf`, which every run of that buffer appends to,
---- or nil when it cannot be written.
----
---- Logs live in this nvim's cache directory whatever the output directory is,
---- so a buffer keeps one log for the session and sweep() clears it later. The
---- buffer number names the directory, since two buffers can share a base name,
---- and the file keeps the readable name for the window showing it.
+--- or nil when it cannot be written. The buffer number names the directory,
+--- since two buffers can share a base name, and the file keeps the readable
+--- name for the window showing it.
 ---@param buf integer Buffer the query came from.
----@param srcName string Full path of the source buffer.
+---@param bufName string Full path of the sql buffer.
 ---@return string|nil
-function M.log(buf, srcName)
-  local path = MINE .. "/" .. buf .. "/" .. baseName(srcName) .. ".md"
+function M.log(buf, bufName)
+  local path = SESSION_DIR .. "/" .. buf .. "/" .. baseName(bufName) .. ".md"
   return ready(path, "a") and path or nil
 end
 
 --- Returns a fresh path under this nvim's cache directory, named without
---- whitespace, for a client that cannot write to the results path itself. The
---- caller moves the file onto the results path once the query finishes.
----
---- Each call returns a new name, so two runs writing to the same `-o` path
---- never share a staging file.
+--- whitespace, for a client that cannot write to the results path itself. Each
+--- call returns a new name, so two runs writing to the same `-o` path never
+--- share a staging file.
 ---@param extension string
 ---@return string
 function M.staging(extension)
-  pcall(vim.fn.mkdir, MINE, "p")
-  staged = staged + 1
-  return string.format("%s/staging-%d.%s", MINE, staged, extension)
+  pcall(vim.fn.mkdir, SESSION_DIR, "p")
+  stagingCount = stagingCount + 1
+  return string.format("%s/staging-%d.%s", SESSION_DIR, stagingCount, extension)
 end
 
 --- Returns the file that holds the DDL of the object `name` names, under a
@@ -145,7 +134,7 @@ function M.definition(connection, name)
       return string.format("%%%02X", char:byte())
     end))
   end, name)
-  local directory = MINE .. "/definitions/" .. vim.fn.sha256(connection):sub(1, 12)
+  local directory = SESSION_DIR .. "/definitions/" .. vim.fn.sha256(connection):sub(1, 12)
   pcall(vim.fn.mkdir, directory, "p")
   return directory .. "/" .. table.concat(parts, ".") .. ".sql"
 end
@@ -156,75 +145,46 @@ end
 ---@param path string
 ---@return boolean
 function M.owns(path)
-  return clearing() and vim.startswith(path, M.directory() .. "/")
+  return sessionDirectory == nil and config.values.output_cleanup and vim.startswith(path, M.directory() .. "/")
 end
 
---- Returns `full` ending in `extension`. When `full` already ends in an
---- extension a results file can have, that extension is replaced rather than
---- stacked.
----@param full string
----@param extension string
----@return string
-local function withExtension(full, extension)
-  if EXTENSIONS[vim.fn.fnamemodify(full, ":e")] then
-    return vim.fn.fnamemodify(full, ":r") .. "." .. extension
-  end
-  return full .. "." .. extension
-end
-
---- Returns the path ready for writing, or nil on error or cancelled overwrite.
----@param full string Path and base name for output.
----@param extension string
+--- Returns a results file path, ready for writing, or nil on error or a
+--- declined overwrite. With `chosen`, it is that path, asking before writing
+--- over a file there, with its extension replaced by `extension` when it has
+--- one a results file can have. Without `chosen`, it is the next unused
+--- `name-N.extension` in the output directory.
+---@param bufName string Full path of the sql buffer.
+---@param extension string File extension: csv, tsv, or txt.
+---@param chosen string|nil
 ---@return string|nil
-local function namedFile(full, extension)
-  if vim.startswith(full, ROOT .. "/") then
-    return vim.notify(
-      "db-query: nothing may be written in " .. ROOT .. ", which is cleared up on startup",
-      vim.log.levels.ERROR
-    )
+function M.path(bufName, extension, chosen)
+  if chosen then
+    local fullPath = M.destination(bufName, chosen)
+    if vim.startswith(fullPath, ROOT .. "/") then
+      return vim.notify(
+        "db-query: nothing may be written in " .. ROOT .. ", which is cleared up on startup",
+        vim.log.levels.ERROR
+      )
+    end
+    local stem = EXTENSIONS[vim.fn.fnamemodify(fullPath, ":e")] and vim.fn.fnamemodify(fullPath, ":r") or fullPath
+    local path = stem .. "." .. extension
+    if vim.uv.fs_stat(path) and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
+      return nil
+    end
+    return ready(path, "w") and path or nil
   end
 
-  local path = withExtension(full, extension)
-  if vim.uv.fs_stat(path) and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
-    return nil
-  end
-  return ready(path, "w") and path or nil
-end
-
---- Returns the next available number for `name-N.ext` files in `dir`.
----@param dir string
----@param name string
----@return integer
-local function unused(dir, name)
-  local pattern = "^" .. vim.pesc(name) .. "%-(%d+)%."
+  local dir = M.directory()
+  local name = baseName(bufName)
+  local numbered = "^" .. vim.pesc(name) .. "%-(%d+)%."
   local highest = 0
   for entry in vim.fs.dir(dir) do
-    local number = tonumber(entry:match(pattern))
+    local number = tonumber(entry:match(numbered))
     if number and number > highest then
       highest = number
     end
   end
-  return highest + 1
-end
-
---- Returns an output file path, ready for writing.
----
---- With `chosen`, uses that path (prompting for overwrite if it exists).
---- Without `chosen`, generates a numbered path in the output directory.
----
---- Returns nil on error or cancelled overwrite.
----@param srcName string Full path of the source buffer.
----@param extension string File extension: csv, tsv, or txt.
----@param chosen string|nil
----@return string|nil
-function M.path(srcName, extension, chosen)
-  if chosen then
-    return namedFile(M.destination(srcName, chosen), extension)
-  end
-
-  local dir = M.directory()
-  local name = baseName(srcName)
-  local path = string.format("%s/%s-%d.%s", dir, name, unused(dir, name), extension)
+  local path = string.format("%s/%s-%d.%s", dir, name, highest + 1, extension)
   return ready(path, "w") and path or nil
 end
 
@@ -241,8 +201,8 @@ end
 ---@param key string
 ---@return string
 function M.catalog(key)
-  pcall(vim.fn.mkdir, CATALOG, "p", 448)
-  return CATALOG .. "/" .. vim.fn.sha256(key) .. ".json"
+  pcall(vim.fn.mkdir, CATALOG_DIR, "p", 448)
+  return CATALOG_DIR .. "/" .. vim.fn.sha256(key) .. ".json"
 end
 
 --- Deletes output directories for nvims that have exited, and the partly
@@ -257,13 +217,13 @@ function M.sweep()
       vim.fn.delete(ROOT .. "/" .. name, "rf")
     end
   end
-  if vim.fn.isdirectory(CATALOG) == 0 then
+  if vim.fn.isdirectory(CATALOG_DIR) == 0 then
     return
   end
-  for name in vim.fs.dir(CATALOG) do
+  for name in vim.fs.dir(CATALOG_DIR) do
     local pid = tonumber(name:match("%.json%.(%d+)$"))
     if pid and not alive(pid) then
-      os.remove(CATALOG .. "/" .. name)
+      os.remove(CATALOG_DIR .. "/" .. name)
     end
   end
 end

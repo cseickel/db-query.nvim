@@ -1,7 +1,6 @@
 --[[
 How a query's run status is shown: marked in the sql buffer while it runs and
-after it ends, and colored in the log's status line. `progress.lua` marks a
-query while it runs, and `result.lua` after it ends.
+after it ends, and colored in the log's status line.
 
 Each status has a color, and a finished one an icon and a summary. A query's
 mark is a sign beside its first line, a bar down the gutter beside the rest,
@@ -13,9 +12,6 @@ and an elbow turning under the query to a line of text:
 
 The elbow line runs to where the query's last line ended when the run started,
 or past it when the text is longer.
-
-The log is a markdown file, so its status lines are colored as they are drawn,
-in any window showing a buffer marked `b:db_query_log`.
 ]]
 
 local config = require("db-query.config")
@@ -62,10 +58,14 @@ local INDENT = 3
 local RUNNING_MESSAGE = 40
 local FINISHED_MESSAGE = 20
 
----@param ending dbquery.Status A finished process's status.
+--- How a finished run reads when the client gives no count.
+---@type table<dbquery.Status, string>
+local ENDED = { ok = "finished in", failed = "failed after", cancelled = "cancelled after" }
+
+---@param status dbquery.Status A finished process's status.
 ---@return string
-function M.icon(ending)
-  return config.values.icons[ending]
+function M.icon(status)
+  return config.values.icons[status]
 end
 
 --- What a query is marked with, over rows `first` to `last` (0-based).
@@ -75,7 +75,45 @@ end
 ---@field status dbquery.Status
 ---@field sign string Drawn beside the first row, cut to the two cells a sign holds.
 ---@field text string Drawn on the elbow under the last row.
----@field width integer Cells past the gutter the elbow line reaches at least, from `widthAt`.
+---@field width integer Cells past the gutter the elbow line reaches at least, from `followSpan`.
+
+--- Places an extmark over rows `span` of `buf`, clamped to the buffer, that
+--- follows those rows through edits. Returns its id and the width of the last
+--- row's text, which the elbow under it reaches at least.
+---@param buf integer
+---@param namespace integer
+---@param span [integer, integer] First and last row (0-based).
+---@param id integer|nil The id to place it under, replacing the extmark that has it.
+---@return integer extmark
+---@return integer width
+function M.followSpan(buf, namespace, span, id)
+  local bottom = vim.api.nvim_buf_line_count(buf) - 1
+  local first, last = math.min(span[1], bottom), math.min(span[2], bottom)
+  local lastLine = vim.api.nvim_buf_get_lines(buf, last, last + 1, false)[1] or ""
+  local extmark = vim.api.nvim_buf_set_extmark(buf, namespace, first, 0, {
+    id = id,
+    end_row = last,
+    end_col = #lastLine,
+    invalidate = true,
+  })
+  return extmark, vim.fn.strdisplaywidth(lastLine)
+end
+
+--- Returns the first and last row of the extmark `followSpan` placed, or nil
+--- once it is gone or its text was deleted.
+---@param buf integer
+---@param namespace integer
+---@param extmark integer
+---@return integer|nil first
+---@return integer|nil last
+function M.spanRows(buf, namespace, extmark)
+  local placed = vim.api.nvim_buf_get_extmark_by_id(buf, namespace, extmark, { details = true })
+  local first, details = placed[1], placed[3]
+  if not (first and details) or details.invalid then
+    return nil, nil
+  end
+  return first, math.max(first, details.end_row or first)
+end
 
 --- Draws `mark`'s sign beside its first row.
 ---@param buf integer
@@ -86,36 +124,6 @@ function M.drawSign(buf, namespace, mark)
     sign_text = vim.fn.strcharpart(mark.sign, 0, 2),
     sign_hl_group = HIGHLIGHT[mark.status],
   })
-end
-
---- Returns the text offset (sign + number + fold columns) for `buf`'s window.
----@param buf integer
----@return integer
-local function textColumn(buf)
-  local win = vim.fn.win_findbuf(buf)[1]
-  local info = win and vim.fn.getwininfo(win)[1]
-  return info and info.textoff or 1
-end
-
---- Returns the width an elbow under `row` reaches at least past the gutter,
---- which is the width of the row's text.
----@param buf integer
----@param row integer
----@return integer
-function M.widthAt(buf, row)
-  local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
-  return vim.fn.strdisplaywidth(line)
-end
-
---- Returns `text` padded on both sides to center it in `cells`, with a space
---- on each side when it is as wide or wider.
----@param text string
----@param cells integer
----@return string
-local function centered(text, cells)
-  local spare = math.max(2, cells - vim.fn.strdisplaywidth(text))
-  local left = math.floor(spare / 2)
-  return string.rep(" ", left) .. text .. string.rep(" ", spare - left)
 end
 
 --- Draws the bar beside `mark`'s rows after the first, and the elbow under its
@@ -133,22 +141,29 @@ function M.drawElbow(buf, namespace, mark)
     })
   end
 
-  local gutter = textColumn(buf)
+  local win = vim.fn.win_findbuf(buf)[1]
+  local info = win and vim.fn.getwininfo(win)[1]
+  local gutter = info and info.textoff or 1
   local elbow = "╰" .. string.rep("─", gutter + INDENT - 1)
-  local message = mark.status == "running" and RUNNING_MESSAGE or FINISHED_MESSAGE
-  local text = { TEXT[mark.status], ITALIC }
+
+  local cells = mark.status == "running" and RUNNING_MESSAGE or FINISHED_MESSAGE
+  local spare = math.max(2, cells - vim.fn.strdisplaywidth(mark.text))
+  local left = math.floor(spare / 2)
+  local centeredText = string.rep(" ", left) .. mark.text .. string.rep(" ", spare - left)
+
+  local textHighlight = { TEXT[mark.status], ITALIC }
   local chunks = {
     { elbow, color },
-    { "▏", text },
-    { centered(mark.text, message), text },
+    { "▏", textHighlight },
+    { centeredText, textHighlight },
     -- Drawn along the cell's right edge, where the band ends.
     { "▕", BAND[mark.status] },
   }
-  local drawn = 0
+  local drawnWidth = 0
   for _, chunk in ipairs(chunks) do
-    drawn = drawn + vim.fn.strdisplaywidth(chunk[1])
+    drawnWidth = drawnWidth + vim.fn.strdisplaywidth(chunk[1])
   end
-  local trailing = gutter + mark.width - drawn
+  local trailing = gutter + mark.width - drawnWidth
   if trailing > 0 then
     table.insert(chunks, { string.rep("─", trailing), color })
   end
@@ -157,6 +172,19 @@ function M.drawElbow(buf, namespace, mark)
     virt_lines = { chunks },
     virt_lines_leftcol = true,
   })
+end
+
+--- Returns how the finished `process` ended, such as `2,520 rows in 0.98s`,
+--- with the rows it wrote when the client says.
+---@param process dbquery.Process
+---@return string
+function M.summary(process)
+  local seconds = string.format("%.2fs", process:elapsed())
+  if process.status == "ok" and process.rows then
+    local digits = tostring(process.rows):reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", "")
+    return string.format("%s %s in %s", digits, process.rows == 1 and "row" or "rows", seconds)
+  end
+  return ENDED[process.status] .. " " .. seconds
 end
 
 --- Returns `color` mixed into `background`, `amount` of the way from the
@@ -175,54 +203,26 @@ local function mix(color, background, amount)
   return mixed
 end
 
---- Defines the band and its text for `status` from the status color and the
---- background, or as the plain status color when either is unknown.
----@param status dbquery.Status
-local function defineBand(status)
-  local color = vim.api.nvim_get_hl(0, { name = HIGHLIGHT[status], link = false }).fg
-  local background = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg
-  if color and background then
-    local tint = mix(color, background, TINT)
-    vim.api.nvim_set_hl(0, BAND[status], { fg = color, bg = tint, default = true })
-    vim.api.nvim_set_hl(0, TEXT[status], { fg = mix(color, background, DIM), bg = tint, default = true })
-  else
-    vim.api.nvim_set_hl(0, BAND[status], { link = HIGHLIGHT[status], default = true })
-    vim.api.nvim_set_hl(0, TEXT[status], { link = HIGHLIGHT[status], default = true })
-  end
-end
-
---- How a finished run reads when the client gives no count.
----@type table<dbquery.Status, string>
-local ENDED = { ok = "finished in", failed = "failed after", cancelled = "cancelled after" }
-
---- Returns `count` with a comma between each group of three digits.
----@param count integer
----@return string
-local function grouped(count)
-  local digits = tostring(count)
-  return (digits:reverse():gsub("(%d%d%d)", "%1,"):reverse():gsub("^,", ""))
-end
-
---- Returns how the finished `process` ended, such as `2,520 rows in 0.98s`,
---- with the rows it wrote when the client says.
----@param process dbquery.Process
----@return string
-function M.summary(process)
-  local seconds = string.format("%.2fs", process:elapsed())
-  if process.status == "ok" and process.rows then
-    return string.format("%s %s in %s", grouped(process.rows), process.rows == 1 and "row" or "rows", seconds)
-  end
-  return ENDED[process.status] .. " " .. seconds
-end
-
+--- Defines every group, deriving each band and its text from the status color
+--- and the background, or linking them to the status color when either is
+--- unknown.
 local function defineHighlights()
   vim.api.nvim_set_hl(0, HIGHLIGHT.running, { link = "DiagnosticInfo", default = true })
   vim.api.nvim_set_hl(0, HIGHLIGHT.ok, { link = "DiagnosticOk", default = true })
   vim.api.nvim_set_hl(0, HIGHLIGHT.failed, { link = "DiagnosticError", default = true })
   vim.api.nvim_set_hl(0, HIGHLIGHT.cancelled, { link = "DiagnosticHint", default = true })
   vim.api.nvim_set_hl(0, ITALIC, { italic = true })
+  local background = vim.api.nvim_get_hl(0, { name = "Normal", link = false }).bg
   for status in pairs(BAND) do
-    defineBand(status)
+    local color = vim.api.nvim_get_hl(0, { name = HIGHLIGHT[status], link = false }).fg
+    if color and background then
+      local tint = mix(color, background, TINT)
+      vim.api.nvim_set_hl(0, BAND[status], { fg = color, bg = tint, default = true })
+      vim.api.nvim_set_hl(0, TEXT[status], { fg = mix(color, background, DIM), bg = tint, default = true })
+    else
+      vim.api.nvim_set_hl(0, BAND[status], { link = HIGHLIGHT[status], default = true })
+      vim.api.nvim_set_hl(0, TEXT[status], { link = HIGHLIGHT[status], default = true })
+    end
   end
 end
 
@@ -233,6 +233,8 @@ vim.api.nvim_create_autocmd("ColorScheme", {
   callback = defineHighlights,
 })
 
+-- The log is a markdown file, so its status lines are colored as they are
+-- drawn, in any window showing a buffer marked `b:db_query_log`.
 local NAMESPACE = vim.api.nvim_create_namespace("db_query_log_status")
 
 vim.api.nvim_set_decoration_provider(NAMESPACE, {
@@ -241,11 +243,11 @@ vim.api.nvim_set_decoration_provider(NAMESPACE, {
   end,
   on_line = function(_, _, buf, row)
     local line = vim.api.nvim_buf_get_lines(buf, row, row + 1, false)[1] or ""
-    for ending, icon in pairs(config.values.icons) do
+    for status, icon in pairs(config.values.icons) do
       if icon ~= "" and line:sub(1, #icon) == icon then
         vim.api.nvim_buf_set_extmark(buf, NAMESPACE, row, 0, {
           end_col = #line,
-          hl_group = HIGHLIGHT[ending],
+          hl_group = HIGHLIGHT[status],
           ephemeral = true,
         })
         return

@@ -2,6 +2,7 @@
 Completion items that write an insert's column list and values row.
 ]]
 
+local items = require("db-query.lsp.items")
 local names = require("db-query.lsp.names")
 
 local M = {}
@@ -13,7 +14,7 @@ local SNIPPET = vim.lsp.protocol.InsertTextFormat.Snippet
 --- lower case without its size, so `varchar(20)` is found as `varchar`.
 ---@type table<string, string>
 local DEFAULT_VALUES_BY_TYPE = {}
-for default_value, types in pairs({
+for value, typeNames in pairs({
   ["0"] = [[
     smallint, integer, int, int2, int4, int8, bigint, tinyint, mediumint, hugeint, uhugeint,
     utinyint, usmallint, uinteger, ubigint, varint, bignum, big int, unsigned big int, serial, smallserial, bigserial, serial2,
@@ -33,8 +34,8 @@ for default_value, types in pairs({
   ["current_time"] = "time, timetz, time with time zone, time without time zone",
   ["'{}'"] = "json, jsonb",
 }) do
-  for _, type in ipairs(vim.split(vim.trim(types), "%s*,%s*")) do
-    DEFAULT_VALUES_BY_TYPE[type] = default_value
+  for _, typeName in ipairs(vim.split(vim.trim(typeNames), "%s*,%s*")) do
+    DEFAULT_VALUES_BY_TYPE[typeName] = value
   end
 end
 
@@ -46,13 +47,13 @@ local function escaped(text)
 end
 
 --- Formats a list of columns or values.
----@param items string[]
+---@param list string[]
 ---@return string
-local function listBody(items)
-  if #items < 3 then
-    return table.concat(items, ", ")
+local function listBody(list)
+  if #list < 3 then
+    return table.concat(list, ", ")
   end
-  return "\n\t" .. table.concat(items, ",\n\t") .. "\n"
+  return "\n\t" .. table.concat(list, ",\n\t") .. "\n"
 end
 
 --- Returns the default value for a column in an insert's values row. It uses
@@ -109,46 +110,58 @@ local function quotedNames(dialect, columns)
   end, columns)
 end
 
---- Returns the item that writes the table with its column list and values row:
+--- Returns the columns of `relation` an insert lists: every one the database
+--- does not fill itself, and none it hides.
+---@param relation dbquery.Relation
+---@return dbquery.Column[]
+local function insertable(relation)
+  return vim.iter(relation.columns):filter(function(column)
+    return column.generated == nil and not column.hidden
+  end):totable()
+end
+
+--- Adds the item that writes the table with its column list and values row:
 --- `trades (id, qty) values (DEFAULT, 0)`.
 ---@param state dbquery.Completion
 ---@param relation dbquery.Relation
 ---@param label string The table's name as the completion shows it.
 ---@param quotedName string The table as the completion writes it.
----@return lsp.CompletionItem|nil
 function M.statement(state, relation, label, quotedName)
-  local columns = names.insertable(relation)
+  local columns = insertable(relation)
   if #columns == 0 then
-    return nil
+    return
   end
   local dialect = state.opened.document.dialect
   local newText = escaped(quotedName) .. " (" .. escaped(listBody(quotedNames(dialect, columns))) .. ") values ("
     .. placeholders(dialect, columns) .. ")$0"
-  return {
+  items.append(state, {
     label = label .. " (…) values (…)",
     kind = Kind.Snippet,
     filterText = label,
     insertTextFormat = SNIPPET,
     textEdit = { range = state.range, newText = newText },
     detail = #columns .. " columns",
-  }
+  }, items.GROUP.relation)
 end
 
---- Returns an item for each insertable column not yet listed, and, while the
---- list is empty, an `all columns` item that writes them all.
+--- Adds an item for each insertable column the insert's column list does not
+--- hold yet, and, while the list is empty, an `all columns` item that writes
+--- them all.
 ---@param state dbquery.Completion
----@param relation dbquery.Relation
----@return lsp.CompletionItem|nil all
----@return lsp.CompletionItem[] columns
-function M.columns(state, relation)
-  local dialect = state.opened.document.dialect
-  local listed = state.context.insert and state.context.insert.columns or {}
+---@param insertPosition dbquery.InsertPosition
+function M.columnList(state, insertPosition)
+  local catalog, dialect = state.opened.catalog, state.opened.document.dialect
+  local relation = catalog and names.relation(catalog, dialect, insertPosition.table)
+  if not relation then
+    return
+  end
+  local listed = insertPosition.columns or {}
   local isListed = {}
   for _, name in ipairs(listed) do
     isListed[names.parts(dialect, name)[1].text:lower()] = true
   end
   local columnItems, unlisted = {}, {}
-  for _, column in ipairs(names.insertable(relation)) do
+  for _, column in ipairs(insertable(relation)) do
     if not isListed[column.name:lower()] then
       unlisted[#unlisted + 1] = column
       local quoted = names.quote(dialect, column.name)
@@ -161,31 +174,38 @@ function M.columns(state, relation)
       }
     end
   end
-  if #listed > 0 or #unlisted < 2 then
-    return nil, columnItems
+  if #listed == 0 and #unlisted >= 2 then
+    local unlistedNames = quotedNames(dialect, unlisted)
+    local oneLine = table.concat(unlistedNames, ", ")
+    items.append(state, {
+      label = "all columns",
+      kind = Kind.Snippet,
+      detail = oneLine,
+      filterText = "",
+      insertTextFormat = state.snippets and SNIPPET or nil,
+      textEdit = { range = state.range, newText = state.snippets and escaped(listBody(unlistedNames)) or oneLine },
+    }, items.GROUP.insert)
   end
-  local unlistedNames = quotedNames(dialect, unlisted)
-  return {
-    label = "all columns",
-    kind = Kind.Snippet,
-    detail = table.concat(unlistedNames, ", "),
-    filterText = "",
-    insertTextFormat = SNIPPET,
-    textEdit = { range = state.range, newText = escaped(listBody(unlistedNames)) },
-  }, columnItems
+  for _, item in ipairs(columnItems) do
+    items.append(state, item, items.GROUP.column)
+  end
 end
 
---- Returns the item that fills an empty values row for the listed columns, or
---- nil when the insert has no column list.
+--- Adds the item that fills an empty values row for the listed columns, when
+--- the insert has a column list and the client accepts snippets.
 ---@param state dbquery.Completion
----@param relation dbquery.Relation|nil
----@return lsp.CompletionItem|nil
-function M.values(state, relation)
-  local listed = state.context.insert and state.context.insert.columns
-  if not listed or #listed == 0 then
-    return nil
+---@param insertPosition dbquery.InsertPosition
+function M.valuesRow(state, insertPosition)
+  local catalog, dialect = state.opened.catalog, state.opened.document.dialect
+  local relation = catalog and names.relation(catalog, dialect, insertPosition.table)
+  local listed = insertPosition.columns or {}
+  local text, word = state.opened.document.text, state.context.word
+  local afterWord = text:sub(word.last + 1)
+  local opensRow = text:sub(1, word.first - 1):match("%(%s*$") ~= nil
+  local closesRow = afterWord:match("^%s*%)") ~= nil or afterWord:match("^%s*$") ~= nil
+  if not (state.snippets and insertPosition.position == 1 and opensRow and closesRow and #listed > 0) then
+    return
   end
-  local dialect = state.opened.document.dialect
   ---@type dbquery.Column[]
   local columns = vim.tbl_map(function(name)
     local columnName = names.parts(dialect, name)[1].text
@@ -194,7 +214,7 @@ function M.values(state, relation)
     end)
     return column or { name = columnName, nullable = true, hidden = false }
   end, listed)
-  return {
+  items.append(state, {
     label = "(" .. table.concat(vim.tbl_map(function(column)
       return column.name
     end, columns), ", ") .. ")",
@@ -203,7 +223,7 @@ function M.values(state, relation)
     insertTextFormat = SNIPPET,
     textEdit = { range = state.range, newText = placeholders(dialect, columns) .. "$0" },
     detail = "values for the listed columns",
-  }
+  }, items.GROUP.insert)
 end
 
 return M

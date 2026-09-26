@@ -2,12 +2,12 @@
 A running client process: a query, or a statement whose output comes back into
 lua, such as a connection test.
 
-A Process holds the job, when it started, and how it ended. Interested parties
-subscribe with onFinish(). Every process still running when nvim exits is
-killed, because a detached process does not die with nvim.
+A Process holds the job, when it started, and how it ended. Every process still
+running when nvim exits is killed, because a detached process does not die with
+nvim.
 ]]
 
-local main = require("db-query.mainloop")
+local mainloop = require("db-query.mainloop")
 
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
@@ -57,27 +57,6 @@ function Process.recorded(file)
   return tonumber(text:match("%d+"))
 end
 
----@param self dbquery.Process
-local function forget(self)
-  for index, process in ipairs(live) do
-    if process == self then
-      table.remove(live, index)
-      return
-    end
-  end
-end
-
---- A client killed by a signal exits with code 0, so the signal decides too.
----@param self dbquery.Process
----@param result vim.SystemCompleted
----@return dbquery.Status
-local function outcome(self, result)
-  if result.code == 0 and result.signal == 0 then
-    return "ok"
-  end
-  return self.asked and "cancelled" or "failed"
-end
-
 --- Starts the client in its own process group, so a cancel signal does not
 --- reach nvim, with stdout and stderr captured as text. Returns nil and the
 --- reason when the process cannot start, such as a missing executable.
@@ -102,11 +81,21 @@ function Process.start(spawn)
     timeout = spawn.timeout,
   }, function(result)
     local finished = vim.uv.hrtime()
-    main.run(function()
+    mainloop.run(function()
       self.result = result
       self.finished = finished
-      self.status = outcome(self, result)
-      forget(self)
+      -- A client killed by a signal exits with code 0, so the signal decides too.
+      if result.code == 0 and result.signal == 0 then
+        self.status = "ok"
+      else
+        self.status = self.asked and "cancelled" or "failed"
+      end
+      for index, process in ipairs(live) do
+        if process == self then
+          table.remove(live, index)
+          break
+        end
+      end
       if spawn.command.sessionFile then
         os.remove(spawn.command.sessionFile)
       end

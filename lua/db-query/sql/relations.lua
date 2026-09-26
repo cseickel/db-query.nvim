@@ -1,10 +1,5 @@
 --[[
 The relations a query block can refer to.
-
-- `relations` reads the items of a from, join, using, or write-target clause:
-  tables, functions, subqueries, and parenthesized joins, with their aliases.
-- `ctes` reads the common table expressions a `with` clause defines.
-- `insertTarget` finds the table and column list an insert writes to.
 ]]
 
 local columns = require("db-query.sql.columns")
@@ -60,9 +55,9 @@ end
 ---@return dbquery.ScopeRelation[]
 local function sources(group)
   local clauses, blocks = syntax.clauses(group)
-  local found = M.relations(group, clauses, blocks, 1)
-  vim.list_extend(found, M.ctes(group.items, clauses))
-  return found
+  local relations = M.inBlock(group, clauses, blocks, 1)
+  vim.list_extend(relations, M.ctes(group.items, clauses))
+  return relations
 end
 
 ---@param part dbquery.PatternPart
@@ -112,6 +107,8 @@ local function skipSuffixes(dialect, items, at)
   return at
 end
 
+local fromItems
+
 --- Reads the from item at `group.items[index]`, a table, function, subquery,
 --- or parenthesized join with its alias. Returns the relations that item puts
 --- in scope and the index of the item after it.
@@ -122,19 +119,16 @@ end
 ---@return integer
 local function fromItem(group, index, clause)
   local items, dialect = group.items, group.dialect
-  local found, relation, at = {}, nil, index
+  local relations, relation, at = {}, nil, index
   local item = items[at]
 
   if syntax.isGroup(item) then
     if syntax.startsQuery(item.group) then
       relation = { kind = "subquery", columns = columns.outputs(item.group), sources = sources(item.group) }
     else
-      local inner = item.group.items
-      local clauses, blocks = {}, {}
-      for position = 1, #inner do
-        clauses[position], blocks[position] = "from", 1
-      end
-      vim.list_extend(found, M.relations(item.group, clauses, blocks, 1))
+      vim.list_extend(relations, fromItems(item.group, function()
+        return "from"
+      end))
       relation = { kind = "join" }
     end
     at = at + 1
@@ -173,50 +167,59 @@ local function fromItem(group, index, clause)
   end
 
   if relation.kind ~= "join" or relation.alias then
-    found[#found + 1] = relation
+    relations[#relations + 1] = relation
   end
-  return found, at
+  return relations, at
 end
 
---- Returns the relations named by the items of `group` in union block
---- `block` whose clause names relations.
+--- Returns the relations named by the items of `group` for which `clauseAt`
+--- returns a clause that names relations.
 ---@param group dbquery.Group
----@param clauses dbquery.Clause[]
----@param blocks integer[]
----@param block integer
+---@param clauseAt fun(index: integer): dbquery.Clause|nil
 ---@return dbquery.ScopeRelation[]
-function M.relations(group, clauses, blocks, block)
+fromItems = function(group, clauseAt)
   local items, dialect = group.items, group.dialect
-  local found = {}
-  local state, index = "item", 1
+  local relations = {}
+  local expectingItem, index = true, 1
   while index <= #items do
     local item = items[index]
-    if index > 1 and clauses[index] ~= clauses[index - 1] then
-      state = "item"
+    local clause = clauseAt(index)
+    if index > 1 and clause ~= clauseAt(index - 1) then
+      expectingItem = true
     end
 
-    if blocks[index] ~= block or not TARGETS[clauses[index]] or item.kind == "cursor" then
+    if not TARGETS[clause] or item.kind == "cursor" then
       index = index + 1
-    elseif state == "item" then
+    elseif expectingItem then
       if M.startsFromItem(dialect, item) then
         index = index + 1
       elseif syntax.isGroup(item) or lex.isIdentifier(item) then
-        local relations, after = fromItem(group, index, clauses[index])
-        vim.list_extend(found, relations)
-        state, index = "after", after
+        local named, after = fromItem(group, index, clause)
+        vim.list_extend(relations, named)
+        expectingItem, index = false, after
       else
         index = index + 1
       end
     else
       if item.kind == "," or (item.kind == "word" and dialect.joins[item.lower]) then
-        state = "item"
-      elseif state == "after" and lex.isWord(item, "on") then
-        state = "condition"
+        expectingItem = true
       end
       index = index + 1
     end
   end
-  return found
+  return relations
+end
+
+--- Returns the relations named by the items of `group` in query block `block`.
+---@param group dbquery.Group
+---@param clauses dbquery.Clause[]
+---@param blocks integer[]
+---@param block integer
+---@return dbquery.ScopeRelation[]
+function M.inBlock(group, clauses, blocks, block)
+  return fromItems(group, function(index)
+    return blocks[index] == block and clauses[index] or nil
+  end)
 end
 
 --- Returns the common table expressions defined by the `with` clause of `items`.
@@ -224,12 +227,12 @@ end
 ---@param clauses dbquery.Clause[]
 ---@return dbquery.ScopeRelation[]
 function M.ctes(items, clauses)
-  local found, index = {}, 1
+  local ctes, index = {}, 1
   while index <= #items do
     if clauses[index] == "with" and syntax.isName(items[index]) then
-      local name, at, listed = items[index].text, index + 1, nil
+      local name, at, columnNames = items[index].text, index + 1, nil
       if syntax.isGroup(items[at]) then
-        listed = syntax.listNames(items[at].group)
+        columnNames = syntax.listNames(items[at].group)
         at = at + 1
       end
       if lex.isWord(items[at], "as") then
@@ -242,14 +245,59 @@ function M.ctes(items, clauses)
         end
         if syntax.isGroup(items[at]) then
           local query = items[at].group
-          found[#found + 1] = { kind = "cte", name = name, alias = name, columns = listed or columns.outputs(query), sources = sources(query) }
+          ctes[#ctes + 1] = {
+            kind = "cte",
+            name = name,
+            alias = name,
+            columns = columnNames or columns.outputs(query),
+            sources = sources(query),
+          }
           index = at
         end
       end
     end
     index = index + 1
   end
-  return found
+  return ctes
+end
+
+--- Points each table named like a CTE at that CTE, in `relations` and in the
+--- sources of every subquery and CTE they reach. A CTE's own sources are left
+--- alone where they name the CTE itself, which in a query that is not
+--- recursive means the real table.
+---@param relations dbquery.ScopeRelation[]
+function M.resolveCtes(relations)
+  local ctes, seen = {}, {}
+  local function collect(list)
+    for _, relation in ipairs(list) do
+      if not seen[relation] then
+        seen[relation] = true
+        if relation.kind == "cte" and not ctes[relation.name:lower()] then
+          ctes[relation.name:lower()] = relation
+        end
+        collect(relation.sources or {})
+      end
+    end
+  end
+  collect(relations)
+
+  local resolved = {}
+  local function resolve(list, owner)
+    for _, relation in ipairs(list) do
+      local name = relation.kind == "table" and not relation.name:find(".", 1, true) and relation.name:lower()
+      local cte = name and name ~= owner and ctes[name]
+      if cte then
+        relation.kind = "cte"
+        relation.columns = relation.columns or cte.columns
+        relation.sources = cte.sources
+      end
+      if relation.sources and not resolved[relation.sources] then
+        resolved[relation.sources] = true
+        resolve(relation.sources, relation.kind == "cte" and relation.name:lower() or owner)
+      end
+    end
+  end
+  resolve(relations, nil)
 end
 
 --- Returns the table an insert in `group` writes to, or nil when `group` holds
@@ -262,10 +310,10 @@ function M.insertTarget(group)
     if clauses[index] == "insert_target" and syntax.isName(item) then
       local name, after = syntax.nameAt(group.items, index)
       local target = { table = name }
-      local list = group.items[after]
-      if syntax.isGroup(list) then
-        target.columns = syntax.listNames(list.group)
-        target.columnGroup = list.group
+      local columnList = group.items[after]
+      if syntax.isGroup(columnList) then
+        target.columns = syntax.listNames(columnList.group)
+        target.columnGroup = columnList.group
       end
       return target
     end

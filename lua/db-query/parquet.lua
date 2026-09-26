@@ -1,11 +1,7 @@
 --[[
-BufReadCmd handler for *.parquet files.
-
-Opens a duckdb query against the parquet file instead of showing binary
+Opens a *.parquet file as a duckdb query against it, instead of its binary
 content. The file is registered as a view so sql completion includes its
 columns.
-
-Disabled by default; requires `parquet = true` in setup().
 ]]
 
 local client = require("db-query.client")
@@ -46,8 +42,8 @@ local function open(path, opened)
     if err then
       vim.notify("db-query: " .. err, vim.log.levels.ERROR)
     end
-    -- BufReadCmd refuses opening a window, which the query does, and allows
-    -- the buffer edit `main.run` tests with, so `main.run` would run it here.
+    -- Deferred with vim.schedule: inside BufReadCmd `mainloop.run` sees no
+    -- lock, but nvim refuses to open the output window there.
     return vim.schedule(function()
       opened("duckdb:", byPath)
     end)

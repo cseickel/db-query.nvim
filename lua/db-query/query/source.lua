@@ -1,14 +1,12 @@
 --[[
-Coordinates what runs from a sql buffer.
-
-A Source ties together a Run, Pane, and Progress for one buffer. Each buffer
-runs one process at a time, a query or a connection test, and starting either
-cancels the one before it.
+What runs from a sql buffer: its log, its pane, and the one process it is
+running, a query or a connection test. Starting either cancels the one before
+it.
 ]]
 
 local catalog = require("db-query.catalog")
+local files = require("db-query.query.files")
 local Log = require("db-query.query.log")
-local output = require("db-query.query.files")
 local Pane = require("db-query.query.pane")
 local Progress = require("db-query.query.progress")
 local result = require("db-query.query.result")
@@ -40,7 +38,8 @@ function Source.of(buf)
     return existing
   end
 
-  local self = setmetatable({ buf = buf, pane = Pane.new(), files = {} }, Source)
+  local self = setmetatable({ buf = buf, files = {} }, Source)
+  self.pane = Pane.new(self)
   sources[buf] = self
   vim.api.nvim_create_autocmd("BufWipeout", {
     buffer = buf,
@@ -83,15 +82,21 @@ function Source:cancel()
   end
 end
 
+--- Cancels the running process and removes its progress mark at once.
+---@param self dbquery.Source
+local function stopProcess(self)
+  self:cancel()
+  if self.progress then
+    self.progress:stop()
+  end
+end
+
 --- Cancels the process running before `process` and shows `process` at `place`.
 ---@param self dbquery.Source
 ---@param process dbquery.Process
 ---@param place dbquery.Place
 local function replace(self, process, place)
-  self:cancel()
-  if self.progress then
-    self.progress:stop()
-  end
+  stopProcess(self)
   self.process = process
   self.progress = Progress.attach(process, place)
 end
@@ -100,41 +105,38 @@ end
 --- if it was closed. "toggle" asks for whichever is not on screen.
 ---@param view dbquery.OutputView
 function Source:output(view)
-  if not self.run then
+  local run = self.run
+  if not run then
     return vim.notify("db-query: nothing has run in this buffer yet", vim.log.levels.WARN)
   end
 
   if view == "toggle" then
-    view = self.pane:showing() == self.run.log.path and "result" or "log"
+    view = self.pane.path == run.log.path and "result" or "log"
   end
   if view == "log" then
-    return self.pane:show(self.run, self.run.log.path, { tail = true })
+    return self.pane:show(run, run.log.path, { tail = true })
   end
 
-  if not (self.run.process.status == "ok" and self.run.path) then
+  if not (run.process.status == "ok" and run.path) then
     return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
   end
-  self.pane:show(self.run, self.run.path)
+  self.pane:show(run, run.path)
 end
 
---- Cleans up when the source buffer is wiped. Cancels any running process,
---- stops the progress, and deletes the files this buffer's queries wrote.
---- Leaves existing output windows open.
----
---- Deleting here rather than when an output window closes is what lets you
---- move between the log and the result as often as you like.
+--- Cancels any running process and deletes the files this buffer's queries
+--- wrote, leaving output windows open. Deleting here, when the sql buffer is
+--- wiped, rather than when an output window closes, is what lets you move
+--- between the log and the result as often as you like.
 function Source:close()
-  self:cancel()
-  if self.progress then
-    self.progress:stop()
-  end
+  stopProcess(self)
   self.pane:stop()
+  self.run = nil
 
   if self.log then
     os.remove(self.log.path)
   end
   for _, path in ipairs(self.files) do
-    if output.owns(path) then
+    if files.owns(path) then
       os.remove(path)
     end
   end

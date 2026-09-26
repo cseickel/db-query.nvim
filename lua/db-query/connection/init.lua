@@ -16,17 +16,16 @@ replace.
 
 local catalog = require("db-query.catalog")
 local client = require("db-query.client")
-local config = require("db-query.config")
 local connections = require("db-query.connection.list")
 local dadbod = require("db-query.connection.dadbod")
-local main = require("db-query.mainloop")
+local mainloop = require("db-query.mainloop")
 local modeline = require("db-query.connection.modeline")
 local Source = require("db-query.query.source")
 local sql = require("db-query.sql")
 
 local M = {}
 
-local TIMEOUT = 10000
+local TEST_TIMEOUT_MS = 10000
 
 --- The `g:db` this plugin set, which is what `g:db_name` names. Setting `g:db`
 --- by hand leaves the old name behind, and a winbar naming the wrong database
@@ -34,56 +33,53 @@ local TIMEOUT = 10000
 ---@type string|nil
 local namedUrl = nil
 
----@class dbquery.Attempt
----@field connection dbquery.Connection
-
---- The test pending for each buffer. Only the latest counts, so a slow test
---- cannot overwrite a connection chosen after it began.
----@type table<integer, dbquery.Attempt>
+--- The connection being tested for each buffer. Only the latest counts, so a
+--- slow test cannot overwrite a connection chosen after it began.
+---@type table<integer, dbquery.Connection>
 local attempts = {}
-
---- Returns the lines the progress marks while `buf` tests a connection: the
---- modeline, or else the statement at the cursor, or else the cursor's line.
----@param buf integer
----@param dialect dbquery.Dialect
----@return [integer, integer]
-local function testedAt(buf, dialect)
-  local line = modeline.find(buf)
-  if line then
-    return { line.row, line.row }
-  end
-  local win = vim.fn.win_findbuf(buf)[1]
-  local row = win and vim.api.nvim_win_get_cursor(win)[1] - 1 or 0
-  return sql.statementAt(dialect, vim.api.nvim_buf_get_lines(buf, 0, -1, false), row) or { row, row }
-end
 
 --- Runs `select 1` against `connection` without blocking, shown in `buf` by
 --- a progress mark that can cancel it, and calls `done` on the main loop with
 --- whether it answered and, when it did not, why. A server that says nothing
---- within TIMEOUT fails, and so does a cancelled test.
+--- within TEST_TIMEOUT_MS fails, and so does a cancelled test.
 ---@param buf integer
 ---@param connection dbquery.Connection
 ---@param done fun(answered: boolean, reason: string|nil)
 local function test(buf, connection, done)
   local resolved = dadbod.resolve(connection.url)
-  if resolved and client.embedded(resolved) then
+  if not resolved then
+    return done(false, "its url is empty")
+  end
+  if client.embedded(resolved) then
     return done(true)
   end
-  local dialect = resolved and client.dialect(resolved)
-  if not (resolved and dialect) then
+  -- An unknown scheme has already been reported by `client.dialect`.
+  local dialect = client.dialect(resolved)
+  if not dialect then
     return done(false)
   end
   local process, err = client.value({
     connection = resolved,
     statement = "select 1",
-    timeout = TIMEOUT,
+    timeout = TEST_TIMEOUT_MS,
     readonly = false,
   })
   if not process then
     return done(false, err)
   end
 
-  Source.of(buf):test(process, testedAt(buf, dialect), connection.name)
+  -- The progress marks the modeline, or else the statement at the cursor, or
+  -- else the cursor's line.
+  local line = modeline.find(buf)
+  local span
+  if line then
+    span = { line.row, line.row }
+  else
+    local win = vim.fn.win_findbuf(buf)[1]
+    local row = win and vim.api.nvim_win_get_cursor(win)[1] - 1 or 0
+    span = sql.statementAt(dialect, vim.api.nvim_buf_get_lines(buf, 0, -1, false), row) or { row, row }
+  end
+  Source.of(buf):test(process, span, connection.name)
   process:onFinish(function()
     done(process.status == "ok", process:reason())
   end)
@@ -112,11 +108,10 @@ end
 ---@param connection dbquery.Connection
 ---@param done fun(answered: boolean)|nil
 local function assign(buf, connection, done)
-  local attempt = { connection = connection }
-  attempts[buf] = attempt
+  attempts[buf] = connection
 
   test(buf, connection, function(answered, reason)
-    if attempts[buf] ~= attempt then
+    if attempts[buf] ~= connection then
       return
     end
     attempts[buf] = nil
@@ -149,7 +144,7 @@ end
 ---@param buf integer
 ---@return string|nil
 function M.testing(buf)
-  return attempts[buf] and attempts[buf].connection.name
+  return attempts[buf] and attempts[buf].name
 end
 
 --- Connects `buf` to the connection its modeline names, testing it first unless
@@ -173,7 +168,7 @@ function M.follow(buf)
     return false
   end
 
-  local connection, err = connections.named(config.values.connections, line.connection)
+  local connection, err = connections.named(line.connection)
   if not connection then
     abandon(buf)
     unreachable(buf, line.connection)
@@ -181,7 +176,7 @@ function M.follow(buf)
     return true
   end
 
-  local pending = attempts[buf] and attempts[buf].connection
+  local pending = attempts[buf]
   if pending and pending.name == connection.name and pending.url == connection.url then
     return true
   end
@@ -217,13 +212,10 @@ end
 --- the modeline after a confirm, and cancelling the confirm leaves both the
 --- modeline and the connection alone. Otherwise the choice also goes in `g:db`,
 --- so later sql buffers start on it without asking.
----
---- `buf` is taken rather than read at the end, because the picker may open long
---- after the query was asked for and the user is free to move in the meantime.
----@param buf integer|nil Buffer to connect (default: the current one).
+---@param buf integer
 ---@param chosen fun(connection: dbquery.Connection)|nil
 function M.pick(buf, chosen)
-  local list, err = connections.list(config.values.connections)
+  local list, err = connections.list()
   if err then
     return vim.notify("db-query: " .. err, vim.log.levels.ERROR)
   end
@@ -231,20 +223,19 @@ function M.pick(buf, chosen)
     return vim.notify("db-query: no connections configured", vim.log.levels.WARN)
   end
 
-  buf = buf or vim.api.nvim_get_current_buf()
   vim.ui.select(list, {
     prompt = "Database",
     format_item = function(connection)
       return connection.name
     end,
-  }, main.wrap(function(choice)
+  }, mainloop.wrap(function(choice)
     if not (choice and vim.api.nvim_buf_is_loaded(buf)) then
       return
     end
 
     local line = modeline.find(buf)
     local pinned = line and line.connection or nil
-    if line and pinned and pinned ~= choice.name then
+    if pinned and pinned ~= choice.name then
       local question = string.format(
         "The modeline connects this file to %s. Replace it with %s?",
         pinned,

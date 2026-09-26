@@ -1,37 +1,33 @@
 --[[
-Output window management.
+The split window showing a sql buffer's query output.
 
-A pane belongs to a source buffer and shows query output in a split window.
-The client writes to a file and nvim reads that file. The log is shown while
-the query runs, reloaded on a timer, and gives way to the rows when they arrive.
-
-Output goes to a window already showing output, preferring this sql buffer's own,
-and a new split opens only when the tabpage has none. The log and the rows
-stay in separate windows once you put them there.
-
-Output files open as ordinary listed buffers, so leaving one on screen keeps
-it. Deleting them is `Source:close`'s job, since the run that wrote a file
-outlives the window that showed it.
+The log is shown while the query runs, reloaded on a timer, and gives way to
+the rows when they arrive. Output goes to a window already showing output,
+preferring this sql buffer's own, and a new split opens only when the tabpage
+has none. The log and the rows stay in separate windows once you put them
+there. Output files open as ordinary listed buffers, so leaving one on screen
+keeps it.
 ]]
 
-local main = require("db-query.mainloop")
+local mainloop = require("db-query.mainloop")
 
 ---@class dbquery.Pane
+---@field source dbquery.Source Whose `run` is the one the pane follows.
 ---@field path string|nil The file last put on screen.
----@field run dbquery.Run|nil
----@field timer uv.uv_timer_t|nil
+---@field stopRefresh fun()|nil Stops reloading the log, nil while nothing reloads it.
 local Pane = {}
 Pane.__index = Pane
 
-local REFRESH = 500
+local REFRESH_MS = 500
 
 --- The sql buffer each output buffer was shown for.
 ---@type table<integer, integer>
 local owners = {}
 
+---@param source dbquery.Source
 ---@return dbquery.Pane
-function Pane.new()
-  return setmetatable({}, Pane)
+function Pane.new(source)
+  return setmetatable({ source = source }, Pane)
 end
 
 --- Returns the sql buffer that `buf` was shown as output for, or nil when
@@ -65,76 +61,23 @@ end
 --- first match wins: a window already showing `buf`, one showing the same kind
 --- of output (log or rows) from the same sql buffer, one showing any output
 --- from the same sql buffer, and one showing any sql buffer's output. Returns
---- nil when none matches, so the caller opens a split.
+--- nil when none matches.
 ---@param tab integer
 ---@param buf integer
 ---@param run dbquery.Run
 ---@return integer|nil
 local function targetOf(tab, buf, run)
-  local src = run.ctx.buf
+  local sqlBuf = run.ctx.buf
   local logBuf = vim.fn.bufadd(run.log.path)
-  return findWin(tab, function(b)
-    return b == buf
-  end) or findWin(tab, function(b)
-    return owners[b] == src and (b == logBuf) == (buf == logBuf)
-  end) or findWin(tab, function(b)
-    return owners[b] == src
-  end) or findWin(tab, function(b)
-    return owners[b] ~= nil
+  return findWin(tab, function(shown)
+    return shown == buf
+  end) or findWin(tab, function(shown)
+    return owners[shown] == sqlBuf and (shown == logBuf) == (buf == logBuf)
+  end) or findWin(tab, function(shown)
+    return owners[shown] == sqlBuf
+  end) or findWin(tab, function(shown)
+    return owners[shown] ~= nil
   end)
-end
-
---- Returns the window in `tab` to split from: the tab's current window when it
---- shows `srcBuf`, else another showing `srcBuf`, else the first split.
----@param tab integer
----@param srcBuf integer
----@return integer
-local function parentOf(tab, srcBuf)
-  local current = vim.api.nvim_tabpage_get_win(tab)
-  if isSplit(current) and vim.api.nvim_win_get_buf(current) == srcBuf then
-    return current
-  end
-  local showing = findWin(tab, function(b)
-    return b == srcBuf
-  end) or findWin(tab, function()
-    return true
-  end)
-  return assert(showing, "a tabpage always has a split window")
-end
-
---- Records `buf` as output of `srcBuf`, forgetting it when the buffer is wiped.
----@param buf integer
----@param srcBuf integer
-local function own(buf, srcBuf)
-  if owners[buf] == nil then
-    vim.api.nvim_create_autocmd("BufWipeout", {
-      buffer = buf,
-      once = true,
-      callback = function()
-        owners[buf] = nil
-      end,
-    })
-  end
-  owners[buf] = srcBuf
-end
-
---- Reloads `buf` from disk, keeping cursors that were at EOF at EOF.
----@param buf integer
-local function reread(buf)
-  local count = vim.api.nvim_buf_line_count(buf)
-  local following = {}
-  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
-    following[win] = vim.api.nvim_win_get_cursor(win)[1] == count
-  end
-
-  vim.cmd("checktime " .. buf)
-
-  local bottom = vim.api.nvim_buf_line_count(buf)
-  for win, follows in pairs(following) do
-    if follows and vim.api.nvim_win_is_valid(win) then
-      vim.api.nvim_win_set_cursor(win, { bottom, 0 })
-    end
-  end
 end
 
 ---@class dbquery.ShowOpts
@@ -143,9 +86,6 @@ end
 
 --- Opens one of `run`'s files in an output window of the tabpage, opening a
 --- split below the sql buffer when there is none.
----
---- For previously-shown paths, runs `:edit!` to reload (needed for buftype
---- buffers like csv-table, where checktime is a no-op).
 ---@param run dbquery.Run
 ---@param path string
 ---@param opts? dbquery.ShowOpts
@@ -155,15 +95,38 @@ function Pane:show(run, path, opts)
     or vim.api.nvim_get_current_tabpage()
   local buf = vim.fn.bufadd(path)
   local shownBefore = vim.api.nvim_buf_is_loaded(buf)
+  local sqlBuf = run.ctx.buf
 
   local win = targetOf(tab, buf, run)
   if win then
     vim.api.nvim_win_set_buf(win, buf)
   else
-    win = vim.api.nvim_open_win(buf, false, { split = "below", win = parentOf(tab, run.ctx.buf) })
+    -- Split from the tab's current window when it shows the sql buffer, else
+    -- from another showing it, else from the first split.
+    local parent = vim.api.nvim_tabpage_get_win(tab)
+    if not (isSplit(parent) and vim.api.nvim_win_get_buf(parent) == sqlBuf) then
+      parent = assert(findWin(tab, function(shown)
+        return shown == sqlBuf
+      end) or findWin(tab, function()
+        return true
+      end), "a tabpage always has a split window")
+    end
+    win = vim.api.nvim_open_win(buf, false, { split = "below", win = parent })
   end
-  own(buf, run.ctx.buf)
 
+  if owners[buf] == nil then
+    vim.api.nvim_create_autocmd("BufWipeout", {
+      buffer = buf,
+      once = true,
+      callback = function()
+        owners[buf] = nil
+      end,
+    })
+  end
+  owners[buf] = sqlBuf
+
+  -- Reloads a file shown before with `:edit!`, because `checktime` does nothing
+  -- in a buffer with a `buftype`, such as csv-table's.
   if opts.tail and shownBefore then
     vim.api.nvim_win_call(win, function()
       vim.cmd("edit!")
@@ -177,31 +140,18 @@ function Pane:show(run, path, opts)
   vim.bo[buf].autoread = true
   vim.bo[buf].buflisted = true
   vim.b[buf].db = run.ctx.url
-  vim.b[buf].db_name = run.ctx.name
+  vim.b[buf].db_name = run.ctx.connectionName
   vim.b[buf].db_query_log = path == run.log.path
 
   self.path = path
 end
 
---- Returns the file last put on screen, or nil before the first query.
----@return string|nil
-function Pane:showing()
-  return self.path
-end
-
---- Stops the reload timer.
-function Pane:unfollow()
-  if self.timer then
-    self.timer:stop()
-    self.timer:close()
-    self.timer = nil
-  end
-end
-
---- Disconnects from the current run without affecting the window contents.
+--- Stops reloading the log, leaving the window as it is.
 function Pane:stop()
-  self:unfollow()
-  self.run = nil
+  if self.stopRefresh then
+    self.stopRefresh()
+    self.stopRefresh = nil
+  end
 end
 
 --- Follows `run` in the current tabpage, ending on its rows or on its log.
@@ -209,7 +159,7 @@ end
 --- Rows already on screen are left there while the query runs, so a rerun does
 --- not take away what you were reading. The spinner in the sql buffer, and in
 --- the output window's winbar, is what says a query is under way. Otherwise the
---- log opens straight away and reloads every REFRESH ms, so a long query fills
+--- log opens straight away and reloads every REFRESH_MS, so a long query fills
 --- in as it goes.
 ---
 --- The output ends on the rows when the query returned any, and on the log
@@ -218,31 +168,40 @@ end
 ---@param run dbquery.Run
 function Pane:display(run)
   self:stop()
-  self.run = run
 
   local tab = vim.api.nvim_get_current_tabpage()
   local logBuf = vim.fn.bufadd(run.log.path)
-  local rowsHeld = findWin(tab, function(b)
-    return owners[b] == run.ctx.buf and b ~= logBuf
+  local rowsHeld = findWin(tab, function(shown)
+    return owners[shown] == run.ctx.buf and shown ~= logBuf
   end)
   if not rowsHeld then
     self:show(run, run.log.path, { tail = true, tab = tab })
   end
 
-  local function refresh()
-    if self.run == run and vim.api.nvim_buf_is_loaded(logBuf) then
-      reread(logBuf)
-    end
-  end
-
-  self.timer = vim.uv.new_timer()
-  self.timer:start(REFRESH, REFRESH, main.frame(refresh))
-
-  run.process:onFinish(function()
-    if self.run ~= run then
+  self.stopRefresh = mainloop.every(REFRESH_MS, function()
+    if self.source.run ~= run or not vim.api.nvim_buf_is_loaded(logBuf) then
       return
     end
-    self:unfollow()
+    -- Cursors at the end of the log stay at the end as it grows.
+    local lineCount = vim.api.nvim_buf_line_count(logBuf)
+    local following = {}
+    for _, win in ipairs(vim.fn.win_findbuf(logBuf)) do
+      following[win] = vim.api.nvim_win_get_cursor(win)[1] == lineCount
+    end
+    vim.cmd("checktime " .. logBuf)
+    local bottom = vim.api.nvim_buf_line_count(logBuf)
+    for win, follows in pairs(following) do
+      if follows and vim.api.nvim_win_is_valid(win) then
+        vim.api.nvim_win_set_cursor(win, { bottom, 0 })
+      end
+    end
+  end)
+
+  run.process:onFinish(function()
+    if self.source.run ~= run then
+      return
+    end
+    self:stop()
     if run.process.status == "ok" and run.path then
       self:show(run, run.path, { tab = tab })
     else

@@ -6,10 +6,6 @@ while it evaluates a statusline, an `<expr>` mapping, or a completion function
 (E565). Code entered from outside the plugin, such as a process exiting, a
 timer, a `vim.ui` choice, or a public function, goes through this module, and
 the code behind it calls vim directly.
-
-- `run` and `wrap` change the editor as soon as nvim allows it.
-- `capture` reads the editor at once and changes it as soon as nvim allows it.
-- `frame` is for a timer, whose next tick replaces one nvim refused.
 ]]
 
 local M = {}
@@ -17,10 +13,10 @@ local M = {}
 --- Milliseconds between checks while nvim still refuses changes. A retry
 --- through `vim.schedule` would run in the same pass over nvim's event queue,
 --- and repeat forever without nvim reading the key that lifts the lock.
-local RETRY = 10
+local RETRY_MS = 10
 
 ---@type integer|nil
-local probe = nil
+local probeBuf = nil
 
 --- Returns true when nvim refuses editor changes here. No api reports
 --- textlock, so an edit of an empty hidden buffer tests for it.
@@ -29,19 +25,19 @@ local function refused()
   if vim.in_fast_event() then
     return true
   end
-  if not (probe and vim.api.nvim_buf_is_valid(probe)) then
+  if not (probeBuf and vim.api.nvim_buf_is_valid(probeBuf)) then
     local created = pcall(function()
       local buf = vim.api.nvim_create_buf(false, true)
       vim.bo[buf].undolevels = -1
       -- `nvim -M` starts every buffer unmodifiable, which is not a lock.
       vim.bo[buf].modifiable = true
-      probe = buf
+      probeBuf = buf
     end)
     if not created then
       return true
     end
   end
-  return not pcall(vim.api.nvim_buf_set_lines, probe, 0, -1, false, {})
+  return not pcall(vim.api.nvim_buf_set_lines, probeBuf, 0, -1, false, {})
 end
 
 ---@param fn function
@@ -52,7 +48,7 @@ local function retry(fn, args)
       return retry(fn, args)
     end
     fn(vim.F.unpack_len(args))
-  end, RETRY)
+  end, RETRY_MS)
 end
 
 --- Calls `fn(...)` now, or, when nvim refuses editor changes here, as soon as
@@ -99,24 +95,32 @@ function M.capture(read, act)
   M.run(act, vim.F.unpack_len(values))
 end
 
---- Returns `fn` as a callback for a repeating timer. A tick that finds nvim
---- refusing changes is dropped, and so is one that arrives while the last is
---- still waiting to run.
+--- Calls `fn` every `ms` milliseconds until the returned function is called.
+--- A tick that finds nvim refusing changes is dropped, and so is one that
+--- arrives while the last is still waiting to run.
+---@param ms integer
 ---@param fn fun()
----@return fun()
-function M.frame(fn)
+---@return fun() stop
+function M.every(ms, fn)
+  local timer = assert(vim.uv.new_timer())
   local pending = false
-  return function()
+  timer:start(ms, ms, function()
     if pending then
       return
     end
     pending = true
     vim.schedule(function()
       pending = false
-      if not refused() then
+      if not timer:is_closing() and not refused() then
         fn()
       end
     end)
+  end)
+  return function()
+    if not timer:is_closing() then
+      timer:stop()
+      timer:close()
+    end
   end
 end
 

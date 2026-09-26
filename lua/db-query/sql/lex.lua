@@ -36,13 +36,14 @@ local M = {}
 ---@field lower string
 ---@field open boolean The text ends inside this string, quoted identifier, dollar quote, comment, or client command. False for every other token.
 ---@field reserved boolean A word the dialect never reads as an alias. False for every other token.
+---@field group dbquery.Group|nil The nested group, on a token of kind "group".
 
 local BACKSLASH, NEWLINE, SINGLE = "\\", "\n", "'"
 local OPERATOR = "[%+%-%*/<>=~!@#%%%^&|`%?]"
 local PUNCTUATION = "[%(%)%[%],;%.]"
 
 --- Token kinds that end where a client-set delimiter starts, as in mysql's `end//`.
-local UNQUOTED = { word = true, number = true, param = true, operator = true }
+local ENDS_AT_DELIMITER = { word = true, number = true, param = true, operator = true }
 
 --- Returns the `$tag$` of a dollar quote opened at `index`, or nil when no
 --- dollar quote opens there.
@@ -51,20 +52,6 @@ local UNQUOTED = { word = true, number = true, param = true, operator = true }
 ---@return string|nil
 function M.dollarTag(text, index)
   return text:match("^%$[%a_]?[%w_]*%$", index)
-end
-
----@param patterns string[]
----@param text string
----@param index integer
----@return string|nil
-local function matching(patterns, text, index)
-  for _, pattern in ipairs(patterns) do
-    local found = text:match(pattern, index)
-    if found then
-      return found
-    end
-  end
-  return nil
 end
 
 --- Returns every token in `text`, comments included.
@@ -76,30 +63,18 @@ function M.tokens(dialect, text)
   local tokens, index, size = {}, 1, #text
   local delimiter, lineStart = ";", true
 
-  local function add(kind, first, last, open)
-    local raw = text:sub(first, last)
-    local lower = raw:lower()
-    tokens[#tokens + 1] = {
-      kind = kind,
-      first = first,
-      last = last,
-      text = raw,
-      lower = lower,
-      open = open == true,
-      reserved = kind == "word" and dialect.reserved[lower] == true,
-    }
-    lineStart = raw:sub(-1) == NEWLINE
-  end
-
+  --- Returns the text the first of `patterns` matches at `at`, or nil.
+  ---@param patterns string[]
   ---@param at integer
-  ---@return boolean
-  local function lineComment(at)
-    for _, pattern in ipairs(rules.lineComments) do
-      if text:find(pattern, at) then
-        return true
+  ---@return string|nil
+  local function matchAny(patterns, at)
+    for _, pattern in ipairs(patterns) do
+      local matched = text:match(pattern, at)
+      if matched then
+        return matched
       end
     end
-    return false
+    return nil
   end
 
   --- Returns the index of the `quote` that closes the run of text starting at
@@ -127,7 +102,8 @@ function M.tokens(dialect, text)
   end
 
   --- Returns the kind, last byte, and open flag of the token starting at
-  --- `index`, which is not whitespace.
+  --- `index`, which is not whitespace. Reading a delimiter command changes
+  --- `delimiter` for the tokens after it.
   ---@param char string The character at `index`.
   ---@return dbquery.TokenKind kind
   ---@return integer last
@@ -138,7 +114,7 @@ function M.tokens(dialect, text)
     if delimiter ~= ";" and text:sub(index, index + #delimiter - 1) == delimiter then
       return ";", index + #delimiter - 1, false
     end
-    if lineComment(index) then
+    if matchAny(rules.lineComments, index) then
       local last = text:find(NEWLINE, index, true) or size
       return "comment", last, text:sub(last, last) ~= NEWLINE
     end
@@ -161,18 +137,23 @@ function M.tokens(dialect, text)
       end
       return "comment", at - 1, depth > 0
     end
-    local escaped = rules.escapeStrings and char:lower() == "e" and text:sub(index + 1, index + 1) == SINGLE
-    if rules.strings[char] ~= nil or escaped then
-      local stop = closing(escaped and SINGLE or char, escaped and index + 2 or index + 1, escaped or rules.strings[char], false)
-      return "string", stop or size, stop == nil
+    local isEscapeString = rules.escapeStrings and char:lower() == "e" and text:sub(index + 1, index + 1) == SINGLE
+    if rules.strings[char] ~= nil or isEscapeString then
+      local closeAt = closing(
+        isEscapeString and SINGLE or char,
+        isEscapeString and index + 2 or index + 1,
+        isEscapeString or rules.strings[char],
+        false
+      )
+      return "string", closeAt or size, closeAt == nil
     end
     if rules.identifiers[char] then
-      local stop = closing(rules.identifiers[char], index + 1, false, true)
+      local closeAt = closing(rules.identifiers[char], index + 1, false, true)
       -- An identifier still being typed ends at whitespace rather than
       -- swallowing the rest of the statement.
-      return "quoted", stop or select(2, text:find("^[^%s]*", index + 1)), stop == nil
+      return "quoted", closeAt or select(2, text:find("^[^%s]*", index + 1)), closeAt == nil
     end
-    local parameter = matching(rules.parameters, text, index)
+    local parameter = matchAny(rules.parameters, index)
     if parameter then
       return "param", index + #parameter - 1, false
     end
@@ -200,7 +181,7 @@ function M.tokens(dialect, text)
     if char:match(OPERATOR) then
       local last = select(2, text:find("^" .. OPERATOR .. "*", index + 1))
       for at = index + 1, last do
-        if lineComment(at) or text:sub(at, at + 1) == "/*" then
+        if matchAny(rules.lineComments, at) or text:sub(at, at + 1) == "/*" then
           return "operator", at - 1, false
         end
       end
@@ -216,11 +197,22 @@ function M.tokens(dialect, text)
       index = index + 1
     else
       local kind, last, open = scan(char)
-      if UNQUOTED[kind] and delimiter ~= ";" then
-        local found = text:sub(index, last):find(delimiter, 2, true)
-        last = found and index + found - 2 or last
+      if ENDS_AT_DELIMITER[kind] and delimiter ~= ";" then
+        local delimiterAt = text:sub(index, last):find(delimiter, 2, true)
+        last = delimiterAt and index + delimiterAt - 2 or last
       end
-      add(kind, index, last, open)
+      local raw = text:sub(index, last)
+      local lower = raw:lower()
+      tokens[#tokens + 1] = {
+        kind = kind,
+        first = index,
+        last = last,
+        text = raw,
+        lower = lower,
+        open = open == true,
+        reserved = kind == "word" and dialect.reserved[lower] == true,
+      }
+      lineStart = raw:sub(-1) == NEWLINE
       index = last + 1
     end
   end

@@ -1,7 +1,5 @@
 --[[
 Configuration values and defaults.
-
-Other modules read config.values directly.
 ]]
 
 local M = {}
