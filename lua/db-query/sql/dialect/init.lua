@@ -68,6 +68,12 @@ local M = {}
 --- A key a dialect leaves out offers nothing there.
 ---@alias dbquery.Keywords table<string, table<string, true>>
 
+--- The values an insert completion writes where the dialect's sql differs.
+---@class dbquery.InsertValues
+---@field default boolean `default` may be written in a values row for a column's default.
+---@field uuid string|nil The call that returns a new uuid.
+---@field array string|nil An empty array, nil where the dialect has no arrays.
+
 ---@class dbquery.Dialect
 ---@field name string
 ---@field folds "lower"|"none" How the server reads an unquoted name: folded to lower case, or matched in any case.
@@ -84,10 +90,12 @@ local M = {}
 ---@field callable table<string, true> Reserved words that name a function when `(` follows.
 ---@field fromSuffixes dbquery.PatternPart[][] What may follow a table in from, such as `tablesample system (10)`.
 ---@field blocks string[][] Words that open a body holding `;`, which closes at its `end`.
+---@field inserts dbquery.InsertValues
 
 ---@class dbquery.DialectChanges
 ---@field name string
 ---@field folds "lower"|"none"|nil
+---@field inserts dbquery.InsertValues|nil Replaces the base dialect's.
 ---@field signatures table<string, dbquery.GrammarSignature>|nil Replaces the base dialect's, since a dialect may lack a form its base has.
 ---@field keywords dbquery.Keywords|nil Replaces the base dialect's, since a dialect may lack a word its base has.
 ---@field lex table|nil Rules of `dbquery.LexRules`, each replacing the base dialect's.
@@ -156,6 +164,7 @@ function M.derive(base, changes)
     callable = union(base.callable, changes.callable),
     fromSuffixes = vim.list_extend(vim.list_extend({}, base.fromSuffixes), changes.fromSuffixes or {}),
     blocks = vim.list_extend(vim.list_extend({}, base.blocks), changes.blocks or {}),
+    inserts = changes.inserts or base.inserts,
   }
 end
 

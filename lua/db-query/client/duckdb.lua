@@ -132,6 +132,21 @@ local function withLabels(request, types, done)
   end)
 end
 
+--- Returns the labels of each enum in `types`, keyed by its database and name,
+--- which is how a column of that enum names its type.
+---@param types dbquery.Type[]
+---@return table<string, string[]>
+local function enumLabels(types)
+  local found = {}
+  for _, type in ipairs(types) do
+    local key = type.database .. "." .. type.name
+    if type.labels and not found[key] then
+      found[key] = type.labels
+    end
+  end
+  return found
+end
+
 ---@param request dbquery.CatalogRequest
 ---@param done fun(catalog: dbquery.Catalog|nil, err: string|nil)
 local function catalog(request, done)
@@ -148,6 +163,7 @@ local function catalog(request, done)
       if not types then
         return done(nil, labelErr)
       end
+      local enums = enumLabels(types)
       done({
         searchPath = searchPath(found.searchPath[1]),
         relations = rows.relations(found.relations, function(row)
@@ -167,7 +183,7 @@ local function catalog(request, done)
             default = not row.generated and row.default or nil,
             generated = row.generated and "virtual" or nil,
             hidden = false,
-            labels = rows.labels(row.type),
+            labels = rows.labels(row.type) or enums[row.database .. "." .. row.type],
             comment = row.columnComment,
           }
         end),

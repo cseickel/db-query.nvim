@@ -69,4 +69,5 @@ return dialect.derive(standard, {
     { "with", "ordinality" },
   },
   blocks = { { "begin", "atomic" } },
+  inserts = { default = true, uuid = "gen_random_uuid()", array = "'{}'" },
 })

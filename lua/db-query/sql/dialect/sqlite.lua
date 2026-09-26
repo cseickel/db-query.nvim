@@ -42,4 +42,5 @@ return dialect.derive(postgres, {
   lex = {
     parameters = { "^%?%d*", "^[:@$][%a_][%w_]*" },
   },
+  inserts = { default = false },
 })

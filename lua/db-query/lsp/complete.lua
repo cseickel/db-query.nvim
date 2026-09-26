@@ -317,6 +317,10 @@ local function insertHere(state)
     if relation then
       local all, columns = insert.columns(dialect, relation, context.insert.columns or {}, state.range, state.quoting)
       if all then
+        if not state.snippets then
+          all.insertTextFormat = nil
+          all.textEdit.newText = all.detail
+        end
         state.items[#state.items + 1] = sorted(state, all, 0)
       end
       for _, item in ipairs(columns) do

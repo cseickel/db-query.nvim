@@ -5,6 +5,8 @@ An insert is always written with its column list, so a column dropped from it
 is one deletion away, and a values row is only filled for a list that is
 written. The database's own columns, identity and generated ones, and hidden
 ones are left out.
+
+A list of three or more is written one item per line.
 ]]
 
 local names = require("db-query.lsp.names")
@@ -14,6 +16,35 @@ local M = {}
 local Kind = vim.lsp.protocol.CompletionItemKind
 local SNIPPET = vim.lsp.protocol.InsertTextFormat.Snippet
 
+--- The value a column of each type starts as, keyed by the type's name in
+--- lower case without its size, so `varchar(20)` is found as `varchar`.
+---@type table<string, string>
+local TYPE_VALUES = {}
+for value, types in pairs({
+  ["0"] = [[
+    smallint, integer, int, int2, int4, int8, bigint, tinyint, mediumint, hugeint, uhugeint,
+    utinyint, usmallint, uinteger, ubigint, varint, bignum, big int, unsigned big int, serial, smallserial, bigserial, serial2,
+    serial4, serial8, numeric, decimal, real, double, double precision, float, float4, float8,
+    money
+  ]],
+  ["''"] = [[
+    text, varchar, character varying, char, character, bpchar, nvarchar, nchar, string, citext,
+    tinytext, mediumtext, longtext, clob, name, varying character, native character
+  ]],
+  ["false"] = "boolean, bool, logical",
+  ["current_timestamp"] = [[
+    timestamp, timestamptz, timestamp with time zone, timestamp without time zone, datetime,
+    timestamp_s, timestamp_ms, timestamp_ns
+  ]],
+  ["current_date"] = "date",
+  ["current_time"] = "time, timetz, time with time zone, time without time zone",
+  ["'{}'"] = "json, jsonb",
+}) do
+  for _, type in ipairs(vim.split(vim.trim(types), "%s*,%s*")) do
+    TYPE_VALUES[type] = value
+  end
+end
+
 --- Returns `text` with the characters a snippet reads as syntax escaped.
 ---@param text string
 ---@return string
@@ -21,34 +52,86 @@ local function escaped(text)
   return (text:gsub("[\\$}]", "\\%0"))
 end
 
---- Returns the placeholders of a values row for `columns`, each holding the
---- column's name and, when known, its type as a comment.
----@param columns { name: string, type: string|nil }[]
+--- Returns `items` as the inside of a parenthesized list: on one line for one
+--- or two, and one per line, indented, for more.
+---@param items string[]
 ---@return string
-local function placeholders(columns)
-  local parts = {}
-  for index, column in ipairs(columns) do
-    local text = column.name
-    if column.type and column.type ~= "" then
-      -- A type such as enum('a', 'b') could otherwise close the comment early.
-      text = text .. " /* " .. column.type:gsub("/%*", "/ *"):gsub("%*/", "* /") .. " */"
-    end
-    parts[index] = "${" .. index .. ":" .. escaped(text) .. "}"
+local function listBody(items)
+  if #items < 3 then
+    return table.concat(items, ", ")
   end
-  return table.concat(parts, ", ")
+  return "\n\t" .. table.concat(items, ",\n\t") .. "\n"
+end
+
+--- Returns the value a new row gives a column of `column`'s type when it has
+--- no default and is not nullable: an enum's first label, or the type's
+--- starting value, or NULL for a type with none.
+---@param inserts dbquery.InsertValues
+---@param column dbquery.Column
+---@return string
+local function typeValue(inserts, column)
+  if column.labels and column.labels[1] then
+    return "'" .. column.labels[1]:gsub("'", "''") .. "'"
+  end
+  local type = column.type and column.type:lower()
+  if not type then
+    return "NULL"
+  end
+  if type:match("%[%d*%]$") then
+    return inserts.array or "NULL"
+  end
+  -- postgres qualifies a type outside the search path, as in `extensions.citext`.
+  local name = vim.trim((type:gsub("%b()", ""):gsub("%s+unsigned", ""):gsub("%s+zerofill", ""):gsub("%s+", " ")))
+    :match("[^.]+$")
+  if name == "uuid" then
+    return inserts.uuid or "NULL"
+  end
+  return TYPE_VALUES[name] or "NULL"
+end
+
+--- Returns the value a values row starts with for `column`: its default, which
+--- a generated or identity column always takes, NULL for a nullable column
+--- without one, and otherwise the value for its type. A column the catalog
+--- does not know gets NULL.
+---@param inserts dbquery.InsertValues
+---@param column dbquery.Column|nil
+---@return string
+local function startingValue(inserts, column)
+  if not column then
+    return "NULL"
+  end
+  if column.default or column.generated then
+    return inserts.default and "DEFAULT" or column.default or "NULL"
+  end
+  if column.nullable then
+    return "NULL"
+  end
+  return typeValue(inserts, column)
+end
+
+--- Returns the inside of a values row for `columns`, one placeholder per value.
+---@param inserts dbquery.InsertValues
+---@param columns dbquery.OfferedColumn[]
+---@return string
+local function placeholders(inserts, columns)
+  local parts = {}
+  for index, offered in ipairs(columns) do
+    parts[index] = "${" .. index .. ":" .. escaped(startingValue(inserts, offered.column)) .. "}"
+  end
+  return listBody(parts)
 end
 
 ---@param dialect dbquery.Dialect
 ---@param columns dbquery.Column[]
----@return string
-local function columnList(dialect, columns)
-  return table.concat(vim.tbl_map(function(column)
+---@return string[]
+local function quotedNames(dialect, columns)
+  return vim.tbl_map(function(column)
     return names.quote(dialect, column.name)
-  end, columns), ", ")
+  end, columns)
 end
 
 --- Returns the item that writes `written`, the table being completed, with its
---- column list and a values row: `trades (id, qty) values (id, qty)`.
+--- column list and a values row: `trades (id, qty) values (DEFAULT, 0)`.
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.Relation
 ---@param label string The table's name as the completion shows it.
@@ -60,7 +143,11 @@ function M.statement(dialect, relation, label, written, range)
   if #columns == 0 then
     return nil
   end
-  local text = escaped(written) .. " (" .. escaped(columnList(dialect, columns)) .. ") values (" .. placeholders(columns) .. ")$0"
+  local offered = vim.tbl_map(function(column)
+    return { name = column.name, column = column }
+  end, columns)
+  local text = escaped(written) .. " (" .. escaped(listBody(quotedNames(dialect, columns))) .. ") values ("
+    .. placeholders(dialect.inserts, offered) .. ")$0"
   return {
     label = label .. " (…) values (…)",
     kind = Kind.Snippet,
@@ -73,7 +160,8 @@ end
 
 --- Returns the items for an insert's column list: while the list is empty, one
 --- item writing every insertable column, and an item for each insertable
---- column not listed yet, in the table's order.
+--- column not listed yet, in the table's order. The item writing every column
+--- is a snippet.
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.Relation
 ---@param listed string[] The columns already written.
@@ -103,13 +191,14 @@ function M.columns(dialect, relation, listed, range, quoting)
   if #listed > 0 or #remaining < 2 then
     return nil, items
   end
-  local text = columnList(dialect, remaining)
+  local written = quotedNames(dialect, remaining)
   return {
     label = "all columns",
     kind = Kind.Snippet,
-    detail = text,
+    detail = table.concat(written, ", "),
     filterText = "",
-    textEdit = { range = range, newText = text },
+    insertTextFormat = SNIPPET,
+    textEdit = { range = range, newText = escaped(listBody(written)) },
   }, items
 end
 
@@ -125,12 +214,13 @@ function M.values(relation, listed, dialect, range)
   if not listed or #listed == 0 then
     return nil
   end
+  ---@type dbquery.OfferedColumn[]
   local columns = vim.tbl_map(function(name)
     local text = names.parts(dialect, name)[1].text
     local found = relation and vim.iter(relation.columns):find(function(column)
       return column.name:lower() == text:lower()
     end)
-    return { name = text, type = found and found.type }
+    return { name = text, column = found }
   end, listed)
   return {
     label = "(" .. table.concat(vim.tbl_map(function(column)
@@ -139,7 +229,7 @@ function M.values(relation, listed, dialect, range)
     kind = Kind.Snippet,
     filterText = "",
     insertTextFormat = SNIPPET,
-    textEdit = { range = range, newText = placeholders(columns) .. "$0" },
+    textEdit = { range = range, newText = placeholders(dialect.inserts, columns) .. "$0" },
     detail = "values for the listed columns",
   }
 end

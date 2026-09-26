@@ -258,9 +258,27 @@ A language server named `db-query` runs inside nvim and attaches to every `sql`,
 
 It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery, a CTE, or a function in `from`. A function's columns come from its declaration: its `returns table (...)` or out arguments, the table, view, or composite type it returns a set of, or one column named for its alias when it returns a scalar. In `from` it offers tables and set-returning functions. Typing `.`, `(`, `'`, or `"` triggers it. In an `insert`, it also offers items that write the column list and the values row:
 
-- after `insert into`, one item per table that writes `t (col, ...) values (...)`, with a placeholder per column holding the column's name and type
+- after `insert into`, one item per table that writes `t (col, ...) values (...)`
 - inside the column list, `all columns` while the list is empty, and each column not listed yet
-- inside an empty `values (`, one placeholder per listed column
+- inside an empty `values (`, one value per listed column
+
+A list of three or more is written one item per line, and each value is a placeholder:
+
+```sql
+insert into trades (
+  id,
+  qty,
+  note,
+  created
+) values (
+  DEFAULT,
+  0,
+  NULL,
+  current_timestamp
+)
+```
+
+A column with a default gets `DEFAULT`, or the default's expression on sqlite, which has no `DEFAULT` in a values row. A nullable column gets `NULL`. Any other column gets a value for its type: `0`, `''`, `false`, `current_timestamp`, `current_date`, `current_time`, a new uuid, an empty json object or array, or an enum's first label, and `NULL` for a type with none of these.
 
 The tables in scope are those of the query the cursor is in. A subquery in a select list or a `where` clause may refer to the outer query's tables, so it sees them too. A CTE body, or a subquery in `from` written without `lateral`, cannot, so it sees only its own. Every CTE the statement defines is in scope throughout it. A second statement written with no `;` after the first is a query of its own, so its `from` never mixes with the first's.
 

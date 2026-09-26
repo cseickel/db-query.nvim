@@ -119,4 +119,5 @@ return dialect.derive(standard, {
     { HINT, KEY, "for", "join", dialect.GROUP },
     { HINT, KEY, "for", set("order group"), "by", dialect.GROUP },
   },
+  inserts = { default = true, uuid = "uuid()" },
 })

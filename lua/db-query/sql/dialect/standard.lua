@@ -127,4 +127,5 @@ return {
   callable = set("left right any some exists"),
   fromSuffixes = {},
   blocks = {},
+  inserts = { default = true },
 }
