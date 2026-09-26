@@ -2,12 +2,10 @@
 Matching the names sql writes against the names in a catalog.
 
 - `parts` splits a dotted name, keeping a quoted part whole.
+- `matches` says whether a part of a written name names a catalog name.
 - `relation`, `type`, `relationsIn`, and `functions` find what a name refers
   to in the catalog, by the dialect's `folds` rule.
-- `reference` and `refersTo` match a written name against a relation in scope,
-  and `scopeColumn` finds the catalog column a name refers to among them.
-- `columns` lists the columns a relation in scope offers, and `insertable` the
-  columns of a table an insert lists.
+- `insertable` lists the columns of a table an insert lists.
 - `quote` and `callable` write a catalog name the way sql has to spell it.
 ]]
 
@@ -56,7 +54,7 @@ end
 ---@param name string|nil
 ---@param loose boolean
 ---@return boolean
-local function names(dialect, part, name, loose)
+function M.matches(dialect, part, name, loose)
   if name == nil then
     return false
   end
@@ -88,7 +86,7 @@ local function qualified(catalog, dialect, list, parts)
       for _, path in ipairs(catalog.searchPath) do
         for _, item in ipairs(list) do
           local inPath = item.schema == path.schema and (path.database == nil or item.database == path.database)
-          if inPath and names(dialect, last, item.name, loose) then
+          if inPath and M.matches(dialect, last, item.name, loose) then
             found[#found + 1] = item
           end
         end
@@ -97,7 +95,7 @@ local function qualified(catalog, dialect, list, parts)
         end
       end
       for _, item in ipairs(list) do
-        if names(dialect, last, item.name, loose) then
+        if M.matches(dialect, last, item.name, loose) then
           found[#found + 1] = item
         end
       end
@@ -111,11 +109,11 @@ local function qualified(catalog, dialect, list, parts)
     else
       local schema, database = parts[#parts - 1], parts[#parts - 2]
       for _, item in ipairs(list) do
-        local inSchema = names(dialect, schema, item.schema, loose)
+        local inSchema = M.matches(dialect, schema, item.schema, loose)
         -- duckdb's `db.table` names the database's main schema.
-        local inDatabase = #parts == 2 and item.schema == "main" and names(dialect, schema, item.database, loose)
-        if (database == nil or names(dialect, database, item.database, loose)) and (inSchema or inDatabase)
-          and names(dialect, last, item.name, loose) then
+        local inDatabase = #parts == 2 and item.schema == "main" and M.matches(dialect, schema, item.database, loose)
+        if (database == nil or M.matches(dialect, database, item.database, loose)) and (inSchema or inDatabase)
+          and M.matches(dialect, last, item.name, loose) then
           found[#found + 1] = item
         end
       end
@@ -158,7 +156,7 @@ function M.functions(catalog, dialect, name)
   end
   -- sqlite functions belong to no schema.
   return vim.iter(catalog.functions):filter(function(fn)
-    return fn.schema == nil and names(dialect, parts[1], fn.name, true)
+    return fn.schema == nil and M.matches(dialect, parts[1], fn.name, true)
   end):totable()
 end
 
@@ -175,115 +173,11 @@ function M.relationsIn(catalog, dialect, name)
   local schema, database = parts[#parts], parts[#parts - 1]
   local function inside(item)
     if database then
-      return names(dialect, database, item.database, true) and names(dialect, schema, item.schema, true)
+      return M.matches(dialect, database, item.database, true) and M.matches(dialect, schema, item.schema, true)
     end
-    return names(dialect, schema, item.schema, true) or (item.schema == "main" and names(dialect, schema, item.database, true))
+    return M.matches(dialect, schema, item.schema, true) or (item.schema == "main" and M.matches(dialect, schema, item.database, true))
   end
   return vim.iter(catalog.relations):filter(inside):totable(), vim.iter(catalog.functions):filter(inside):totable()
-end
-
---- Returns the name a scope relation is referred to by: its alias, or the last
---- part of its name.
----@param dialect dbquery.Dialect
----@param relation dbquery.ScopeRelation
----@return string|nil
-function M.reference(dialect, relation)
-  if relation.alias then
-    return M.parts(dialect, relation.alias)[1].text
-  end
-  if relation.name then
-    local parts = M.parts(dialect, relation.name)
-    return parts[#parts].text
-  end
-  return nil
-end
-
---- Returns true when `written`, a name as sql writes it, refers to the scope
---- relation `relation`.
----@param dialect dbquery.Dialect
----@param relation dbquery.ScopeRelation
----@param written string
----@return boolean
-function M.refersTo(dialect, relation, written)
-  local parts = M.parts(dialect, written)
-  if relation.alias then
-    return #parts == 1 and names(dialect, parts[1], M.reference(dialect, relation), true)
-  end
-  if not relation.name then
-    return false
-  end
-  local own = M.parts(dialect, relation.name)
-  if #parts > #own then
-    return false
-  end
-  for offset = 0, #parts - 1 do
-    if not names(dialect, parts[#parts - offset], own[#own - offset].text, true) then
-      return false
-    end
-  end
-  return true
-end
-
----@class dbquery.OfferedColumn
----@field name string
----@field column dbquery.Column|nil The catalog column, when the relation is a catalog table.
----@field relation dbquery.Relation|nil
-
---- Returns the columns `relation` offers, in order. A table's come from the
---- catalog. A subquery's or CTE's are the names its select gives, with `*`
---- standing for the columns of what that select reads.
----@param catalog dbquery.Catalog|nil
----@param dialect dbquery.Dialect
----@param relation dbquery.ScopeRelation
----@param seen table<dbquery.ScopeRelation, true>|nil Relations already being expanded, which a recursive CTE reaches again.
----@return dbquery.OfferedColumn[]
-function M.columns(catalog, dialect, relation, seen)
-  seen = seen or {}
-  if seen[relation] then
-    return {}
-  end
-  seen[relation] = true
-
-  local found = {}
-  if relation.kind == "table" and not relation.columns then
-    local table = catalog and relation.name and M.relation(catalog, dialect, relation.name)
-    for _, column in ipairs(table and table.columns or {}) do
-      found[#found + 1] = { name = column.name, column = column, relation = table }
-    end
-    return found
-  end
-  for _, name in ipairs(relation.columns or {}) do
-    if name == "*" then
-      for _, source in ipairs(relation.sources or {}) do
-        vim.list_extend(found, M.columns(catalog, dialect, source, seen))
-      end
-    else
-      found[#found + 1] = { name = M.parts(dialect, name)[1].text }
-    end
-  end
-  return found
-end
-
---- Returns the catalog column a dotted name refers to among the relations in
---- `scope`, or nil when none of them offers it.
----@param catalog dbquery.Catalog
----@param dialect dbquery.Dialect
----@param scope dbquery.ScopeRelation[]
----@param written string
----@return dbquery.Column|nil
-function M.scopeColumn(catalog, dialect, scope, written)
-  local parts = M.parts(dialect, written)
-  local qualifier = parts[#parts - 1]
-  for _, relation in ipairs(scope) do
-    if qualifier == nil or names(dialect, qualifier, M.reference(dialect, relation), true) then
-      for _, offered in ipairs(M.columns(catalog, dialect, relation)) do
-        if offered.column and names(dialect, parts[#parts], offered.name, true) then
-          return offered.column
-        end
-      end
-    end
-  end
-  return nil
 end
 
 --- Returns the columns of `relation` an insert lists: every one the database

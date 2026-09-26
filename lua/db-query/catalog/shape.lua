@@ -62,6 +62,7 @@ local M = {}
 ---@field schema string
 ---@field name string
 ---@field labels string[]|nil The values of an enum.
+---@field columns dbquery.Column[]|nil The fields of a composite type, in order.
 
 --- Throws unless `value` has the lua type `kind`, or is nil and `optional` is
 --- set. The message names the field: "relations[2].name must be a string".
@@ -147,6 +148,9 @@ function M.problem(catalog)
       qualified(item, at)
       expect(item.schema, "string", at .. ".schema")
       expect(item.labels, "table", at .. ".labels", true)
+      if item.columns ~= nil then
+        every(item.columns, at .. ".columns", checkColumn)
+      end
     end)
   end)
   return not ok and tostring(err) or nil

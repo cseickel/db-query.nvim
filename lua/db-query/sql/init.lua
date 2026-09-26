@@ -17,18 +17,31 @@ local M = {}
 
 ---@alias dbquery.RowKind "query"|"returning"
 
---- Removes the statement's trailing semicolon, which is a syntax error inside
---- `COPY (...)`. A comment after the semicolon stays.
+--- Removes the trailing semicolons, which are a syntax error inside
+--- `COPY (...)`, and every semicolon ending an empty statement, so
+--- `select 1;;` becomes `select 1` and `a;; b;` becomes `a; b`. Comments stay.
 ---@param dialect dbquery.Dialect
 ---@param sql string
 ---@return string
 function M.stripTerminator(dialect, sql)
   local code = lex.code(lex.tokens(dialect, sql))
-  local last = code[#code]
-  if not (last and last.kind == ";") then
-    return sql
+  local ends = statements.terminators(dialect, code)
+  local lastCode = 0
+  for index, token in ipairs(code) do
+    if token.kind ~= ";" then
+      lastCode = index
+    end
   end
-  return sql:sub(1, last.first - 1) .. sql:sub(last.last + 1)
+  local pieces, from, empty = {}, 1, true
+  for index, token in ipairs(code) do
+    if token.kind == ";" and (index > lastCode or (ends[token] and empty)) then
+      table.insert(pieces, sql:sub(from, token.first - 1))
+      from = token.last + 1
+    end
+    empty = ends[token] == true
+  end
+  table.insert(pieces, sql:sub(from))
+  return table.concat(pieces)
 end
 
 --- Returns the last `delimiter` line in `lines`, such as mysql's

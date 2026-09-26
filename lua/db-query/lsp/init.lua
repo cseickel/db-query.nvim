@@ -154,7 +154,10 @@ local function server(dispatchers)
             serverInfo = { name = NAME },
             capabilities = {
               positionEncoding = "utf-8",
-              completionProvider = { triggerCharacters = { ".", "(", "'", '"' } },
+              completionProvider = {
+                triggerCharacters = { ".", "(", "'", '"' },
+                completionItem = { labelDetailsSupport = true },
+              },
               signatureHelpProvider = { triggerCharacters = { "(", "," } },
               hoverProvider = true,
               definitionProvider = true,

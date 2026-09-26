@@ -8,6 +8,7 @@ written into, names it.
 ]]
 
 local names = require("db-query.lsp.names")
+local scope = require("db-query.lsp.scope")
 
 local M = {}
 
@@ -28,7 +29,7 @@ function M.labels(opened, context)
   end
 
   if context.valueOf then
-    local column = names.scopeColumn(catalog, dialect, context.scope, context.valueOf)
+    local column = scope.scopeColumn(catalog, dialect, context.scope, context.valueOf)
     return column and column.labels or nil
   end
 
@@ -36,7 +37,7 @@ function M.labels(opened, context)
   local written = insert and insert.list == "values" and insert.columns and insert.columns[insert.position]
   if written then
     local target = { { kind = "table", name = insert.table } }
-    local column = names.scopeColumn(catalog, dialect, target, written)
+    local column = scope.scopeColumn(catalog, dialect, target, written)
     return column and column.labels or nil
   end
   return nil

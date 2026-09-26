@@ -4,6 +4,7 @@ function's overloads.
 ]]
 
 local names = require("db-query.lsp.names")
+local scope = require("db-query.lsp.scope")
 
 local M = {}
 
@@ -21,7 +22,7 @@ local M = {}
 local function scopeColumn(opened, relation, word)
   local dialect = opened.document.dialect
   local part = names.parts(dialect, word)[1]
-  for _, offered in ipairs(names.columns(opened.catalog, dialect, relation)) do
+  for _, offered in ipairs(scope.columns(opened.catalog, dialect, relation)) do
     if offered.column and offered.relation and offered.name:lower() == part.text:lower() then
       return { kind = "column", column = offered.column, relation = offered.relation }
     end
@@ -58,7 +59,7 @@ function M.at(opened, context)
 
   if context.kind == "qualified" then
     for _, relation in ipairs(context.scope) do
-      if names.refersTo(dialect, relation, context.qualifier) and #names.columns(catalog, dialect, relation) > 0 then
+      if scope.refersTo(dialect, relation, context.qualifier) and #scope.columns(catalog, dialect, relation) > 0 then
         return scopeColumn(opened, relation, word)
       end
     end
@@ -74,7 +75,7 @@ function M.at(opened, context)
   end
 
   for _, relation in ipairs(context.scope) do
-    if not calls and names.reference(dialect, relation) and names.refersTo(dialect, relation, word)
+    if not calls and scope.reference(dialect, relation) and scope.refersTo(dialect, relation, word)
       and relation.kind == "table" and relation.name then
       local named = catalogName(opened, relation.name, false)
       if named then

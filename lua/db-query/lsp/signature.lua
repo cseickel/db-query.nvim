@@ -6,23 +6,14 @@ then every overload the catalog holds under that name. Postgres has both for
 some names: `position(a in b)` is grammar for the catalog's `position(b, a)`.
 ]]
 
+local describe = require("db-query.lsp.describe")
 local names = require("db-query.lsp.names")
 
 local M = {}
 
---- Returns the arguments a call of `fn` passes: never a table argument, and an
---- out argument only to a procedure.
----@param fn dbquery.Function
----@return dbquery.Argument[]
-local function passed(fn)
-  return vim.iter(fn.args):filter(function(arg)
-    return arg.mode ~= "table" and (arg.mode ~= "out" or fn.kind == "procedure")
-  end):totable()
-end
-
 ---@param arg dbquery.Argument
 ---@return string
-local function describe(arg)
+local function argumentLabel(arg)
   local parts = {}
   if arg.mode ~= "in" then
     parts[#parts + 1] = arg.mode
@@ -55,8 +46,8 @@ end
 ---@param argument integer
 ---@return lsp.SignatureInformation
 local function overload(name, fn, argument)
-  local args = passed(fn)
-  local labels = vim.tbl_map(describe, args)
+  local args = describe.passed(fn)
+  local labels = vim.tbl_map(argumentLabel, args)
   local label = name .. "(" .. table.concat(labels, ", ") .. ")" .. (fn.result and (" → " .. fn.result) or "")
   local parameters, at = {}, #name + 1
   for index, text in ipairs(labels) do

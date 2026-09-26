@@ -3,6 +3,7 @@ Hover for the name under the cursor: a column, a table, or a function, as the
 catalog describes it.
 ]]
 
+local describe = require("db-query.lsp.describe")
 local target = require("db-query.lsp.target")
 
 local M = {}
@@ -52,27 +53,14 @@ local function columnLine(column)
   return joined(" ", column.name, column.type, constraints(column))
 end
 
----@param text string
----@param width integer
----@return string
-local function padded(text, width)
-  return text .. string.rep(" ", width - vim.fn.strdisplaywidth(text))
-end
-
 --- Returns one line per column, with the names, types, and constraints each
 --- starting in the same column.
 ---@param columns dbquery.Column[]
 ---@return string[]
 local function columnTable(columns)
-  local nameWidth, typeWidth = 0, 0
-  for _, column in ipairs(columns) do
-    nameWidth = math.max(nameWidth, vim.fn.strdisplaywidth(column.name))
-    typeWidth = math.max(typeWidth, vim.fn.strdisplaywidth(column.type or ""))
-  end
-  return vim.tbl_map(function(column)
-    local line = padded(column.name, nameWidth) .. " " .. padded(column.type or "", typeWidth)
-    return ((line .. " " .. (constraints(column) or "")):gsub("%s+$", ""))
-  end, columns)
+  return describe.aligned(vim.tbl_map(function(column)
+    return { column.name, column.type or "", constraints(column) or "" }
+  end, columns))
 end
 
 ---@param column dbquery.Column
@@ -99,23 +87,25 @@ local function describeRelation(relation)
   return lines
 end
 
+---@param dialect dbquery.Dialect
 ---@param functions dbquery.Function[]
 ---@return string[]
-local function describeFunctions(functions)
+local function describeFunctions(dialect, functions)
   local lines = {}
   for _, fn in ipairs(functions) do
     local args = vim.tbl_map(function(arg)
       return joined(" ", arg.mode ~= "in" and arg.mode or nil, arg.name, arg.type)
-    end, fn.args)
+    end, describe.passed(fn))
     if #lines > 0 then
       lines[#lines + 1] = ""
     end
-    vim.list_extend(lines, {
-      "```sql",
-      fn.kind .. " " .. (fn.schema and (fn.schema .. ".") or "") .. fn.name .. "(" .. table.concat(args, ", ") .. ")"
-        .. (fn.result and (" → " .. fn.result) or ""),
-      "```",
-    })
+    local signature = fn.kind .. " " .. (fn.schema and (fn.schema .. ".") or "") .. fn.name
+      .. "(" .. table.concat(args, ", ") .. ")"
+    local result = describe.result(dialect, fn) or {}
+    lines[#lines + 1] = "```sql"
+    lines[#lines + 1] = signature .. (result[1] and (" → " .. result[1]) or "")
+    vim.list_extend(lines, result, 2)
+    lines[#lines + 1] = "```"
     comment(lines, fn.comment)
   end
   return lines
@@ -137,7 +127,7 @@ function M.hover(opened, context)
   elseif found.kind == "relation" then
     lines = describeRelation(found.relation)
   else
-    lines = describeFunctions(found.functions)
+    lines = describeFunctions(opened.document.dialect, found.functions)
   end
   return { contents = { kind = "markdown", value = table.concat(lines, "\n") } }
 end

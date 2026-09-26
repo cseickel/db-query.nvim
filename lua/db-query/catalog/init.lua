@@ -92,13 +92,18 @@ end
 
 --- The version of `dbquery.Catalog` a saved file holds. Raise it with every
 --- change to the shape, and add the step from the old version to `UPGRADES`.
-local VERSION = 1
+local VERSION = 2
 
 --- Steps a saved catalog from the version it is keyed by to the next one.
 --- Leave a version out, or return nil from its step, when the change needs
 --- data only a fresh read has, and the saved file is discarded.
 ---@type table<integer, fun(catalog: table): table|nil>
-local UPGRADES = {}
+local UPGRADES = {
+  -- Version 2 added the fields of composite types, which the next read fills.
+  [1] = function(catalog)
+    return catalog
+  end,
+}
 
 ---@class dbquery.SavedCatalog
 ---@field version integer

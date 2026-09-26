@@ -81,7 +81,16 @@ where n.nspname !~ '^pg_(toast|temp)']]
 local TYPES = [[
 select json_build_object(
   'schema', n.nspname, 'name', t.typname, 'oid', t.oid,
-  'labels', (select json_agg(e.enumlabel order by e.enumsortorder) from pg_enum e where e.enumtypid = t.oid))
+  'labels', (select json_agg(e.enumlabel order by e.enumsortorder) from pg_enum e where e.enumtypid = t.oid),
+  'fields', (
+    select json_agg(json_build_object(
+      'name', a.attname,
+      'type', format_type(a.atttypid, a.atttypmod),
+      'typeOid', a.atttypid,
+      'comment', col_description(c.oid, a.attnum)
+    ) order by a.attnum)
+    from pg_attribute a
+    where a.attrelid = c.oid and c.relkind = 'c' and a.attnum > 0 and not a.attisdropped))
 from pg_type t
 join pg_namespace n on n.oid = t.typnamespace
 left join pg_class c on c.oid = t.typrelid
@@ -134,11 +143,27 @@ local function catalog(request, done)
       return done(nil, err)
     end
 
-    local labels, types = {}, {}
-    for index, row in ipairs(found.types) do
-      types[index] = { schema = row.schema, name = row.name, labels = row.labels }
+    local labels = {}
+    for _, row in ipairs(found.types) do
       labels[row.oid] = row.labels
     end
+    local types = vim.tbl_map(function(row)
+      return {
+        schema = row.schema,
+        name = row.name,
+        labels = row.labels,
+        columns = row.fields and vim.tbl_map(function(field)
+          return {
+            name = field.name,
+            type = field.type,
+            nullable = true,
+            hidden = false,
+            labels = labels[field.typeOid],
+            comment = field.comment,
+          }
+        end, row.fields),
+      }
+    end, found.types)
 
     local functions = {}
     for index, row in ipairs(found.functions) do

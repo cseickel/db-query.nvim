@@ -4,7 +4,7 @@ Marks each query a buffer ran with how its last run ended.
 Every query keeps a diagnostic holding the outcome, such as `2,520 rows in
 0.98s`, and the outcome's icon in the gutter beside its first line of code. The
 query that ran last also gets the run-status elbow, turning under the query to
-the outcome.
+the outcome, until the buffer next enters insert mode.
 
 A run replaces every mark its lines overlap, when it starts and again when it
 finishes, so each query keeps only its last run. Each run has an extmark
@@ -42,7 +42,8 @@ vim.diagnostic.config({ underline = false, virtual_text = false, virtual_lines =
 ---@type table<integer, table<integer, dbquery.FinishedRun|false>>
 local runs = {}
 
---- The mark of the run each buffer finished last, which gets the elbow.
+--- The mark of the run each buffer finished last, which gets the elbow until
+--- the buffer enters insert mode.
 ---@type table<integer, integer>
 local latest = {}
 
@@ -114,6 +115,15 @@ local function runsOf(buf)
       buffer = buf,
       callback = function()
         publish(buf)
+      end,
+    })
+    vim.api.nvim_create_autocmd("InsertEnter", {
+      buffer = buf,
+      callback = function()
+        if latest[buf] then
+          latest[buf] = nil
+          publish(buf)
+        end
       end,
     })
     vim.api.nvim_create_autocmd("BufWipeout", {

@@ -7,10 +7,12 @@ order, aliases and CTEs, variables, tables, schemas, keywords, and functions.
 An engine that sorts by it shows them in that order whatever their kind.
 ]]
 
+local describe = require("db-query.lsp.describe")
 local document = require("db-query.lsp.document")
 local insert = require("db-query.lsp.insert")
 local literal = require("db-query.lsp.literal")
 local names = require("db-query.lsp.names")
+local scope = require("db-query.lsp.scope")
 
 local M = {}
 
@@ -44,26 +46,30 @@ local function sorted(state, item, group)
   return item
 end
 
---- Adds an item that writes `text`, once per label within its group.
+--- Adds an item that writes `text`, once per label within its group. Returns
+--- the item, or nil when its label was already offered.
 ---@param state dbquery.Completion
 ---@param group integer
 ---@param label string The name, unquoted.
 ---@param text string The name as sql writes it.
 ---@param kind integer
 ---@param detail string|nil
+---@return lsp.CompletionItem|nil
 local function add(state, group, label, text, kind, detail)
   local key = group .. "\0" .. label
   if state.seen[key] then
-    return
+    return nil
   end
   state.seen[key] = true
-  state.items[#state.items + 1] = sorted(state, {
+  local item = sorted(state, {
     label = label,
     kind = kind,
     detail = detail,
     filterText = state.quoting and text or label,
     textEdit = { range = state.range, newText = text },
   }, group)
+  state.items[#state.items + 1] = item
+  return item
 end
 
 --- Operators a subquery may be written after, as in `= any (select ...)`.
@@ -118,11 +124,12 @@ end
 ---@param relation dbquery.ScopeRelation
 local function scopeColumns(state, relation)
   local dialect = state.opened.document.dialect
-  local owner = names.reference(dialect, relation)
-  for _, offered in ipairs(names.columns(state.opened.catalog, dialect, relation)) do
+  for _, offered in ipairs(scope.columns(state.opened.catalog, dialect, relation)) do
     local type = offered.column and offered.column.type
-    local detail = owner and (owner .. (type and (" " .. type) or "")) or type
-    add(state, GROUP.column, offered.name, names.quote(dialect, offered.name), Kind.Field, detail)
+    local item = add(state, GROUP.column, offered.name, names.quote(dialect, offered.name), Kind.Field, nil)
+    if item and type then
+      item.labelDetails = { description = type }
+    end
   end
 end
 
@@ -141,6 +148,15 @@ local function written(state, item, qualify, spell)
     return item.schema .. "." .. item.name, names.quote(dialect, item.schema) .. "." .. spell(dialect, item.name)
   end
   return item.name, spell(dialect, item.name)
+end
+
+--- Returns what `fn` returns, one column per line, for an item's detail.
+---@param dialect dbquery.Dialect
+---@param fn dbquery.Function
+---@return string|nil
+local function returns(dialect, fn)
+  local lines = describe.result(dialect, fn)
+  return lines and table.concat(lines, "\n")
 end
 
 --- Adds the relations and functions of `relations` and `functions`, and the
@@ -168,7 +184,7 @@ local function relationItems(state, relations, functions, qualify)
   for _, fn in ipairs(functions) do
     if fn.returnsSet or state.context.kind == "qualified" then
       local label, text = written(state, fn, qualify, names.callable)
-      add(state, GROUP["function"], label, text, Kind.Function, fn.result)
+      add(state, GROUP["function"], label, text, Kind.Function, returns(dialect, fn))
     end
   end
 end
@@ -220,7 +236,7 @@ local function columnsHere(state)
     end
   end
   for _, relation in ipairs(state.context.scope) do
-    local reference = names.reference(dialect, relation)
+    local reference = scope.reference(dialect, relation)
     if reference then
       local variable = relation.kind == "variable" or relation.kind == "trigger_row"
       add(state, variable and GROUP.variable or GROUP.alias, reference, names.quote(dialect, reference),
@@ -243,7 +259,7 @@ local function columnsHere(state)
       counts[fn.name] = (counts[fn.name] or 0) + 1
     end
     for _, fn in ipairs(functions) do
-      local detail = counts[fn.name] > 1 and (counts[fn.name] .. " overloads") or fn.result
+      local detail = counts[fn.name] > 1 and (counts[fn.name] .. " overloads") or returns(dialect, fn)
       add(state, GROUP["function"], fn.name, names.callable(dialect, fn.name), Kind.Function, detail)
     end
   end
@@ -257,7 +273,7 @@ local function qualifiedHere(state)
   -- A schema being typed in from, as in `from reports.`, is read into scope
   -- as a table named `reports`, which offers no columns.
   for _, relation in ipairs(context.scope) do
-    if names.refersTo(dialect, relation, context.qualifier) then
+    if scope.refersTo(dialect, relation, context.qualifier) then
       scopeColumns(state, relation)
       if #state.items > 0 then
         return

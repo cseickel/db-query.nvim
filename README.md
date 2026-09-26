@@ -215,7 +215,7 @@ end
 
 When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
-Whatever the result is, the progress indicator turns into a result status and will stay there until the next query is excuted. This marker is always for the curent or prior run only.
+Whatever the result is, the progress indicator turns into a result status, which stays until the next query runs or you enter insert mode in that buffer. This marker is always for the current or prior run only.
 
 There are also diagnostic markers added for each executed statement which will remain until replaced by a newer execution. Those diagnostics will use:
 
@@ -256,7 +256,7 @@ This won't work with lazy loading, because the plugin has to be enabled to inter
 
 A language server named `db-query` runs inside nvim and attaches to every `sql`, `mysql`, and `plsql` buffer, scratch buffers included. It needs no install and no `vim.lsp.config` entry. Set `lsp = false` to turn it off.
 
-It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery or CTE. In `from` it offers tables and set-returning functions. Typing `.`, `(`, `'`, or `"` triggers it. In an `insert`, it also offers items that write the column list and the values row:
+It completes what the cursor's place in the statement calls for: columns of the tables in scope, in the table's order, then aliases and CTEs, variables of the function body you are in, tables, schemas, keywords, and functions. After `alias.` it offers that table's columns, or those of a subquery, a CTE, or a function in `from`. A function's columns come from its declaration: its `returns table (...)` or out arguments, the table, view, or composite type it returns a set of, or one column named for its alias when it returns a scalar. In `from` it offers tables and set-returning functions. Typing `.`, `(`, `'`, or `"` triggers it. In an `insert`, it also offers items that write the column list and the values row:
 
 - after `insert into`, one item per table that writes `t (col, ...) values (...)`, with a placeholder per column holding the column's name and type
 - inside the column list, `all columns` while the list is empty, and each column not listed yet
