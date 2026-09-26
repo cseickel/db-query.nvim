@@ -55,62 +55,49 @@ local function listBody(items)
   return "\n\t" .. table.concat(items, ",\n\t") .. "\n"
 end
 
---- Returns the the default value for a column in an insert's values row.
---- It uses the columns own default if one exists, or the type's default as
---- we define it.
----@param inserts dbquery.InsertValues
+--- Returns the default value for a column in an insert's values row. It uses
+--- the column's own default if one exists, NULL for a nullable column, and
+--- otherwise the type's default as we define it.
+---@param dialect dbquery.Dialect
 ---@param column dbquery.Column
 ---@return string
-local function typeValue(inserts, column)
-  if column.labels and column.labels[1] then
-    return "'" .. column.labels[1]:gsub("'", "''") .. "'"
-  end
-  local type = column.type and column.type:lower()
-  if not type then
-    return "NULL"
-  end
-  if type:match("%[%d*%]$") then
-    return inserts.array or "NULL"
-  end
-  -- postgres qualifies a type outside the search path, as in `extensions.citext`.
-  local name = vim.trim((type:gsub("%b()", ""):gsub("%s+unsigned", ""):gsub("%s+zerofill", ""):gsub("%s+", " ")))
-    :match("[^.]+$")
-  if name == "uuid" then
-    return inserts.uuid or "NULL"
-  end
-  return DEFAULT_VALUES_BY_TYPE[name] or "NULL"
-end
-
---- Returns the value a values row starts with for `column`: its default, which
---- a generated or identity column always takes, NULL for a nullable column
---- without one, and otherwise the value for its type. A column the catalog
---- does not know gets NULL.
----@param inserts dbquery.InsertValues
----@param column dbquery.Column|nil
----@return string
-local function startingValue(inserts, column)
-  if not column then
-    return "NULL"
-  end
+local function defaultValue(dialect, column)
   if column.default or column.generated then
-    return inserts.default and "DEFAULT" or column.default or "NULL"
+    return dialect.inserts.default and "DEFAULT" or column.default or "NULL"
   end
   if column.nullable then
     return "NULL"
   end
-  return typeValue(inserts, column)
+  if column.labels and column.labels[1] then
+    return "'" .. column.labels[1]:gsub("'", "''") .. "'"
+  end
+  local columnType = column.type and column.type:lower()
+  if not columnType then
+    return "NULL"
+  end
+  if columnType:match("%[%d*%]$") then
+    return dialect.inserts.array or "NULL"
+  end
+  -- postgres qualifies a type outside the search path, as in `extensions.citext`.
+  local baseType = vim.trim((columnType:gsub("%b()", ""):gsub("%s+unsigned", ""):gsub("%s+zerofill", ""):gsub("%s+", " ")))
+    :match("[^.]+$")
+  if baseType == "uuid" then
+    return dialect.inserts.uuid or "NULL"
+  end
+  return DEFAULT_VALUES_BY_TYPE[baseType] or "NULL"
 end
 
---- Returns the inside of a values row for `columns`, one placeholder per value.
----@param inserts dbquery.InsertValues
----@param columns dbquery.OfferedColumn[]
+--- Returns the inside of a values row, with one tabstop per column holding its
+--- default value.
+---@param dialect dbquery.Dialect
+---@param columns dbquery.Column[]
 ---@return string
-local function placeholders(inserts, columns)
-  local parts = {}
-  for index, offered in ipairs(columns) do
-    parts[index] = "${" .. index .. ":" .. escaped(startingValue(inserts, offered.column)) .. "}"
+local function placeholders(dialect, columns)
+  local tabstops = {}
+  for index, column in ipairs(columns) do
+    tabstops[index] = "${" .. index .. ":" .. escaped(defaultValue(dialect, column)) .. "}"
   end
-  return listBody(parts)
+  return listBody(tabstops)
 end
 
 ---@param dialect dbquery.Dialect
@@ -122,97 +109,90 @@ local function quotedNames(dialect, columns)
   end, columns)
 end
 
---- Returns the item that writes `written`, the table being completed, with its
---- column list and a values row: `trades (id, qty) values (DEFAULT, 0)`.
----@param dialect dbquery.Dialect
+--- Returns the item that writes the table with its column list and values row:
+--- `trades (id, qty) values (DEFAULT, 0)`.
+---@param state dbquery.Completion
 ---@param relation dbquery.Relation
 ---@param label string The table's name as the completion shows it.
----@param written string The table as the completion writes it.
----@param range lsp.Range
+---@param quotedName string The table as the completion writes it.
 ---@return lsp.CompletionItem|nil
-function M.statement(dialect, relation, label, written, range)
+function M.statement(state, relation, label, quotedName)
   local columns = names.insertable(relation)
   if #columns == 0 then
     return nil
   end
-  local offered = vim.tbl_map(function(column)
-    return { name = column.name, column = column }
-  end, columns)
-  local text = escaped(written) .. " (" .. escaped(listBody(quotedNames(dialect, columns))) .. ") values ("
-    .. placeholders(dialect.inserts, offered) .. ")$0"
+  local dialect = state.opened.document.dialect
+  local newText = escaped(quotedName) .. " (" .. escaped(listBody(quotedNames(dialect, columns))) .. ") values ("
+    .. placeholders(dialect, columns) .. ")$0"
   return {
     label = label .. " (…) values (…)",
     kind = Kind.Snippet,
     filterText = label,
     insertTextFormat = SNIPPET,
-    textEdit = { range = range, newText = text },
+    textEdit = { range = state.range, newText = newText },
     detail = #columns .. " columns",
   }
 end
 
---- Returns the items for an insert's column list: while the list is empty, one
---- item writing every insertable column, and an item for each insertable
---- column not listed yet, in the table's order. The item writing every column
---- is a snippet.
----@param dialect dbquery.Dialect
+--- Returns an item for each insertable column not yet listed, and, while the
+--- list is empty, an `all columns` item that writes them all.
+---@param state dbquery.Completion
 ---@param relation dbquery.Relation
----@param listed string[] The columns already written.
----@param range lsp.Range
----@param quoting boolean The word under the cursor opens with a quote.
 ---@return lsp.CompletionItem|nil all
 ---@return lsp.CompletionItem[] columns
-function M.columns(dialect, relation, listed, range, quoting)
-  local taken = {}
+function M.columns(state, relation)
+  local dialect = state.opened.document.dialect
+  local listed = state.context.insert and state.context.insert.columns or {}
+  local isListed = {}
   for _, name in ipairs(listed) do
-    taken[names.parts(dialect, name)[1].text:lower()] = true
+    isListed[names.parts(dialect, name)[1].text:lower()] = true
   end
-  local items, remaining = {}, {}
+  local columnItems, unlisted = {}, {}
   for _, column in ipairs(names.insertable(relation)) do
-    if not taken[column.name:lower()] then
-      remaining[#remaining + 1] = column
-      local text = names.quote(dialect, column.name)
-      items[#items + 1] = {
+    if not isListed[column.name:lower()] then
+      unlisted[#unlisted + 1] = column
+      local quoted = names.quote(dialect, column.name)
+      columnItems[#columnItems + 1] = {
         label = column.name,
         kind = Kind.Field,
         detail = column.type,
-        filterText = quoting and text or column.name,
-        textEdit = { range = range, newText = text },
+        filterText = state.quoting and quoted or column.name,
+        textEdit = { range = state.range, newText = quoted },
       }
     end
   end
-  if #listed > 0 or #remaining < 2 then
-    return nil, items
+  if #listed > 0 or #unlisted < 2 then
+    return nil, columnItems
   end
-  local written = quotedNames(dialect, remaining)
+  local unlistedNames = quotedNames(dialect, unlisted)
   return {
     label = "all columns",
     kind = Kind.Snippet,
-    detail = table.concat(written, ", "),
+    detail = table.concat(unlistedNames, ", "),
     filterText = "",
     insertTextFormat = SNIPPET,
-    textEdit = { range = range, newText = escaped(listBody(written)) },
-  }, items
+    textEdit = { range = state.range, newText = escaped(listBody(unlistedNames)) },
+  }, columnItems
 end
 
---- Returns the item that fills an empty values row for the columns `listed`,
---- or nil when no column list is written, since values without one would
---- land in whichever columns come first.
+--- Returns the item that fills an empty values row for the listed columns, or
+--- nil when the insert has no column list.
+---@param state dbquery.Completion
 ---@param relation dbquery.Relation|nil
----@param listed string[]|nil
----@param dialect dbquery.Dialect
----@param range lsp.Range
 ---@return lsp.CompletionItem|nil
-function M.values(relation, listed, dialect, range)
+function M.values(state, relation)
+  local listed = state.context.insert and state.context.insert.columns
   if not listed or #listed == 0 then
     return nil
   end
-  ---@type dbquery.OfferedColumn[]
+  local dialect = state.opened.document.dialect
+  ---@type dbquery.Column[]
   local columns = vim.tbl_map(function(name)
-    local text = names.parts(dialect, name)[1].text
-    local found = relation and vim.iter(relation.columns):find(function(column)
-      return column.name:lower() == text:lower()
+    local columnName = names.parts(dialect, name)[1].text
+    local column = relation and vim.iter(relation.columns):find(function(candidate)
+      return candidate.name:lower() == columnName:lower()
     end)
-    return { name = text, column = found }
+    return column or { name = columnName, nullable = true, hidden = false }
   end, listed)
   return {
     label = "(" .. table.concat(vim.tbl_map(function(column)
@@ -221,7 +201,7 @@ function M.values(relation, listed, dialect, range)
     kind = Kind.Snippet,
     filterText = "",
     insertTextFormat = SNIPPET,
-    textEdit = { range = range, newText = placeholders(dialect.inserts, columns) .. "$0" },
+    textEdit = { range = state.range, newText = placeholders(dialect, columns) .. "$0" },
     detail = "values for the listed columns",
   }
 end

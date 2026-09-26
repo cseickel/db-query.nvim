@@ -172,7 +172,7 @@ local function relationItems(state, relations, functions, qualify)
     local label, text = written(state, relation, qualify, names.quote)
     add(state, GROUP.relation, label, text, RELATION_KIND[relation.kind] or Kind.Class, relation.kind)
     if inserting and state.snippets then
-      local item = insert.statement(dialect, relation, label, text, state.range)
+      local item = insert.statement(state, relation, label, text)
       if item then
         state.items[#state.items + 1] = sorted(state, item, GROUP.relation)
       end
@@ -315,7 +315,7 @@ local function insertHere(state)
   local relation = catalog and names.relation(catalog, dialect, context.insert.table)
   if context.insert.list == "columns" then
     if relation then
-      local all, columns = insert.columns(dialect, relation, context.insert.columns or {}, state.range, state.quoting)
+      local all, columns = insert.columns(state, relation)
       if all then
         if not state.snippets then
           all.insertTextFormat = nil
@@ -333,7 +333,7 @@ local function insertHere(state)
   local before = text:sub(1, cursor - 1):match("%(%s*$")
   local after = text:sub(state.context.word.last + 1):match("^%s*%)") or text:sub(state.context.word.last + 1):match("^%s*$")
   if state.snippets and context.insert.position == 1 and before and after then
-    local item = insert.values(relation, context.insert.columns, dialect, state.range)
+    local item = insert.values(state, relation)
     if item then
       state.items[#state.items + 1] = sorted(state, item, 0)
     end
