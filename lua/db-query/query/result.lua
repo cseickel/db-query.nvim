@@ -4,7 +4,7 @@ Marks each query a buffer ran with how its last run ended.
 Every query keeps a diagnostic holding the outcome, such as `2,520 rows in
 0.98s`, and the outcome's icon in the gutter beside its first line of code. The
 query that ran last also gets the run-status elbow, turning under the query to
-the outcome, until the buffer next enters insert mode.
+the outcome, until the buffer's text next changes.
 
 A run replaces every mark its lines overlap, when it starts and again when it
 finishes, so each query keeps only its last run. Deleting a query's text
@@ -41,7 +41,7 @@ vim.diagnostic.config({ underline = false, virtual_text = false, virtual_lines =
 local runs = {}
 
 --- The extmark of the run each buffer finished last, which gets the elbow until
---- the buffer enters insert mode.
+--- the buffer's text changes.
 ---@type table<integer, integer>
 local latest = {}
 
@@ -94,26 +94,33 @@ end
 local function runsOf(buf)
   if not runs[buf] then
     runs[buf] = {}
-    vim.api.nvim_create_autocmd("TextChanged", {
-      buffer = buf,
-      callback = function()
-        publish(buf)
+    -- nvim refuses editor changes inside these callbacks, so the elbow is
+    -- removed on the next pass of the main loop.
+    local function changed()
+      if latest[buf] then
+        latest[buf] = nil
+        vim.schedule(function()
+          if runs[buf] and vim.api.nvim_buf_is_loaded(buf) then
+            publish(buf)
+          end
+        end)
+      end
+    end
+    -- nvim detaches when the buffer is unloaded, which takes its marks with it.
+    vim.api.nvim_buf_attach(buf, false, {
+      on_lines = changed,
+      on_reload = changed,
+      on_detach = function()
+        runs[buf], latest[buf] = nil, nil
       end,
     })
-    vim.api.nvim_create_autocmd("InsertEnter", {
+    vim.api.nvim_create_autocmd("TextChanged", {
+      group = vim.api.nvim_create_augroup("db-query.query.result." .. buf, { clear = true }),
       buffer = buf,
       callback = function()
-        if latest[buf] then
-          latest[buf] = nil
+        if runs[buf] then
           publish(buf)
         end
-      end,
-    })
-    vim.api.nvim_create_autocmd("BufWipeout", {
-      buffer = buf,
-      once = true,
-      callback = function()
-        runs[buf], latest[buf] = nil, nil
       end,
     })
   end
@@ -149,9 +156,11 @@ function M.track(buf, span, process)
     tracked[extmark] = {
       status = process.status,
       diagnostic = {
+        bufnr = buf,
         lnum = top,
         end_lnum = bottom,
         col = 0,
+        end_col = 0,
         severity = SEVERITY[process.status],
         message = runStatus.summary(process),
         source = "db-query",

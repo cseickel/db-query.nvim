@@ -218,6 +218,14 @@ function M.statusline(buf)
   return Progress.format(vim.trim("reading catalog " .. (vim.b[buf].db_name or "")), seconds)
 end
 
+--- Deprecated name of `statusline`.
+---@deprecated Use `statusline`.
+---@param buf integer|nil
+---@return string
+function M.status(buf)
+  return M.statusline(buf)
+end
+
 ---@param opts dbquery.Config|nil
 function M.setup(opts)
   mainloop.run(function()

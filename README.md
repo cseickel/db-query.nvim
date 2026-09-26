@@ -215,7 +215,7 @@ end
 
 When the query finishes with rows, the window switches to them. When it fails or is cancelled, the log comes up with the reason at the bottom.
 
-Whatever the result is, the progress indicator turns into a result status, which stays until the next query runs or you enter insert mode in that buffer. This marker is always for the current or prior run only.
+Whatever the result is, the progress indicator turns into a result status, which stays until the next query runs or you change any text in that buffer. This marker is always for the current or prior run only.
 
 There are also diagnostic markers added for each executed statement which will remain until replaced by a newer execution. Those diagnostics will use:
 

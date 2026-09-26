@@ -60,7 +60,7 @@ local FINISHED_MESSAGE = 20
 
 --- How a finished run reads when the client gives no count.
 ---@type table<dbquery.Status, string>
-local ENDED = { ok = "finished in", failed = "failed after", cancelled = "cancelled after" }
+local ENDED = { ok = "Finished in", failed = "Failed after", cancelled = "Cancelled after" }
 
 ---@param status dbquery.Status A finished process's status.
 ---@return string
