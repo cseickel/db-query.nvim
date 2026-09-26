@@ -1,12 +1,5 @@
 --[[
 Completion items that write an insert's column list and values row.
-
-An insert is always written with its column list, so a column dropped from it
-is one deletion away, and a values row is only filled for a list that is
-written. The database's own columns, identity and generated ones, and hidden
-ones are left out.
-
-A list of three or more is written one item per line.
 ]]
 
 local names = require("db-query.lsp.names")
@@ -19,8 +12,8 @@ local SNIPPET = vim.lsp.protocol.InsertTextFormat.Snippet
 --- The value a column of each type starts as, keyed by the type's name in
 --- lower case without its size, so `varchar(20)` is found as `varchar`.
 ---@type table<string, string>
-local TYPE_VALUES = {}
-for value, types in pairs({
+local DEFAULT_VALUES_BY_TYPE = {}
+for default_value, types in pairs({
   ["0"] = [[
     smallint, integer, int, int2, int4, int8, bigint, tinyint, mediumint, hugeint, uhugeint,
     utinyint, usmallint, uinteger, ubigint, varint, bignum, big int, unsigned big int, serial, smallserial, bigserial, serial2,
@@ -41,19 +34,18 @@ for value, types in pairs({
   ["'{}'"] = "json, jsonb",
 }) do
   for _, type in ipairs(vim.split(vim.trim(types), "%s*,%s*")) do
-    TYPE_VALUES[type] = value
+    DEFAULT_VALUES_BY_TYPE[type] = default_value
   end
 end
 
---- Returns `text` with the characters a snippet reads as syntax escaped.
+--- Escapes text for use in a snippet.
 ---@param text string
 ---@return string
 local function escaped(text)
   return (text:gsub("[\\$}]", "\\%0"))
 end
 
---- Returns `items` as the inside of a parenthesized list: on one line for one
---- or two, and one per line, indented, for more.
+--- Formats a list of columns or values.
 ---@param items string[]
 ---@return string
 local function listBody(items)
@@ -63,9 +55,9 @@ local function listBody(items)
   return "\n\t" .. table.concat(items, ",\n\t") .. "\n"
 end
 
---- Returns the value a new row gives a column of `column`'s type when it has
---- no default and is not nullable: an enum's first label, or the type's
---- starting value, or NULL for a type with none.
+--- Returns the the default value for a column in an insert's values row.
+--- It uses the columns own default if one exists, or the type's default as
+--- we define it.
 ---@param inserts dbquery.InsertValues
 ---@param column dbquery.Column
 ---@return string
@@ -86,7 +78,7 @@ local function typeValue(inserts, column)
   if name == "uuid" then
     return inserts.uuid or "NULL"
   end
-  return TYPE_VALUES[name] or "NULL"
+  return DEFAULT_VALUES_BY_TYPE[name] or "NULL"
 end
 
 --- Returns the value a values row starts with for `column`: its default, which
