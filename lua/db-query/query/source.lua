@@ -117,7 +117,7 @@ function Source:output(view)
     return self.pane:show(run, run.log.path, { tail = true })
   end
 
-  if not (run.process.status == "ok" and run.path) then
+  if not (run.process.status == "ok" and run.path and not run.empty) then
     return vim.notify("db-query: the last query returned no rows", vim.log.levels.WARN)
   end
   self.pane:show(run, run.path)

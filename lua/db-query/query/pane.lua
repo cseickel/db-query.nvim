@@ -202,7 +202,7 @@ function Pane:display(run)
       return
     end
     self:stop()
-    if run.process.status == "ok" and run.path then
+    if run.process.status == "ok" and run.path and not run.empty then
       self:show(run, run.path, { tab = tab })
     else
       self:show(run, run.log.path, { tail = true, tab = tab })

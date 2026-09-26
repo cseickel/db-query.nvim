@@ -17,6 +17,7 @@ local sql = require("db-query.sql")
 ---@field log dbquery.Log The log every run of this buffer appends to.
 ---@field path string|nil Results file, when the statement returns rows.
 ---@field staged string|nil Path the client wrote rows to, moved onto `path`.
+---@field empty boolean The run succeeded and left the results file 0 bytes, so there is nothing to show.
 ---@field process dbquery.Process
 local Run = {}
 Run.__index = Run
@@ -107,6 +108,7 @@ function Run.start(ctx, log)
     log = log,
     path = path,
     staged = command.staged and stagingPath or nil,
+    empty = false,
   }, Run)
   log:begin(self)
 
@@ -136,6 +138,13 @@ function Run.start(ctx, log)
         end
       end
       os.remove(self.staged)
+    end
+    if process.status == "ok" and self.path then
+      local stat = vim.uv.fs_stat(self.path)
+      self.empty = stat ~= nil and stat.size == 0
+      if self.empty then
+        process.rows = 0
+      end
     end
     log:close(self)
   end)

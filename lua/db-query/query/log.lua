@@ -91,7 +91,7 @@ function Log:close(run, startError)
     table.insert(lines, "")
   end
   if status == "ok" and run.path then
-    table.insert(lines, "saved to " .. run.path)
+    table.insert(lines, "saved to " .. run.path .. (run.empty and " (empty)" or ""))
   end
   vim.list_extend(lines, {
     OUTPUT_FENCE_CLOSE,

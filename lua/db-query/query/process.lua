@@ -15,7 +15,7 @@ local mainloop = require("db-query.mainloop")
 ---@field status dbquery.Status
 ---@field started integer hrtime nanoseconds.
 ---@field finished integer|nil hrtime nanoseconds, set when the process exits.
----@field rows integer|nil Rows the client reported writing, for a client that records them in `command.countFile`.
+---@field rows integer|nil Rows the client reported writing, for a client that records them in `command.countFile`, or 0 once the run finds its results file empty.
 ---@field job vim.SystemObj
 ---@field result vim.SystemCompleted|nil How the process exited, set when `status` leaves "running".
 ---@field askServer fun(): boolean Asks the server to cancel, returning false when it cannot be asked.
