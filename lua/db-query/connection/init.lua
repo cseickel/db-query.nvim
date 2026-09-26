@@ -17,11 +17,11 @@ replace.
 local catalog = require("db-query.catalog")
 local client = require("db-query.client")
 local config = require("db-query.config")
-local connections = require("db-query.connections")
-local dadbod = require("db-query.dadbod")
-local main = require("db-query.main")
-local modeline = require("db-query.modeline")
-local Source = require("db-query.source")
+local connections = require("db-query.connection.list")
+local dadbod = require("db-query.connection.dadbod")
+local main = require("db-query.mainloop")
+local modeline = require("db-query.connection.modeline")
+local Source = require("db-query.query.source")
 local sql = require("db-query.sql")
 
 local M = {}

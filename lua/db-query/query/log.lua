@@ -9,8 +9,8 @@ format decision lives here, so a caller hands over raw text and says which kind
 of message it is.
 ]]
 
-local runStatus = require("db-query.run-status")
-local output = require("db-query.output")
+local runStatus = require("db-query.query.status")
+local output = require("db-query.query.files")
 
 ---@alias dbquery.LogMessage
 ---| "query" # The sql about to run, which opens the entry.

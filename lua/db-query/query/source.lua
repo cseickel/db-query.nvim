@@ -7,12 +7,12 @@ cancels the one before it.
 ]]
 
 local catalog = require("db-query.catalog")
-local Log = require("db-query.log")
-local output = require("db-query.output")
-local Pane = require("db-query.pane")
-local Progress = require("db-query.run-status.progress")
-local result = require("db-query.run-status.result")
-local Run = require("db-query.run")
+local Log = require("db-query.query.log")
+local output = require("db-query.query.files")
+local Pane = require("db-query.query.pane")
+local Progress = require("db-query.query.progress")
+local result = require("db-query.query.result")
+local Run = require("db-query.query.run")
 local sql = require("db-query.sql")
 
 ---@alias dbquery.OutputView "log"|"result"|"toggle"

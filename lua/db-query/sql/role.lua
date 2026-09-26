@@ -5,7 +5,7 @@ table, or the inside of a filter, over, or within group clause.
 ]]
 
 local lex = require("db-query.sql.lex")
-local scope = require("db-query.sql.scope")
+local scope = require("db-query.sql.relations")
 local syntax = require("db-query.sql.syntax")
 
 local M = {}

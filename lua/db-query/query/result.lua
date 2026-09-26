@@ -13,7 +13,7 @@ marks whenever the buffer changes outside insert mode. Deleting a query's text
 deletes its marks.
 ]]
 
-local runStatus = require("db-query.run-status")
+local runStatus = require("db-query.query.status")
 
 local M = {}
 

@@ -5,7 +5,7 @@ Running statements through psql.
 local psql = require("db-query.sql.dialect.psql")
 local rows = require("db-query.catalog.rows")
 local sql = require("db-query.sql")
-local url = require("db-query.url")
+local url = require("db-query.client.url")
 
 --- Returns the statement psql runs to fill the results file: wrapped in COPY
 --- for csv, and as written for text, where psql's own table is the output.
@@ -209,8 +209,8 @@ end
 return {
   name = "postgres",
   catalog = catalog,
-  definition = require("db-query.client.definition.postgres"),
-  references = require("db-query.client.references.postgres"),
+  definition = require("db-query.client.postgres.definition"),
+  references = require("db-query.client.postgres.references"),
   rows = { query = true, returning = true },
   delimited = "csv",
   dialect = psql,

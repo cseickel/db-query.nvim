@@ -229,7 +229,7 @@ end
 defineHighlights()
 -- Colorschemes clear all groups, so re-apply after a scheme loads.
 vim.api.nvim_create_autocmd("ColorScheme", {
-  group = vim.api.nvim_create_augroup("db-query.run-status", { clear = true }),
+  group = vim.api.nvim_create_augroup("db-query.query.status", { clear = true }),
   callback = defineHighlights,
 })
 

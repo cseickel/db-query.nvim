@@ -12,7 +12,7 @@ local document = require("db-query.lsp.document")
 local insert = require("db-query.lsp.insert")
 local literal = require("db-query.lsp.literal")
 local names = require("db-query.lsp.names")
-local scope = require("db-query.lsp.scope")
+local scope = require("db-query.lsp.columns")
 
 local M = {}
 

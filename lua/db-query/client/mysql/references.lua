@@ -5,7 +5,7 @@ whose text names it. Neither server records what a view or routine uses in a
 way both can read, so their text is searched.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local mysql = require("db-query.sql.dialect.mysql")
 local rows = require("db-query.catalog.rows")
 

@@ -9,9 +9,9 @@ nvim's cache, and each file's buffer runs against the same connection.
 
 local client = require("db-query.client")
 local config = require("db-query.config")
-local dadbod = require("db-query.dadbod")
-local ddl = require("db-query.client.definition")
-local output = require("db-query.output")
+local dadbod = require("db-query.connection.dadbod")
+local ddl = require("db-query.client.query")
+local output = require("db-query.query.files")
 local target = require("db-query.lsp.target")
 
 local M = {}

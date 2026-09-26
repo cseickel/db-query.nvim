@@ -7,7 +7,7 @@ subscribe with onFinish(). Every process still running when nvim exits is
 killed, because a detached process does not die with nvim.
 ]]
 
-local main = require("db-query.main")
+local main = require("db-query.mainloop")
 
 ---@alias dbquery.Status "running"|"ok"|"failed"|"cancelled"
 
@@ -35,7 +35,7 @@ Process.__index = Process
 local live = {}
 
 vim.api.nvim_create_autocmd("VimLeavePre", {
-  group = vim.api.nvim_create_augroup("db-query.process", { clear = true }),
+  group = vim.api.nvim_create_augroup("db-query.query.process", { clear = true }),
   callback = function()
     for _, process in ipairs(live) do
       process.job:kill("sigterm")

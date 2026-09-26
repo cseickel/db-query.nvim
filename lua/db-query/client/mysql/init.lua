@@ -9,7 +9,7 @@ takes, `--ssl-verify-server-cert` among them.
 
 local rows = require("db-query.catalog.rows")
 local sql = require("db-query.sql")
-local url = require("db-query.url")
+local url = require("db-query.client.url")
 
 --- Converts a mysql or mariadb url into command-line arguments and environment.
 ---
@@ -198,8 +198,8 @@ local function client(binary)
   return {
     name = binary,
     catalog = catalog,
-    definition = require("db-query.client.definition.mysql"),
-    references = require("db-query.client.references.mysql"),
+    definition = require("db-query.client.mysql.definition"),
+    references = require("db-query.client.mysql.references"),
     rows = { query = true },
     delimited = "tsv",
     dialect = dialect,

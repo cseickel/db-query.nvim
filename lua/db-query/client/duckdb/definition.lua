@@ -7,7 +7,7 @@ remade from its parameters and body, which duckdb keeps without the
 parameters' defaults. Other functions are built in and have none.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local rows = require("db-query.catalog.rows")
 
 ---@param database string

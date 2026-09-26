@@ -4,7 +4,7 @@ function's overloads.
 ]]
 
 local names = require("db-query.lsp.names")
-local scope = require("db-query.lsp.scope")
+local scope = require("db-query.lsp.columns")
 
 local M = {}
 

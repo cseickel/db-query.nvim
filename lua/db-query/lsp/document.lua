@@ -9,7 +9,7 @@ The buffer a request is about, read when the request arrives.
 
 local catalog = require("db-query.catalog")
 local client = require("db-query.client")
-local dadbod = require("db-query.dadbod")
+local dadbod = require("db-query.connection.dadbod")
 local lex = require("db-query.sql.lex")
 
 local M = {}

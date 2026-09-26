@@ -13,8 +13,8 @@ came from as `run.ctx`, which is where the pane reads what it needs.
 ]]
 
 local client = require("db-query.client")
-local output = require("db-query.output")
-local Process = require("db-query.process")
+local output = require("db-query.query.files")
+local Process = require("db-query.query.process")
 local sql = require("db-query.sql")
 
 ---@class dbquery.Run

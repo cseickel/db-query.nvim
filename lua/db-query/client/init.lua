@@ -7,8 +7,8 @@ client writes wherever it can. Each client is a file in this directory, keyed
 here by the url schemes that reach it.
 ]]
 
-local Process = require("db-query.process")
-local url = require("db-query.url")
+local Process = require("db-query.query.process")
+local url = require("db-query.client.url")
 
 local M = {}
 

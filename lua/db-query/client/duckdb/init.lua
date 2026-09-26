@@ -2,11 +2,11 @@
 Running statements through the duckdb cli.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local duckdb = require("db-query.sql.dialect.duckdb")
 local rows = require("db-query.catalog.rows")
 local sql = require("db-query.sql")
-local url = require("db-query.url")
+local url = require("db-query.client.url")
 
 local SEARCH_PATH = [[
 select json_object('database', current_database(), 'setting', current_setting('search_path'))]]
@@ -210,8 +210,8 @@ end
 return {
   name = "duckdb",
   catalog = catalog,
-  definition = require("db-query.client.definition.duckdb"),
-  references = require("db-query.client.references.duckdb"),
+  definition = require("db-query.client.duckdb.definition"),
+  references = require("db-query.client.duckdb.references"),
   rows = { query = true, returning = true },
   delimited = "csv",
   embedded = true,

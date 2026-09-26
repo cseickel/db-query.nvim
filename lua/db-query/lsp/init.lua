@@ -14,7 +14,7 @@ local context = require("db-query.sql.context")
 local definition = require("db-query.lsp.definition")
 local document = require("db-query.lsp.document")
 local hover = require("db-query.lsp.hover")
-local main = require("db-query.main")
+local main = require("db-query.mainloop")
 local signature = require("db-query.lsp.signature")
 
 local M = {}

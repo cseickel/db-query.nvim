@@ -14,7 +14,7 @@ it. Deleting them is `Source:close`'s job, since the run that wrote a file
 outlives the window that showed it.
 ]]
 
-local main = require("db-query.main")
+local main = require("db-query.mainloop")
 
 ---@class dbquery.Pane
 ---@field path string|nil The file last put on screen.

@@ -4,7 +4,7 @@ at it, and the views and macros whose text names it. duckdb keeps no record of
 what a view or macro uses, so their text is searched.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local duckdb = require("db-query.sql.dialect.duckdb")
 local rows = require("db-query.catalog.rows")
 

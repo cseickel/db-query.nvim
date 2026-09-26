@@ -14,7 +14,7 @@ the function's parameters and declared variables in scope.
 local body = require("db-query.sql.body")
 local lex = require("db-query.sql.lex")
 local role = require("db-query.sql.role")
-local scope = require("db-query.sql.scope")
+local scope = require("db-query.sql.relations")
 local statements = require("db-query.sql.statements")
 local syntax = require("db-query.sql.syntax")
 

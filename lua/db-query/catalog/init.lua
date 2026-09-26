@@ -17,11 +17,11 @@ setting replaces it for the clients it names.
 
 local client = require("db-query.client")
 local config = require("db-query.config")
-local main = require("db-query.main")
-local output = require("db-query.output")
-local Progress = require("db-query.run-status.progress")
+local main = require("db-query.mainloop")
+local output = require("db-query.query.files")
+local Progress = require("db-query.query.progress")
 local shape = require("db-query.catalog.shape")
-local url = require("db-query.url")
+local url = require("db-query.client.url")
 
 local M = {}
 

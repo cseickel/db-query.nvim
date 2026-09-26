@@ -3,7 +3,7 @@ Running statements through sqlite3.
 ]]
 
 local rows = require("db-query.catalog.rows")
-local url = require("db-query.url")
+local url = require("db-query.client.url")
 
 local SEARCH_PATH = [[
 select json_object('schema', name, 'position', seq) from pragma_database_list]]
@@ -103,8 +103,8 @@ end
 return {
   name = "sqlite",
   catalog = catalog,
-  definition = require("db-query.client.definition.sqlite"),
-  references = require("db-query.client.references.sqlite"),
+  definition = require("db-query.client.sqlite.definition"),
+  references = require("db-query.client.sqlite.references"),
   rows = { query = true, returning = true },
   delimited = "csv",
   embedded = true,

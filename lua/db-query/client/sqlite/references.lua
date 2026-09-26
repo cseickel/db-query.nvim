@@ -5,7 +5,7 @@ no record of what a view or trigger uses, so their statements are searched.
 Functions are built in, and nothing is recorded as depending on one.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local rows = require("db-query.catalog.rows")
 local sqlite = require("db-query.sql.dialect.sqlite")
 

@@ -7,7 +7,7 @@ indexes, triggers, and view query, followed by its comments. A function's is
 `pg_get_functiondef` for each overload. Aggregates have none.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local rows = require("db-query.catalog.rows")
 
 local RELATION = [[

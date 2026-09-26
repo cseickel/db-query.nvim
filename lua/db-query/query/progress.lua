@@ -11,8 +11,8 @@ or statusline, which the user would have to configure themselves.
 ]]
 
 local config = require("db-query.config")
-local main = require("db-query.main")
-local runStatus = require("db-query.run-status")
+local main = require("db-query.mainloop")
+local runStatus = require("db-query.query.status")
 
 --- Where a progress mark draws, and what it says the process is doing.
 ---@class dbquery.Place

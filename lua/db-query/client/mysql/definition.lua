@@ -2,7 +2,7 @@
 The DDL of a mysql or mariadb relation or routine, from `show create`.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 
 ---@param name string
 ---@return string

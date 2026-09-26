@@ -7,7 +7,7 @@ point at. A plpgsql body records nothing, so function bodies are also searched
 for the name.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local psql = require("db-query.sql.dialect.psql")
 local rows = require("db-query.catalog.rows")
 

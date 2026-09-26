@@ -3,7 +3,7 @@ The DDL of a sqlite relation: the statements that made it, its indexes, and its
 triggers, which sqlite keeps as written. Functions are built in and have none.
 ]]
 
-local ddl = require("db-query.client.definition")
+local ddl = require("db-query.client.query")
 local rows = require("db-query.catalog.rows")
 
 ---@param request dbquery.CatalogRequest
