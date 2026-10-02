@@ -1,10 +1,6 @@
 --[[
-The catalog every client reads its database into, and the check that a catalog
-has that shape.
-
-Names are qualified the way the sql writes them: `schema` is the qualifier just
-left of a name, and `database` is the one left of `schema`, for a database
-such as duckdb that has one.
+Defines the shape of the catalog every client reads its database into, and
+checks a catalog against it.
 ]]
 
 local M = {}
@@ -13,6 +9,9 @@ local M = {}
 ---@alias dbquery.FunctionKind "function"|"procedure"|"aggregate"|"window"|"macro"
 ---@alias dbquery.ArgumentMode "in"|"out"|"inout"|"variadic"|"table"
 
+--- Holds the qualifiers the sql writes left of a name. `schema` is the one just
+--- left of the name, and `database` is the one left of `schema`, for a
+--- database such as duckdb that has one.
 ---@class dbquery.SchemaName
 ---@field database string|nil
 ---@field schema string

@@ -1,6 +1,6 @@
 --[[
-The string the cursor is in: the value being typed, and the column or type it
-is compared to or cast to.
+Reads the string the cursor is in, and finds the column or type its value is
+compared to or cast to.
 ]]
 
 local lex = require("db-query.sql.lex")

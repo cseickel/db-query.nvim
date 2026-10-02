@@ -81,6 +81,17 @@ Above the lexer, `sql/statements.lua` says where one statement ends, and the mod
 
 `lsp/target.lua` turns the word under the cursor into the catalog object it names, for hover, definition, and references alike. `lsp/definition.lua` has the object's client read its DDL, through the client's `definition.lua`, and writes it to the file `files.definition` names, with `b:db` set on the file's buffer. A definition or a reference is then an ordinary file location, and the user can run the DDL. References come from the client's `references.lua`. Postgres reads most of them from `pg_depend`. The rest are `like` searches of the text the database keeps, and `lex.mentions` lexes each hit with the client's dialect and keeps it only where the name is a word or a quoted identifier. A reference is kept only when the catalog holds it, since the DDL reader takes a catalog entry. The DDL reads run four at a time, because each is a client process and, on a server, a connection.
 
+## Tests
+
+`test/snapshot/run.lua` creates a sqlite and a duckdb database from the schemas in `test/snapshot/cases.lua`, runs every case against a sql buffer connected to each, and compares the answers with `test/snapshot/expected/<engine>.txt`. It needs `sqlite3` and `duckdb` on the path, and skips an engine whose binary is missing.
+
+```bash
+nvim --headless -l test/snapshot/run.lua          # prints a diff of each changed case, exits 1 on any difference
+nvim --headless -l test/snapshot/run.lua update   # rewrites the expected files from this run
+```
+
+Completion snapshots leave out functions the database ships with, so upgrading sqlite or duckdb doesn't change them.
+
 ## Adding a database
 
 Create a folder under `lua/db-query/client/` holding `init.lua`, `catalog.lua`, `definition.lua`, and `references.lua`, and map its url scheme to the folder in `CLIENTS` in `client/init.lua`. `init.lua` returns a `dbquery.Client`, the contract in `client/init.lua`, and requires the other three files as its `catalog`, `definition`, and `references` fields. `client/mysql/init.lua` returns two clients, `mysql` and `mariadb`, that differ in the executable they run and the dialect they read by. The parts that need a decision rather than a value:

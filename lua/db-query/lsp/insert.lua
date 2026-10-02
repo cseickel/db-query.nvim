@@ -1,5 +1,5 @@
 --[[
-Completion items that write an insert's column list and values row.
+Builds the completion items that write an insert's column list and values row.
 ]]
 
 local items = require("db-query.lsp.items")
@@ -46,7 +46,8 @@ local function escaped(text)
   return (text:gsub("[\\$}]", "\\%0"))
 end
 
---- Formats a list of columns or values.
+--- Returns `list` joined by `, ` when it has fewer than 3 items, and one item
+--- per indented line otherwise.
 ---@param list string[]
 ---@return string
 local function listBody(list)
@@ -56,9 +57,9 @@ local function listBody(list)
   return "\n\t" .. table.concat(list, ",\n\t") .. "\n"
 end
 
---- Returns the default value for a column in an insert's values row. It uses
---- the column's own default if one exists, NULL for a nullable column, and
---- otherwise the type's default as we define it.
+--- Returns the value a column starts as in an insert's values row. That is the
+--- column's own default, NULL for a nullable column, and otherwise a value of
+--- its type from DEFAULT_VALUES_BY_TYPE.
 ---@param dialect dbquery.Dialect
 ---@param column dbquery.Column
 ---@return string
@@ -110,8 +111,8 @@ local function quotedNames(dialect, columns)
   end, columns)
 end
 
---- Returns the columns of `relation` an insert lists: every one the database
---- does not fill itself, and none it hides.
+--- Returns the columns of `relation` an insert lists, which are those the
+--- database neither fills itself nor hides.
 ---@param relation dbquery.Relation
 ---@return dbquery.Column[]
 local function insertable(relation)
@@ -120,8 +121,8 @@ local function insertable(relation)
   end):totable()
 end
 
---- Adds the item that writes the table with its column list and values row:
---- `trades (id, qty) values (DEFAULT, 0)`.
+--- Adds the item that writes the table with its column list and values row,
+--- such as `trades (id, qty) values (DEFAULT, 0)`.
 ---@param state dbquery.Completion
 ---@param relation dbquery.Relation
 ---@param label string The table's name as the completion shows it.

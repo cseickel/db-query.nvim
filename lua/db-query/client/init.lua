@@ -1,6 +1,5 @@
 --[[
-The clients that run sql, keyed by url scheme, and the command line each runs
-a statement with.
+Finds the client for a connection's url and runs statements through it.
 ]]
 
 local Process = require("db-query.query.process")
@@ -8,9 +7,9 @@ local url = require("db-query.client.url")
 
 local M = {}
 
---- How the client prints: "text" and "csv" as the user asked, or "value" for
---- the statement's result alone, unaligned and with no header, echo, or
---- timing, for output read back into lua.
+--- How the client prints. "text" and "csv" print as the user asked. "value"
+--- prints the statement's result alone, unaligned and without a header, echo,
+--- or timing, so lua can read it back.
 ---@alias dbquery.CommandFormat dbquery.Format|"value"
 
 ---@class dbquery.Command
@@ -70,7 +69,7 @@ end
 function M.known(connection)
   local dbClient = M.of(connection)
   if not dbClient then
-    -- Show scheme, not full url, to avoid exposing expanded $VAR values.
+    -- Shows only the scheme, because the url may hold expanded $VAR values.
     vim.notify("no client known for " .. url.scheme(connection), vim.log.levels.ERROR)
   end
   return dbClient

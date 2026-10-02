@@ -1,6 +1,5 @@
 --[[
-DuckDB sql: postgres's lexing with duckdb's parameters (`$1`, `?`, `$name`),
-and duckdb's own keywords.
+Defines duckdb sql, read with postgres's lexing rules and duckdb's parameters.
 ]]
 
 local dialect = require("db-query.sql.dialect")

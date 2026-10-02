@@ -1,7 +1,5 @@
 --[[
-The catalog of each database, read in the background and saved to disk for the
-next session. Nothing waits on a read: until one finishes, `get` returns the
-catalog from before it, or nil.
+Reads each database's catalog in the background and keeps the last one read.
 ]]
 
 local client = require("db-query.client")
@@ -221,7 +219,7 @@ function M.reading(resolveUrl)
 end
 
 --- Returns the last catalog read for `resolved`, or nil when none has been.
---- Starts the first read, and never starts another: a failed read waits for
+--- Starts the first read and never starts another. A failed read waits for
 --- `refresh`, so an unreachable database is not asked again on every call.
 ---@param resolved string Resolved url.
 ---@return dbquery.Catalog|nil

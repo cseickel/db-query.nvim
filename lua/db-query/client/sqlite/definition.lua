@@ -1,11 +1,12 @@
 --[[
-The DDL of a sqlite relation: the statements that made it, its indexes, and its
-triggers, which sqlite keeps as written. Functions are built in and have none.
+Reads the DDL of a sqlite relation.
 ]]
 
 local query = require("db-query.client.query")
 local sqlite = require("db-query.sql.dialect.sqlite")
 
+-- sqlite keeps the statements that made a relation, its indexes, and its
+-- triggers as they were written.
 local STATEMENTS = [[
 select json_object('sql', sql) from :schema.sqlite_master
 where tbl_name = :name and sql is not null

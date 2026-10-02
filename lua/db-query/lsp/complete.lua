@@ -1,5 +1,5 @@
 --[[
-Completion items for the cursor's context.
+Builds the completion items for the cursor's context.
 ]]
 
 local columns = require("db-query.lsp.columns")
@@ -40,9 +40,9 @@ local function keywords(state, list, skip)
   end
 end
 
---- Adds the keywords that may be written where a value goes: the words that
---- open a value, or, once one is written, the words that may follow it and the
---- words that may follow the clause holding it.
+--- Adds the keywords that may be written where a value goes. Before a value
+--- is written, those are the words that open one. After, they are the words
+--- that may follow it and the words that may follow the clause holding it.
 ---@param state dbquery.Completion
 local function valueKeywords(state)
   local context = state.context

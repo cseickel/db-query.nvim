@@ -1,11 +1,5 @@
 --[[
-Extracting sql from a buffer.
-
-`capture` reads the lines the query comes from: the whole buffer, a command
-range, the visual selection, or the buffer and cursor row for the statement at
-the cursor. It runs first, while the selection and cursor are still where the
-user left them. `sql` turns a capture into the sql to run, and finds the
-statement at the cursor once the connection says which dialect to read it by.
+Reads the sql to run from a buffer.
 ]]
 
 local sql = require("db-query.sql")

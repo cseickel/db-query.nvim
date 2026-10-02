@@ -1,13 +1,6 @@
 --[[
-SQL parsing for output routing and for the statement the cursor is in.
-
-Determines whether a statement returns rows, and if so whether it can be
-wrapped in COPY. A statement that returns no rows writes nothing but its
-transcript, which belongs in the log.
-
-Every function here reads tokens from `sql.lex` by the rules of the dialect it
-is given, so a semicolon or keyword inside a string, a comment, or a
-dollar-quoted body is never mistaken for code.
+Answers questions about the sql a user runs, such as which statement the
+cursor is in and whether it returns rows.
 ]]
 
 local lex = require("db-query.sql.lex")

@@ -1,5 +1,5 @@
 --[[
-Running statements through psql.
+Builds the psql command lines that run a statement and cancel one.
 ]]
 
 local psql = require("db-query.sql.dialect.psql")

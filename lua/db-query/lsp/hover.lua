@@ -1,6 +1,6 @@
 --[[
-Hover for the name under the cursor: a column, a table, or a function, as the
-catalog describes it.
+Describes the column, table, or function under the cursor, as the catalog
+records it.
 ]]
 
 local describe = require("db-query.lsp.describe")

@@ -1,8 +1,5 @@
 --[[
-The connections the picker offers.
-
-Read from vim-dadbod-ui's connections.json and `g:dbs` by default. A
-`connections` list or function in setup() replaces both sources.
+Lists the connections the picker offers.
 ]]
 
 local config = require("db-query.config")
@@ -76,8 +73,8 @@ end
 ---
 --- The `connections` setting, a list or a function returning one, replaces the
 --- default sources entirely, and an invalid one returns an error rather than
---- falling back to them. Without it, connections come from the json file then
---- `g:dbs`, skipping a name already listed.
+--- falling back to them. Without it, connections come from vim-dadbod-ui's
+--- connections.json, then `g:dbs`, skipping a name already listed.
 ---@return dbquery.Connection[] connections
 ---@return string|nil err
 function M.list()

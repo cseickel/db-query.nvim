@@ -1,10 +1,5 @@
 --[[
-Splitting sql text into tokens.
-
-`tokens` reads the text by the rules of a `dbquery.Dialect`: its strings,
-quoted identifiers, comments, parameters, and client commands. Every dialect
-produces the same token kinds, so nothing after the lexer depends on how the
-text was quoted.
+Splits sql text into tokens by the rules of a dialect.
 ]]
 
 local M = {}

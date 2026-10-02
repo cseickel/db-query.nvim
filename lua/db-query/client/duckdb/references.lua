@@ -1,7 +1,5 @@
 --[[
-What depends on a duckdb relation or macro: the tables whose foreign keys point
-at it, and the views and macros whose text names it. duckdb keeps no record of
-what a view or macro uses, so their text is searched.
+Finds what depends on a duckdb relation or macro.
 ]]
 
 local duckdb = require("db-query.sql.dialect.duckdb")
@@ -14,6 +12,8 @@ where constraint_type = 'FOREIGN KEY' and database_name = :database and schema_n
 union all
 ]]
 
+-- duckdb keeps no record of what a view or macro uses, so their text is
+-- searched for the name.
 local SEARCHED = [[
 select json_object('database', database_name, 'schema', schema_name, 'name', view_name, 'routine', false, 'text', sql)
 from duckdb_views()

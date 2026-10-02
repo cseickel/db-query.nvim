@@ -1,10 +1,6 @@
 --[[
-The progress of a running process: a query, or a connection test.
-
-The lines the process is about get the run-status mark in the running color: a
-spinner beside the first line, and an elbow under the last turning to what it
-is doing, a timer, and the cancel key. The cancel key is bound while it runs.
-All state is buffer-local, so each buffer shows one process at a time.
+Shows a running query or connection test in its sql buffer, and binds the key
+that cancels it.
 ]]
 
 local config = require("db-query.config")

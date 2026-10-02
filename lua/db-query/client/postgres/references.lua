@@ -1,16 +1,13 @@
 --[[
-What depends on a postgres relation or function.
-
-`pg_depend` records what views, sql-standard function bodies, column
-defaults, and constraints use, and foreign keys and triggers name what they
-point at. A plpgsql body records nothing, so function bodies are also searched
-for the name.
+Finds what depends on a postgres relation or function.
 ]]
 
 local psql = require("db-query.sql.dialect.psql")
 local query = require("db-query.client.query")
 
--- A function whose body the server compiles holds no text to search.
+-- `pg_depend` records nothing for a plpgsql body, so function bodies are
+-- searched for the name. A function whose body the server compiles, in c or
+-- internal, holds no text to search.
 local BODIES = [[
 select json_build_object('schema', n.nspname, 'name', p.proname, 'routine', true, 'text', p.prosrc)::text
 from pg_proc p

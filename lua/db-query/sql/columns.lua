@@ -1,6 +1,6 @@
 --[[
-The names postgres gives the output columns of a select, which is what a
-subquery or CTE offers as columns when it lists no names of its own.
+Names the output columns of a select the way postgres does, which gives the
+columns of a subquery or CTE that lists none of its own.
 ]]
 
 local lex = require("db-query.sql.lex")

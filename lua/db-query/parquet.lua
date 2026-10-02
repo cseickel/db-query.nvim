@@ -1,7 +1,5 @@
 --[[
-Opens a *.parquet file as a duckdb query against it, instead of its binary
-content. The file is registered as a view so sql completion includes its
-columns.
+Opens a *.parquet file as a sql buffer holding a duckdb query of the file.
 ]]
 
 local client = require("db-query.client")
@@ -10,7 +8,8 @@ local query = require("db-query.client.query")
 
 local M = {}
 
--- Shared database per nvim; duckdb takes an exclusive lock.
+-- Each nvim gets its own database file, because duckdb lets only one process
+-- open a database file for writing.
 local URL = "duckdb:" .. vim.fn.tempname() .. ".duckdb"
 local SCRATCH = vim.fn.stdpath("cache") .. "/parquet"
 
@@ -65,8 +64,8 @@ function M.setup(group)
           return
         end
         vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-        -- Before the filetype, whose autocmd gives a buffer with no b:db the g:db
-        -- connection and its name.
+        -- Set before the filetype, because the FileType autocmd gives a buffer
+        -- without b:db the g:db connection.
         vim.b[buf].db = url
         vim.bo[buf].filetype = "sql"
         vim.bo[buf].modified = false

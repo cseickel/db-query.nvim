@@ -1,6 +1,6 @@
 --[[
-The catalog object the word under the cursor names: a column, a relation, or a
-function's overloads.
+Finds the catalog object the word under the cursor names, which is a column, a
+relation, or a function's overloads.
 ]]
 
 local columns = require("db-query.lsp.columns")

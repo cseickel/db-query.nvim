@@ -1,8 +1,5 @@
 --[[
-What depends on a mysql or mariadb relation or routine: the tables whose
-foreign keys point at it, and the views, routines, and tables with triggers
-whose text names it. Neither server records what a view or routine uses in a
-way both can read, so their text is searched.
+Finds what depends on a mysql or mariadb relation or routine.
 ]]
 
 local mysql = require("db-query.sql.dialect.mysql")
@@ -16,6 +13,8 @@ where referenced_table_schema = :schema and referenced_table_name = :name
 union all
 ]]
 
+-- Neither server records what a view, routine, or trigger uses in a way both
+-- can read, so their text is searched for the name.
 local SEARCHED = [[
 select json_object('schema', table_schema, 'name', table_name, 'routine', false, 'text', view_definition)
 from information_schema.views

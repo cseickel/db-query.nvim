@@ -1,5 +1,5 @@
 --[[
-Running statements through the duckdb cli.
+Builds the duckdb command lines that run a statement.
 ]]
 
 local duckdb = require("db-query.sql.dialect.duckdb")

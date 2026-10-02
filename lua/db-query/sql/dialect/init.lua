@@ -1,9 +1,6 @@
 --[[
-The rules that differ between one database's sql and another's.
-
-Each dialect file returns a `dbquery.Dialect`, built with `derive` from the
-dialect it is closest to. Every module under `sql/` reads by the dialect it is
-given.
+Defines the rules that differ between one database's sql and another's, and
+derives one dialect from another.
 ]]
 
 local M = {}
@@ -38,8 +35,8 @@ local M = {}
 ---@field within table<dbquery.Clause, true>|nil The rule applies only inside one of these clauses.
 ---@field test (fun(state: dbquery.ClauseState): boolean)|nil The rule applies only when this returns true.
 
---- One token of a pattern: a word, one of a set of words, `ANY` for any word,
---- or `GROUP` for a parenthesized group.
+--- One token of a pattern, which is a word, a set of words, `ANY` for any
+--- word, or `GROUP` for a parenthesized group.
 ---@alias dbquery.PatternPart string|table<string, true>
 
 --- A function the sql grammar defines rather than the catalog, such as
@@ -52,9 +49,9 @@ local M = {}
 --- The keywords completion offers, keyed by where the cursor stands.
 ---
 --- Every `dbquery.Clause` name holds the words that may follow a value or a
---- name in that clause: `where` holds the clauses a query goes on with after
---- its where clause, `from` holds those plus the joins and `as`. These keys
---- are not clauses:
+--- name in that clause. For example, `where` holds the clauses a query goes
+--- on with after its where clause, and `from` holds those plus the joins and
+--- `as`. These keys are not clauses.
 ---
 --- - `expression`: words that open a value.
 --- - `operator`: words that may follow a value, other than a clause.
@@ -76,7 +73,7 @@ local M = {}
 
 ---@class dbquery.Dialect
 ---@field name string
----@field folds "lower"|"none" How the server reads an unquoted name: folded to lower case, or matched in any case.
+---@field folds "lower"|"none" How the server reads an unquoted name. "lower" folds it to lower case, and "none" matches it in any case.
 ---@field signatures table<string, dbquery.GrammarSignature> Keyed by lowercase function name.
 ---@field keywords dbquery.Keywords
 ---@field lex dbquery.LexRules

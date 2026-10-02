@@ -1,5 +1,5 @@
 --[[
-MariaDB sql: mysql's, plus `returning` on insert, replace, and delete.
+Defines mariadb sql, which is mysql's with `returning` added.
 ]]
 
 local dialect = require("db-query.sql.dialect")

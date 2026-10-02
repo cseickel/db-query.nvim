@@ -1,5 +1,5 @@
 --[[
-The completion items one request collects, in the order they sort.
+Collects one request's completion items, in the order they sort.
 ]]
 
 local M = {}

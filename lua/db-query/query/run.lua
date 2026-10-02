@@ -1,10 +1,6 @@
 --[[
-A running query, its files, and the process writing them.
-
-The client writes directly to files and nvim reads those files, which keeps
-large result sets out of lua memory. Everything the client prints goes to the
-log, and rows go to a separate results file, which only exists when the
-statement returns any.
+Runs one query, sending what the client prints to the log and its rows to a
+results file.
 ]]
 
 local client = require("db-query.client")
@@ -28,8 +24,9 @@ local function quoted(argument)
   return "'" .. argument:gsub("'", "'\\''") .. "'"
 end
 
---- Wraps `argv` in a shell that files the client's output. Uses `exec` so
---- signals reach the client directly.
+--- Wraps `argv` in a shell that sends the client's output to files, which
+--- keeps large result sets out of lua memory. Uses `exec` so signals reach the
+--- client directly.
 ---
 --- A client that writes its own rows leaves both streams for the log. One that
 --- cannot names a `rowsPath` for stdout, so only stderr reaches the log.

@@ -1,10 +1,5 @@
 --[[
-The DDL of a duckdb relation or macro.
-
-A relation's comes from the statements duckdb keeps for it and its indexes,
-with its comments added, since those statements leave them out. A macro is
-remade from its parameters and body, which duckdb keeps without the
-parameters' defaults. Other functions are built in and have none.
+Reads the DDL of a duckdb relation or macro.
 ]]
 
 local duckdb = require("db-query.sql.dialect.duckdb")
@@ -37,6 +32,9 @@ local function literals(named)
   }
 end
 
+--- Remakes the create statement of each overload of the macro `fn` from its
+--- parameters and body. The parameters' defaults are missing, because duckdb
+--- doesn't keep them.
 ---@param request dbquery.CatalogRequest
 ---@param fn dbquery.Function
 ---@param done fun(ddl: string|nil, err: string|nil)
@@ -59,6 +57,8 @@ local function macroDefinition(request, fn, done)
   end)
 end
 
+--- Reads the statements duckdb keeps for the relation and its indexes, then
+--- adds the relation's comments, which those statements leave out.
 ---@param request dbquery.CatalogRequest
 ---@param relation dbquery.Relation
 ---@param done fun(ddl: string|nil, err: string|nil)

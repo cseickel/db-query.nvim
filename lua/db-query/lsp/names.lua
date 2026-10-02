@@ -61,9 +61,9 @@ function M.matches(dialect, part, name, loose)
   return part.text:lower() == name
 end
 
---- Returns the items of `list` whose qualified name `parts` names: the last
---- part against `name`, and the parts before it against `schema` and then
---- `database`. A single part is looked for in `searchPath` order, and then
+--- Returns the items of `list` whose qualified name `parts` names. The last
+--- part is matched against `name`, and the parts before it against `schema`
+--- and then `database`. A single part is looked for in `searchPath` order, and then
 --- anywhere when exactly one item has that name. Folded matches are tried
 --- before matches in any case.
 ---@generic T : { database: string|nil, schema: string|nil, name: string }
@@ -198,9 +198,10 @@ local function spelled(dialect, name, reserved)
   return open .. name:gsub(vim.pesc(close), close .. close) .. close
 end
 
---- Returns the name of a table, schema, or column as sql has to write it: bare
---- when the dialect reads the bare word back as this name, and quoted when it
---- would not, or when the dialect reserves the word, as in `"order"`.
+--- Returns the name of a table, schema, or column as sql has to write it. The
+--- name is bare when the dialect reads the bare word back as this name, and
+--- quoted when it would not, or when the dialect reserves the word, as in
+--- `"order"`.
 ---@param dialect dbquery.Dialect
 ---@param name string
 ---@return string
@@ -208,8 +209,8 @@ function M.quote(dialect, name)
   return spelled(dialect, name, true)
 end
 
---- Returns a function's name as a call writes it, which a reserved word never
---- quotes: `coalesce(` is grammar, and `"coalesce"(` is not.
+--- Returns a function's name as a call writes it. A reserved word is never
+--- quoted here, because `coalesce(` is grammar and `"coalesce"(` is not.
 ---@param dialect dbquery.Dialect
 ---@param name string
 ---@return string

@@ -1,7 +1,6 @@
 --[[
-What runs from a sql buffer: its log, its pane, and the one process it is
-running, a query or a connection test. Starting either cancels the one before
-it.
+Runs one query or connection test at a time for a sql buffer, and keeps the
+buffer's log and output pane.
 ]]
 
 local catalog = require("db-query.catalog")

@@ -1,5 +1,5 @@
 --[[
-The buffer a request is about, read when the request arrives.
+Reads the buffer a request is about, as text addressed by LSP positions.
 ]]
 
 local catalog = require("db-query.catalog")

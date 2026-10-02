@@ -1,7 +1,5 @@
 --[[
-The sql every other dialect starts from: `'` strings with doubled quotes, `"`
-identifiers, `--` and `/* */` comments, and the clauses of select, insert,
-update, and delete.
+Defines the standard sql every other dialect is derived from.
 ]]
 
 local dialect = require("db-query.sql.dialect")

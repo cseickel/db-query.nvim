@@ -1,5 +1,5 @@
 --[[
-The values a string written at the cursor may hold.
+Finds the values a string written at the cursor may hold.
 ]]
 
 local columns = require("db-query.lsp.columns")

@@ -1,5 +1,5 @@
 --[[
-Postgres sql as the server reads it, with no client commands.
+Defines postgres sql as the server reads it, without client commands.
 ]]
 
 local dialect = require("db-query.sql.dialect")

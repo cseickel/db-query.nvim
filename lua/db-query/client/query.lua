@@ -1,6 +1,6 @@
 --[[
-Helpers for the queries a client runs to read its catalog, the DDL of an
-object, and what depends on it.
+Builds and runs the queries a client uses to read its catalog, an object's
+DDL, and what depends on the object, and parses what they print.
 ]]
 
 local lex = require("db-query.sql.lex")
@@ -14,8 +14,9 @@ local M = {}
 ---@field name string
 ---@field routine boolean A function or procedure, rather than a relation.
 
---- Returns the catalog object `target` reads the DDL of: the first overload of
---- a function, and otherwise the relation, which for a column is its table.
+--- Returns the catalog object whose DDL `target` reads. That is the first
+--- overload of a function, and otherwise the relation, which for a column is
+--- its table.
 ---@param target dbquery.Target
 ---@return dbquery.Function|dbquery.Relation
 function M.object(target)
@@ -90,9 +91,9 @@ local function decode(output)
   return rows
 end
 
---- Runs every statement in `statements` at once, and calls `done` once: with
---- what each printed, under the same key, when all of them succeed, or with
---- the first error.
+--- Runs every statement in `statements` at once, and calls `done` once. When
+--- all of them succeed, `done` gets what each printed, under the statement's
+--- key. Otherwise it gets the first error.
 ---@param request dbquery.CatalogRequest
 ---@param statements table<any, string>
 ---@param done fun(outputs: table<any, string>|nil, err: string|nil)
@@ -134,8 +135,8 @@ function M.select(request, statement, done)
 end
 
 --- Runs every statement in `statements` at once, each printing one json object
---- per row, and calls `done` once: with the rows of each, under the same key,
---- or with the first error.
+--- per row, and calls `done` once. When all of them succeed, `done` gets the
+--- rows of each, under the statement's key. Otherwise it gets the first error.
 ---@param request dbquery.CatalogRequest
 ---@param statements table<string, string>
 ---@param done fun(rows: table<string, table[]>|nil, err: string|nil)

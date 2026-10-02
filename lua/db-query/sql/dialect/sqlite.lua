@@ -1,6 +1,5 @@
 --[[
-SQLite sql: postgres's lexing with sqlite's parameters (`?`, `?1`, `:name`,
-`@name`, `$name`), and fewer keywords and grammar functions.
+Defines sqlite sql, read with postgres's lexing rules and sqlite's parameters.
 ]]
 
 local dialect = require("db-query.sql.dialect")

@@ -1,5 +1,5 @@
 --[[
-Where one statement ends and the next begins.
+Finds where one statement ends and the next begins.
 ]]
 
 local lex = require("db-query.sql.lex")
@@ -61,8 +61,8 @@ local function blockDepths(dialect, tokens)
   return depths
 end
 
---- Returns the tokens that end a statement, as a set: each `;` outside a
---- block, and each client command that sends the query, such as psql's
+--- Returns the set of tokens that end a statement. Those are each `;` outside
+--- a block, and each client command that sends the query, such as psql's
 --- `\gset`.
 ---@param dialect dbquery.Dialect
 ---@param tokens dbquery.Token[]

@@ -1,5 +1,5 @@
 --[[
-The copy of each catalog saved to disk for the next session.
+Saves each catalog to disk and loads it again in the next session.
 ]]
 
 local files = require("db-query.query.files")

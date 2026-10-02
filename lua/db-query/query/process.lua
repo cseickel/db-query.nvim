@@ -1,10 +1,5 @@
 --[[
-A running client process: a query, or a statement whose output comes back into
-lua, such as a connection test.
-
-A Process holds the job, when it started, and how it ended. Every process still
-running when nvim exits is killed, because a detached process does not die with
-nvim.
+Runs a client process and reports how it ended.
 ]]
 
 local mainloop = require("db-query.mainloop")
@@ -34,6 +29,7 @@ Process.__index = Process
 ---@type dbquery.Process[]
 local live = {}
 
+-- A detached process doesn't die with nvim.
 vim.api.nvim_create_autocmd("VimLeavePre", {
   group = vim.api.nvim_create_augroup("db-query.query.process", { clear = true }),
   callback = function()

@@ -1,13 +1,12 @@
 --[[
-What depends on a sqlite relation: the tables whose foreign keys point at it,
-and the views, and tables with triggers, whose statements name it. sqlite keeps
-no record of what a view or trigger uses, so their statements are searched.
-Functions are built in, and nothing is recorded as depending on one.
+Finds what depends on a sqlite relation.
 ]]
 
 local query = require("db-query.client.query")
 local sqlite = require("db-query.sql.dialect.sqlite")
 
+-- sqlite keeps no record of what a view or trigger uses, so their statements
+-- are searched for the name.
 local STATEMENT = [[
 select json_object('schema', :schemaText, 'name', m.name, 'routine', json('false'))
 from :schema.sqlite_master m

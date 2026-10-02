@@ -1,9 +1,5 @@
 --[[
-URL parsing for dadbod connection strings.
-
-A value pulled out of a url comes back with its percent-escapes decoded, ready
-for a command line. A url handed back is left exactly as it was written, minus
-whatever was taken out of it, because the client is the one that parses it.
+Parses dadbod connection urls.
 ]]
 
 local M = {}
@@ -34,8 +30,8 @@ function M.filePath(url)
   return vim.fn.fnamemodify(M.decoded(path), ":p")
 end
 
---- Splits the query string off `url`, returning what came before it and the
---- parameters in the order they were written.
+--- Splits the query string off `url`, returning what came before it as written
+--- and the parameters, decoded, in the order they were written.
 ---
 --- These are dadbod's rules, and they hold for the clients that take parameters
 --- as flags. A fragment goes with the query string, `&` and `;` both separate,
@@ -122,7 +118,8 @@ local function withoutCredential(url)
   return prefix .. user .. "@" .. host .. rest, M.decoded(password)
 end
 
---- Returns `url` with the password removed, and the password separately.
+--- Returns `url` with the password removed, and the password decoded. The
+--- rest of the url stays as written, because the client parses it.
 ---
 --- A password hides in two places, the credentials before the last `@` and a
 --- `password` query parameter. Both come out of the url, because a command line

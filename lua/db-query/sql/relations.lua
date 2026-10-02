@@ -1,5 +1,5 @@
 --[[
-The relations a query block can refer to.
+Finds the relations a query block can refer to.
 ]]
 
 local columns = require("db-query.sql.columns")

@@ -1,0 +1,955 @@
+##### statusline_before
+[]
+##### catalog_loaded
+true
+##### complete/kw_start
+|
+isIncomplete=false
+{ filterText = "alter", kind = 14, label = "alter", newText = "alter", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "begin", kind = 14, label = "begin", newText = "begin", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "create", kind = 14, label = "create", newText = "create", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "delete", kind = 14, label = "delete", newText = "delete", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "drop", kind = 14, label = "drop", newText = "drop", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "explain", kind = 14, label = "explain", newText = "explain", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "insert", kind = 14, label = "insert", newText = "insert", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "select", kind = 14, label = "select", newText = "select", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "table", kind = 14, label = "table", newText = "table", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "update", kind = 14, label = "update", newText = "update", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "values", kind = 14, label = "values", newText = "values", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "with", kind = 14, label = "with", newText = "with", range = { ["end"] = { character = 0, line = 0 }, start = { character = 0, line = 0 } } }
+##### complete/kw_partial
+sel|
+isIncomplete=false
+{ filterText = "alter", kind = 14, label = "alter", newText = "alter", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "begin", kind = 14, label = "begin", newText = "begin", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "create", kind = 14, label = "create", newText = "create", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "delete", kind = 14, label = "delete", newText = "delete", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "drop", kind = 14, label = "drop", newText = "drop", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "explain", kind = 14, label = "explain", newText = "explain", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "insert", kind = 14, label = "insert", newText = "insert", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "select", kind = 14, label = "select", newText = "select", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "table", kind = 14, label = "table", newText = "table", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "update", kind = 14, label = "update", newText = "update", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "values", kind = 14, label = "values", newText = "values", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+{ filterText = "with", kind = 14, label = "with", newText = "with", range = { ["end"] = { character = 3, line = 0 }, start = { character = 0, line = 0 } } }
+##### complete/select_cols
+select | from customers
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ detail = "customers", filterText = "customers", kind = 22, label = "customers", newText = "customers", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+##### complete/select_partial_col
+select na| from customers
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ detail = "customers", filterText = "customers", kind = 22, label = "customers", newText = "customers", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+##### complete/qualified_alias
+select c.| from customers c
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+##### complete/qualified_table
+select customers.| from customers
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 17, line = 0 }, start = { character = 17, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 17, line = 0 }, start = { character = 17, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 17, line = 0 }, start = { character = 17, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 17, line = 0 }, start = { character = 17, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 17, line = 0 }, start = { character = 17, line = 0 } } }
+##### complete/from_relations
+select * from |
+isIncomplete=false
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 14, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 14, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 14, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 14, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "schema", filterText = "main", kind = 9, label = "main", newText = "main", range = { ["end"] = { character = 14, line = 0 }, start = { character = 14, line = 0 } } }
+##### complete/from_partial
+select * from ord|
+isIncomplete=false
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 17, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 17, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 17, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 17, line = 0 }, start = { character = 14, line = 0 } } }
+{ detail = "schema", filterText = "main", kind = 9, label = "main", newText = "main", range = { ["end"] = { character = 17, line = 0 }, start = { character = 14, line = 0 } } }
+##### complete/schema_main
+select * from main.|
+isIncomplete=false
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+##### complete/join_alias
+select o.id, c.| from orders o join customers c on c.id = o.customer_id
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 15, line = 0 }, start = { character = 15, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 15, line = 0 }, start = { character = 15, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 15, line = 0 }, start = { character = 15, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 15, line = 0 }, start = { character = 15, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 15, line = 0 }, start = { character = 15, line = 0 } } }
+##### complete/join_on
+select * from orders o join customers c on c.id = o.|
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 52, line = 0 }, start = { character = 52, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 52, line = 0 }, start = { character = 52, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 52, line = 0 }, start = { character = 52, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 52, line = 0 }, start = { character = 52, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 52, line = 0 }, start = { character = 52, line = 0 } } }
+##### complete/join_keyword
+select * from orders o |
+isIncomplete=false
+{ filterText = "as", kind = 14, label = "as", newText = "as", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "cross", kind = 14, label = "cross", newText = "cross", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "except", kind = 14, label = "except", newText = "except", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "full", kind = 14, label = "full", newText = "full", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "group", kind = 14, label = "group", newText = "group", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "having", kind = 14, label = "having", newText = "having", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "inner", kind = 14, label = "inner", newText = "inner", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "intersect", kind = 14, label = "intersect", newText = "intersect", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "join", kind = 14, label = "join", newText = "join", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "left", kind = 14, label = "left", newText = "left", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "limit", kind = 14, label = "limit", newText = "limit", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "natural", kind = 14, label = "natural", newText = "natural", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "offset", kind = 14, label = "offset", newText = "offset", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "on", kind = 14, label = "on", newText = "on", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "order", kind = 14, label = "order", newText = "order", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "outer", kind = 14, label = "outer", newText = "outer", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "returning", kind = 14, label = "returning", newText = "returning", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "right", kind = 14, label = "right", newText = "right", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "union", kind = 14, label = "union", newText = "union", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "using", kind = 14, label = "using", newText = "using", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "where", kind = 14, label = "where", newText = "where", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+{ filterText = "window", kind = 14, label = "window", newText = "window", range = { ["end"] = { character = 23, line = 0 }, start = { character = 23, line = 0 } } }
+##### complete/where_cols
+select * from orders where |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+##### complete/where_after_value
+select * from orders where total > 5 |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "and", kind = 14, label = "and", newText = "and", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "between", kind = 14, label = "between", newText = "between", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "collate", kind = 14, label = "collate", newText = "collate", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "glob", kind = 14, label = "glob", newText = "glob", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "in", kind = 14, label = "in", newText = "in", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "is", kind = 14, label = "is", newText = "is", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "like", kind = 14, label = "like", newText = "like", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "match", kind = 14, label = "match", newText = "match", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "or", kind = 14, label = "or", newText = "or", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "regexp", kind = 14, label = "regexp", newText = "regexp", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "except", kind = 14, label = "except", newText = "except", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "group", kind = 14, label = "group", newText = "group", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "having", kind = 14, label = "having", newText = "having", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "intersect", kind = 14, label = "intersect", newText = "intersect", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "limit", kind = 14, label = "limit", newText = "limit", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "offset", kind = 14, label = "offset", newText = "offset", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "order", kind = 14, label = "order", newText = "order", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "returning", kind = 14, label = "returning", newText = "returning", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "union", kind = 14, label = "union", newText = "union", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+{ filterText = "window", kind = 14, label = "window", newText = "window", range = { ["end"] = { character = 37, line = 0 }, start = { character = 37, line = 0 } } }
+##### complete/cte_cols
+with recent as (select id, total as amount from orders) select r.| from recent r
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 65, line = 0 }, start = { character = 65, line = 0 } } }
+{ filterText = "amount", kind = 5, label = "amount", newText = "amount", range = { ["end"] = { character = 65, line = 0 }, start = { character = 65, line = 0 } } }
+##### complete/cte_name
+with recent as (select id from orders) select * from |
+isIncomplete=false
+{ detail = "cte", filterText = "recent", kind = 22, label = "recent", newText = "recent", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+{ detail = "schema", filterText = "main", kind = 9, label = "main", newText = "main", range = { ["end"] = { character = 53, line = 0 }, start = { character = 53, line = 0 } } }
+##### complete/subquery_cols
+select s.| from (select id, name as who from customers) s
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+{ filterText = "who", kind = 5, label = "who", newText = "who", range = { ["end"] = { character = 9, line = 0 }, start = { character = 9, line = 0 } } }
+##### complete/view_cols
+select | from big_orders
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ detail = "big_orders", filterText = "big_orders", kind = 22, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 7, line = 0 }, start = { character = 7, line = 0 } } }
+##### complete/insert_target
+insert into |
+isIncomplete=false
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "2 columns", filterText = "audit", insertTextFormat = 2, kind = 15, label = "audit (…) values (…)", newText = "audit (id, message) values (${1:NULL}, ${2:''})$0", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "3 columns", filterText = "big_orders", insertTextFormat = 2, kind = 15, label = "big_orders (…) values (…)", newText = "big_orders (\n\tid,\n\ttotal,\n\tname\n) values (\n\t${1:NULL},\n\t${2:NULL},\n\t${3:NULL}\n)$0", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "5 columns", filterText = "customers", insertTextFormat = 2, kind = 15, label = "customers (…) values (…)", newText = "customers (\n\tid,\n\tname,\n\temail,\n\tcreated_at,\n\tactive\n) values (\n\t${1:NULL},\n\t${2:''},\n\t${3:NULL},\n\t${4:current_timestamp},\n\t${5:1}\n)$0", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "5 columns", filterText = "orders", insertTextFormat = 2, kind = 15, label = "orders (…) values (…)", newText = "orders (\n\tid,\n\tcustomer_id,\n\ttotal,\n\tnote,\n\tplaced\n) values (\n\t${1:NULL},\n\t${2:0},\n\t${3:0},\n\t${4:NULL},\n\t${5:NULL}\n)$0", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "schema", filterText = "main", kind = 9, label = "main", newText = "main", range = { ["end"] = { character = 12, line = 0 }, start = { character = 12, line = 0 } } }
+##### complete/insert_cols_empty
+insert into orders (|
+isIncomplete=false
+{ detail = "id, customer_id, total, note, placed", filterText = "", insertTextFormat = 2, kind = 15, label = "all columns", newText = "\n\tid,\n\tcustomer_id,\n\ttotal,\n\tnote,\n\tplaced\n", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "INTEGER", filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "INTEGER", filterText = "customer_id", kind = 5, label = "customer_id", newText = "customer_id", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "numeric(10,2)", filterText = "total", kind = 5, label = "total", newText = "total", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "varchar(200)", filterText = "note", kind = 5, label = "note", newText = "note", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "date", filterText = "placed", kind = 5, label = "placed", newText = "placed", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+##### complete/insert_cols_empty_closed
+insert into orders (|)
+isIncomplete=false
+{ detail = "id, customer_id, total, note, placed", filterText = "", insertTextFormat = 2, kind = 15, label = "all columns", newText = "\n\tid,\n\tcustomer_id,\n\ttotal,\n\tnote,\n\tplaced\n", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "INTEGER", filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "INTEGER", filterText = "customer_id", kind = 5, label = "customer_id", newText = "customer_id", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "numeric(10,2)", filterText = "total", kind = 5, label = "total", newText = "total", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "varchar(200)", filterText = "note", kind = 5, label = "note", newText = "note", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+{ detail = "date", filterText = "placed", kind = 5, label = "placed", newText = "placed", range = { ["end"] = { character = 20, line = 0 }, start = { character = 20, line = 0 } } }
+##### complete/insert_cols_more
+insert into orders (customer_id, |
+isIncomplete=false
+{ detail = "INTEGER", filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 33, line = 0 }, start = { character = 33, line = 0 } } }
+{ detail = "numeric(10,2)", filterText = "total", kind = 5, label = "total", newText = "total", range = { ["end"] = { character = 33, line = 0 }, start = { character = 33, line = 0 } } }
+{ detail = "varchar(200)", filterText = "note", kind = 5, label = "note", newText = "note", range = { ["end"] = { character = 33, line = 0 }, start = { character = 33, line = 0 } } }
+{ detail = "date", filterText = "placed", kind = 5, label = "placed", newText = "placed", range = { ["end"] = { character = 33, line = 0 }, start = { character = 33, line = 0 } } }
+##### complete/insert_values
+insert into orders (customer_id, total, note) values (|)
+isIncomplete=false
+{ detail = "values for the listed columns", filterText = "", insertTextFormat = 2, kind = 15, label = "(customer_id, total, note)", newText = "\n\t${1:0},\n\t${2:0},\n\t${3:NULL}\n$0", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 54, line = 0 }, start = { character = 54, line = 0 } } }
+##### complete/insert_values_two
+insert into orders (customer_id, total) values (|)
+isIncomplete=false
+{ detail = "values for the listed columns", filterText = "", insertTextFormat = 2, kind = 15, label = "(customer_id, total)", newText = "${1:0}, ${2:0}$0", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+##### complete/insert_values_unknown
+insert into orders (customer_id, bogus) values (|)
+isIncomplete=false
+{ detail = "values for the listed columns", filterText = "", insertTextFormat = 2, kind = 15, label = "(customer_id, bogus)", newText = "${1:0}, ${2:NULL}$0", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 48, line = 0 }, start = { character = 48, line = 0 } } }
+##### complete/insert_values_second
+insert into orders (customer_id, total) values (1, |)
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 51, line = 0 }, start = { character = 51, line = 0 } } }
+##### complete/update_set
+update orders set |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 18, line = 0 }, start = { character = 18, line = 0 } } }
+##### complete/delete_where
+delete from orders where |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 25, line = 0 }, start = { character = 25, line = 0 } } }
+##### complete/func_arg
+select coalesce(|) from customers
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ detail = "customers", filterText = "customers", kind = 22, label = "customers", newText = "customers", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 16, line = 0 }, start = { character = 16, line = 0 } } }
+##### complete/order_by
+select * from orders order by total |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "and", kind = 14, label = "and", newText = "and", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "between", kind = 14, label = "between", newText = "between", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "collate", kind = 14, label = "collate", newText = "collate", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "glob", kind = 14, label = "glob", newText = "glob", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "in", kind = 14, label = "in", newText = "in", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "is", kind = 14, label = "is", newText = "is", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "like", kind = 14, label = "like", newText = "like", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "match", kind = 14, label = "match", newText = "match", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "or", kind = 14, label = "or", newText = "or", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "regexp", kind = 14, label = "regexp", newText = "regexp", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "asc", kind = 14, label = "asc", newText = "asc", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "desc", kind = 14, label = "desc", newText = "desc", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "except", kind = 14, label = "except", newText = "except", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "first", kind = 14, label = "first", newText = "first", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "intersect", kind = 14, label = "intersect", newText = "intersect", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "last", kind = 14, label = "last", newText = "last", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "limit", kind = 14, label = "limit", newText = "limit", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "nulls", kind = 14, label = "nulls", newText = "nulls", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "offset", kind = 14, label = "offset", newText = "offset", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "union", kind = 14, label = "union", newText = "union", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+{ filterText = "using", kind = 14, label = "using", newText = "using", range = { ["end"] = { character = 36, line = 0 }, start = { character = 36, line = 0 } } }
+##### complete/group_by
+select customer_id, count(*) from orders group by |
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 50, line = 0 }, start = { character = 50, line = 0 } } }
+##### complete/quoted_ident
+select "|" from customers
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ detail = "customers", filterText = "customers", kind = 22, label = "customers", newText = "customers", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 9, line = 0 }, start = { character = 7, line = 0 } } }
+##### complete/quoted_ident_trigger
+select "|" from customers
+isIncomplete=false
+##### complete/string_open_trigger
+select * from customers where name = '|'
+isIncomplete=false
+##### complete/case_expr
+select case when total > 1 |
+isIncomplete=false
+{ filterText = "else", kind = 14, label = "else", newText = "else", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "end", kind = 14, label = "end", newText = "end", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "then", kind = 14, label = "then", newText = "then", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "when", kind = 14, label = "when", newText = "when", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "and", kind = 14, label = "and", newText = "and", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "between", kind = 14, label = "between", newText = "between", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "collate", kind = 14, label = "collate", newText = "collate", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "glob", kind = 14, label = "glob", newText = "glob", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "in", kind = 14, label = "in", newText = "in", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "is", kind = 14, label = "is", newText = "is", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "like", kind = 14, label = "like", newText = "like", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "match", kind = 14, label = "match", newText = "match", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "or", kind = 14, label = "or", newText = "or", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "regexp", kind = 14, label = "regexp", newText = "regexp", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "as", kind = 14, label = "as", newText = "as", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "except", kind = 14, label = "except", newText = "except", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "from", kind = 14, label = "from", newText = "from", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "group", kind = 14, label = "group", newText = "group", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "having", kind = 14, label = "having", newText = "having", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "intersect", kind = 14, label = "intersect", newText = "intersect", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "limit", kind = 14, label = "limit", newText = "limit", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "offset", kind = 14, label = "offset", newText = "offset", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "order", kind = 14, label = "order", newText = "order", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "returning", kind = 14, label = "returning", newText = "returning", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "union", kind = 14, label = "union", newText = "union", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "where", kind = 14, label = "where", newText = "where", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+{ filterText = "window", kind = 14, label = "window", newText = "window", range = { ["end"] = { character = 27, line = 0 }, start = { character = 27, line = 0 } } }
+##### complete/multi_statement
+select 1;
+select | from orders;
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "customer_id", kind = 5, label = "customer_id", labelDetails = { description = "INTEGER" }, newText = "customer_id", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "total", kind = 5, label = "total", labelDetails = { description = "numeric(10,2)" }, newText = "total", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "note", kind = 5, label = "note", labelDetails = { description = "varchar(200)" }, newText = "note", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "placed", kind = 5, label = "placed", labelDetails = { description = "date" }, newText = "placed", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ detail = "orders", filterText = "orders", kind = 22, label = "orders", newText = "orders", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "case", kind = 14, label = "case", newText = "case", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "cast", kind = 14, label = "cast", newText = "cast", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "exists", kind = 14, label = "exists", newText = "exists", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "false", kind = 14, label = "false", newText = "false", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "not", kind = 14, label = "not", newText = "not", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "null", kind = 14, label = "null", newText = "null", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "true", kind = 14, label = "true", newText = "true", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "all", kind = 14, label = "all", newText = "all", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+{ filterText = "distinct", kind = 14, label = "distinct", newText = "distinct", range = { ["end"] = { character = 7, line = 1 }, start = { character = 7, line = 1 } } }
+##### complete/exists_subquery
+select * from customers c where exists (select 1 from orders o where o.customer_id = c.|)
+isIncomplete=false
+{ filterText = "id", kind = 5, label = "id", labelDetails = { description = "INTEGER" }, newText = "id", range = { ["end"] = { character = 87, line = 0 }, start = { character = 87, line = 0 } } }
+{ filterText = "name", kind = 5, label = "name", labelDetails = { description = "TEXT" }, newText = "name", range = { ["end"] = { character = 87, line = 0 }, start = { character = 87, line = 0 } } }
+{ filterText = "email", kind = 5, label = "email", labelDetails = { description = "TEXT" }, newText = "email", range = { ["end"] = { character = 87, line = 0 }, start = { character = 87, line = 0 } } }
+{ filterText = "created_at", kind = 5, label = "created_at", labelDetails = { description = "timestamp" }, newText = "created_at", range = { ["end"] = { character = 87, line = 0 }, start = { character = 87, line = 0 } } }
+{ filterText = "active", kind = 5, label = "active", labelDetails = { description = "boolean" }, newText = "active", range = { ["end"] = { character = 87, line = 0 }, start = { character = 87, line = 0 } } }
+##### complete/insert_audit_cols
+insert into audit (|
+isIncomplete=false
+{ detail = "id, message", filterText = "", insertTextFormat = 2, kind = 15, label = "all columns", newText = "id, message", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+{ detail = "INTEGER", filterText = "id", kind = 5, label = "id", newText = "id", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+{ detail = "TEXT", filterText = "message", kind = 5, label = "message", newText = "message", range = { ["end"] = { character = 19, line = 0 }, start = { character = 19, line = 0 } } }
+##### complete/insert_audit_statement
+insert into aud|
+isIncomplete=false
+{ detail = "table", filterText = "audit", kind = 7, label = "audit", newText = "audit", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "2 columns", filterText = "audit", insertTextFormat = 2, kind = 15, label = "audit (…) values (…)", newText = "audit (id, message) values (${1:NULL}, ${2:''})$0", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "view", filterText = "big_orders", kind = 8, label = "big_orders", newText = "big_orders", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "3 columns", filterText = "big_orders", insertTextFormat = 2, kind = 15, label = "big_orders (…) values (…)", newText = "big_orders (\n\tid,\n\ttotal,\n\tname\n) values (\n\t${1:NULL},\n\t${2:NULL},\n\t${3:NULL}\n)$0", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "table", filterText = "customers", kind = 7, label = "customers", newText = "customers", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "5 columns", filterText = "customers", insertTextFormat = 2, kind = 15, label = "customers (…) values (…)", newText = "customers (\n\tid,\n\tname,\n\temail,\n\tcreated_at,\n\tactive\n) values (\n\t${1:NULL},\n\t${2:''},\n\t${3:NULL},\n\t${4:current_timestamp},\n\t${5:1}\n)$0", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "table", filterText = "orders", kind = 7, label = "orders", newText = "orders", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "5 columns", filterText = "orders", insertTextFormat = 2, kind = 15, label = "orders (…) values (…)", newText = "orders (\n\tid,\n\tcustomer_id,\n\ttotal,\n\tnote,\n\tplaced\n) values (\n\t${1:NULL},\n\t${2:0},\n\t${3:0},\n\t${4:NULL},\n\t${5:NULL}\n)$0", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+{ detail = "schema", filterText = "main", kind = 9, label = "main", newText = "main", range = { ["end"] = { character = 15, line = 0 }, start = { character = 12, line = 0 } } }
+##### hover/hover_column
+select tot|al from orders
+```sql
+main.orders.total numeric(10,2) not null
+```
+##### hover/hover_table
+select * from ord|ers
+```sql
+table main.orders
+  id          INTEGER
+  customer_id INTEGER       not null
+  total       numeric(10,2) not null
+  note        varchar(200)
+  placed      date
+```
+##### hover/hover_view
+select * from big_|orders
+```sql
+view main.big_orders
+  id    INTEGER
+  total numeric(10,2)
+  name  TEXT
+```
+##### hover/hover_alias_col
+select o.tot|al from orders o
+```sql
+main.orders.total numeric(10,2) not null
+```
+##### hover/hover_alias
+select o|.total from orders o
+nil
+##### hover/hover_function
+select coale|sce(1, 2)
+```sql
+function coalesce(variadic)
+```
+##### hover/hover_keyword
+sel|ect 1
+nil
+##### hover/hover_cte_col
+with r as (select id as rid from orders) select ri|d from r
+nil
+##### signature/sig_coalesce
+select coalesce(1, |)
+{
+  activeSignature = 0,
+  signatures = { {
+      activeParameter = 0,
+      label = "coalesce(value, ...)",
+      parameters = { {
+          label = { 9, 14 }
+        } }
+    }, {
+      activeParameter = 0,
+      label = "coalesce(variadic)",
+      parameters = { {
+          label = { 9, 17 }
+        } }
+    } }
+}
+##### signature/sig_extract
+select extract(|
+nil
+##### signature/sig_cast
+select cast(|
+{
+  activeSignature = 0,
+  signatures = { {
+      label = "cast(value as type)",
+      parameters = {}
+    } }
+}
+##### signature/sig_none
+select |
+nil
+##### signature/sig_substr
+select substr('abc', |)
+{
+  activeSignature = 0,
+  signatures = { {
+      activeParameter = 1,
+      label = "substr(value, value)",
+      parameters = { {
+          label = { 7, 12 }
+        }, {
+          label = { 14, 19 }
+        } }
+    }, {
+      activeParameter = 1,
+      label = "substr(value, value, value)",
+      parameters = { {
+          label = { 7, 12 }
+        }, {
+          label = { 14, 19 }
+        }, {
+          label = { 21, 26 }
+        } }
+    } }
+}
+##### definition/def_table
+select * from ord|ers
+count=1
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE TABLE orders (
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### definition/def_view
+select * from big_or|ders
+count=1
+== <RUNDIR>/definitions/<HASH>/main.big_orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE VIEW big_orders as
+CREATE VIEW big_orders as
+  select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+
+##### definition/def_column
+select to|tal from orders
+count=1
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE TABLE orders (
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### definition/def_alias_column
+select o.to|tal from orders o
+count=1
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE TABLE orders (
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### references/refs_customers
+select * from custom|ers
+count=3
+== <RUNDIR>/definitions/<HASH>/main.big_orders.sql { ["end"] = <1>{ character = 0, line = 1 }, start = <table 1> }
+line:   select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+CREATE VIEW big_orders as
+  select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+
+== <RUNDIR>/definitions/<HASH>/main.customers.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE TABLE customers (
+CREATE TABLE customers (
+  id integer primary key,
+  name text not null,
+  email text,
+  created_at timestamp default current_timestamp,
+  active boolean not null default 1
+);
+
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 2 }, start = <table 1> }
+line:   customer_id integer not null references customers(id),
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### references/refs_customers_nodecl
+select * from custom|ers
+count=2
+== <RUNDIR>/definitions/<HASH>/main.big_orders.sql { ["end"] = <1>{ character = 0, line = 1 }, start = <table 1> }
+line:   select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+CREATE VIEW big_orders as
+  select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 2 }, start = <table 1> }
+line:   customer_id integer not null references customers(id),
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### references/refs_orders
+select * from ord|ers
+count=2
+== <RUNDIR>/definitions/<HASH>/main.big_orders.sql { ["end"] = <1>{ character = 0, line = 1 }, start = <table 1> }
+line:   select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+CREATE VIEW big_orders as
+  select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+
+== <RUNDIR>/definitions/<HASH>/main.orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE TABLE orders (
+CREATE TABLE orders (
+  id integer primary key,
+  customer_id integer not null references customers(id),
+  total numeric(10,2) not null,
+  note varchar(200),
+  placed date
+);
+
+##### references/refs_view
+select * from big_or|ders
+count=1
+== <RUNDIR>/definitions/<HASH>/main.big_orders.sql { ["end"] = <1>{ character = 0, line = 0 }, start = <table 1> }
+line: CREATE VIEW big_orders as
+CREATE VIEW big_orders as
+  select o.id, o.total, c.name from orders o join customers c on c.id = o.customer_id where o.total > 100;
+
+##### query/01_text
+finished=true
+##### query/02_csv
+finished=true
+##### query/03_multi
+finished=true
+##### query/04_insert
+finished=true
+##### query/05_returning
+finished=true
+##### query/06_ddl
+finished=true
+-- notifications --
+notify[0] db-query: read the catalog of sqlite:<TMP>/sqlite.db in <T>s
+##### query/07_fail
+finished=true
+##### query/08_statement
+finished=true
+##### query/09_double_semicolon
+finished=true
+##### query/10_comment_first
+finished=true
+##### query/11_blank
+finished=false
+-- notifications --
+notify[3] db-query: no query to run
+##### log
+# 1 · <HH:MM:SS>
+
+```sql
+select id, name, email from customers order by id;
+```
+
+~~~~ bash
+saved to <TMP>/out/sqlite-1.txt
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 2 · <HH:MM:SS>
+
+```sql
+select id, name, email from customers order by id;
+```
+
+~~~~ bash
+saved to <TMP>/out/sqlite-2.csv
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 3 · <HH:MM:SS>
+
+```sql
+select count(*) as n from orders;
+select id from customers order by id;
+```
+
+~~~~ bash
+2
+1
+2
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 4 · <HH:MM:SS>
+
+```sql
+insert into orders (id, customer_id, total, note, placed) values (3, 1, 5, 'x', '2024-03-04');
+```
+
+~~~~ bash
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 5 · <HH:MM:SS>
+
+```sql
+insert into orders (id, customer_id, total) values (4, 2, 7) returning id, total;
+```
+
+~~~~ bash
+saved to <TMP>/out/sqlite-3.csv
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 6 · <HH:MM:SS>
+
+```sql
+create table extra (a integer);
+```
+
+~~~~ bash
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 7 · <HH:MM:SS>
+
+```sql
+select * from nosuch;
+```
+
+~~~~ bash
+Error: in prepare, no such table: nosuch
+~~~~
+
+ Failed after <T>s
+
+--------------------------------------------------------------------------------
+
+# 8 · <HH:MM:SS>
+
+```sql
+select 2 as two;
+```
+
+~~~~ bash
+saved to <TMP>/out/sqlite-5.csv
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 9 · <HH:MM:SS>
+
+```sql
+select id from orders order by id limit 2;;
+```
+
+~~~~ bash
+saved to <TMP>/out/sqlite-6.csv
+~~~~
+
+ Finished in <T>s
+
+--------------------------------------------------------------------------------
+
+# 10 · <HH:MM:SS>
+
+```sql
+-- leading comment
+select name from customers order by id;
+```
+
+~~~~ bash
+sqlite3: Error: unknown option: - leading comment
+select name from customers order by id;
+Use -help for a list of options.
+~~~~
+
+ Failed after <T>s
+
+--------------------------------------------------------------------------------
+
+
+##### results
+== <TMP>/out/sqlite-1.txt
+┌────┬──────┬───────────┐
+│ id │ name │   email   │
+├────┼──────┼───────────┤
+│ 1  │ Ann  │ ann@x.com │
+│ 2  │ Bob  │           │
+└────┴──────┴───────────┘
+
+== <TMP>/out/sqlite-2.csv
+id,name,email
+1,Ann,ann@x.com
+2,Bob,
+
+== <TMP>/out/sqlite-3.csv
+id,total
+4,7
+
+== <TMP>/out/sqlite-4.txt
+
+== <TMP>/out/sqlite-5.csv
+two
+2
+
+== <TMP>/out/sqlite-6.csv
+id
+1
+2
+
+== <TMP>/out/sqlite-7.txt
+
+##### statusline_after
+[]

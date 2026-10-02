@@ -1,13 +1,6 @@
 --[[
-The `@db-query` modeline, a line comment that names the connection a sql file
-runs against:
-
-    -- @db-query connection=[rva-3-dev]
-
-It is read from the first and last REACH lines, as vim reads its own
-modelines, so a `@db-query` inside a query's comment is not taken for one. The
-key can be any start of `connection`, so `c=` and `conn=` work too, and the
-brackets are needed only when the name holds a space.
+Reads and rewrites the `@db-query` modeline, a line comment that names the
+connection a sql file runs against.
 ]]
 
 local M = {}
@@ -17,13 +10,16 @@ local REACH = 5
 local MARKER = "^%s*%-%-%s*@db%-query%s()"
 local KEY = "connection"
 
+--- A `@db-query` line, such as `-- @db-query connection=[rva-3-dev]`.
 ---@class dbquery.Modeline
 ---@field row integer 0-based line the modeline is on.
 ---@field text string The whole line.
 ---@field connection string|nil The name it gives, nil when it gives none.
 
 --- Returns the connection name set in `line` after column `from`, with the
---- first and last column of its value, brackets included.
+--- first and last column of its value, brackets included. The key can be any
+--- start of `connection`, such as `c=` or `conn=`, and the value needs
+--- brackets only when it holds a space.
 ---@param line string
 ---@param from integer
 ---@return string|nil name
@@ -56,8 +52,10 @@ local function setting(line, from)
   end
 end
 
---- Returns the modeline in `buf`, or nil when it has none. When there is more
---- than one, the one nearest the end wins.
+--- Returns the modeline in `buf`, or nil when it has none. Only the first and
+--- last REACH lines are read, as vim reads its own modelines, so a
+--- `@db-query` inside a query's comment is not taken for one. When there is
+--- more than one, the one nearest the end wins.
 ---@param buf integer
 ---@return dbquery.Modeline|nil
 function M.find(buf)

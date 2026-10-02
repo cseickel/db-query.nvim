@@ -1,9 +1,5 @@
 --[[
-Signature help for the function call holding the cursor.
-
-The dialect's grammar forms, such as `extract(field from source)`, come first,
-then every overload the catalog holds under that name. Postgres has both for
-some names: `position(a in b)` is grammar for the catalog's `position(b, a)`.
+Builds the signature help for the function call holding the cursor.
 ]]
 
 local describe = require("db-query.lsp.describe")
@@ -72,7 +68,10 @@ local function form(grammar, argument)
 end
 
 --- Returns the signature help for the call in `context`, or nil when the
---- cursor is in no call anything is known about.
+--- cursor is in no call anything is known about. The dialect's grammar form,
+--- such as `extract(field from source)`, comes first, then every overload the
+--- catalog holds under that name. Postgres has both for some names, since
+--- `position(a in b)` is grammar for the catalog's `position(b, a)`.
 ---@param opened dbquery.Opened
 ---@param context dbquery.CursorContext
 ---@return lsp.SignatureHelp|nil

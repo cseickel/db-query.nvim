@@ -1,13 +1,5 @@
 --[[
-Every file the plugin writes, and which of them it deletes.
-
-Row data goes to the output directory, which the user chooses with `output_dir`
-or `:DBOutputDir`. Files in a directory the user chose are not deleted. Logs,
-staging files, and the files goto definition opens go to a directory named by
-nvim's pid in nvim's cache, and never anywhere else. Saved catalogs go to the
-`catalog` subdirectory of the same cache, shared by every nvim. On startup,
-`sweep` removes the directories of nvims that have exited and the partly
-written catalogs they left.
+Names every file the plugin writes, and deletes the ones it owns.
 ]]
 
 local config = require("db-query.config")
@@ -15,6 +7,7 @@ local config = require("db-query.config")
 local M = {}
 
 local ROOT = vim.fn.stdpath("cache") .. "/db-query"
+-- Named by nvim's pid, so `sweep` can tell when the nvim that wrote it exited.
 local SESSION_DIR = ROOT .. "/" .. vim.fn.getpid()
 local CATALOG_DIR = ROOT .. "/catalog"
 

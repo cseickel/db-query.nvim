@@ -1,13 +1,6 @@
 --[[
-What the cursor is in, for completion, hover, and signature help.
-
-`at` returns a `dbquery.CursorContext`: the word under the cursor, what kind of
-name belongs there, the relations in scope, the function call and argument the
-cursor is in, and the insert column list or values row it is in. The text may
-be half typed.
-
-Inside a `do` block or a function body, the body is read as its own sql, with
-the function's parameters and declared variables in scope.
+Reads the sql around the cursor to find what the cursor is in, for completion,
+hover, and signature help.
 ]]
 
 local body = require("db-query.sql.body")
@@ -267,7 +260,9 @@ local function analyze(document, cursor, literal)
   return context
 end
 
---- Returns the context at byte offset `cursor` of `document`.
+--- Returns the context at byte offset `cursor` of `document`, whose text may be
+--- half typed. Inside a `do` block or a function body, the body is read as its
+--- own sql, with the function's parameters and declared variables in scope.
 ---@param document dbquery.Document
 ---@param cursor integer Byte offset the cursor is before, counting from 1.
 ---@return dbquery.CursorContext

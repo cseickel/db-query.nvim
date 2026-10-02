@@ -1,9 +1,6 @@
 --[[
-Entry point for running queries from a sql buffer.
-
-This module captures the sql, resolves the connection, reads the sql by the
-connection's dialect, and passes it all to the buffer's Source. ARCHITECTURE.md
-covers the flow from there.
+Sets up the plugin and carries out each request a user makes of a sql buffer,
+such as connecting it, running a query, or showing the output.
 ]]
 
 local catalog = require("db-query.catalog")
@@ -18,6 +15,7 @@ local Progress = require("db-query.query.progress")
 local selection = require("db-query.query.selection")
 local Source = require("db-query.query.source")
 
+---@class dbquery.Api
 local M = {}
 
 local FILETYPES = { "sql", "mysql", "plsql" }
@@ -38,7 +36,7 @@ function M.connect(buf, chosen)
   end)
 end
 
---- Runs the sql specified in `opts`.
+--- Runs the sql that `opts` selects.
 ---@param opts dbquery.ExecuteOptions|nil Defaults to the whole buffer as text.
 function M.execute(opts)
   opts = opts or {}
@@ -89,6 +87,7 @@ function M.execute(opts)
       if not vim.api.nvim_buf_is_loaded(buf) then
         return
       end
+      -- `b:db` still holds the connection the test may replace.
       local testing = connection.testing(buf)
       if testing then
         return vim.notify(
@@ -264,7 +263,7 @@ function M.setup(opts)
       end,
     })
 
-    command.setup()
+    command.setup(M)
 
     if config.values.parquet then
       require("db-query.parquet").setup(group)

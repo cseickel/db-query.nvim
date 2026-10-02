@@ -1,12 +1,5 @@
 --[[
-The split window showing a sql buffer's query output.
-
-The log is shown while the query runs, reloaded on a timer, and gives way to
-the rows when they arrive. Output goes to a window already showing output,
-preferring this sql buffer's own, and a new split opens only when the tabpage
-has none. The log and the rows stay in separate windows once you put them
-there. Output files open as ordinary listed buffers, so leaving one on screen
-keeps it.
+Shows a sql buffer's query output in a split window.
 ]]
 
 local mainloop = require("db-query.mainloop")
@@ -138,6 +131,7 @@ function Pane:show(run, path, opts)
   vim.wo[win].relativenumber = false
 
   vim.bo[buf].autoread = true
+  -- Listed like any file the user opened, so one left on screen is kept.
   vim.bo[buf].buflisted = true
   vim.b[buf].db = run.ctx.url
   vim.b[buf].db_name = run.ctx.connectionName

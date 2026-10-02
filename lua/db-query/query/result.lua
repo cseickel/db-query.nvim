@@ -1,14 +1,5 @@
 --[[
 Marks each query a buffer ran with how its last run ended.
-
-Every query keeps a diagnostic holding the outcome, such as `2,520 rows in
-0.98s`, and the outcome's icon in the gutter beside its first line of code. The
-query that ran last also gets the run-status elbow, turning under the query to
-the outcome, until the buffer's text next changes.
-
-A run replaces every mark its lines overlap, when it starts and again when it
-finishes, so each query keeps only its last run. Deleting a query's text
-deletes its marks.
 ]]
 
 local runStatus = require("db-query.query.status")
@@ -127,8 +118,11 @@ local function runsOf(buf)
   return runs[buf]
 end
 
---- Clears the marks of any earlier run over `span` and the buffer's elbow, and
---- marks the query with how `process` ended once it finishes.
+--- Clears the marks of any earlier run over `span`, and the buffer's elbow.
+--- Once `process` finishes, clears them again over the lines the query now
+--- covers, so each query keeps only its last run. Then marks the query with a
+--- diagnostic of how it ended and that outcome's icon beside its first line,
+--- and draws the elbow under it until the buffer's text next changes.
 ---@param buf integer
 ---@param span [integer, integer] First and last line of the query (0-based).
 ---@param process dbquery.Process

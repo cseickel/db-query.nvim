@@ -1,6 +1,6 @@
 --[[
-Postgres sql as psql reads it: backslash commands and `:name` variables, which
-psql handles itself before the server sees the text.
+Defines postgres sql as psql reads it, with the backslash commands and `:name`
+variables psql handles before the server sees the text.
 ]]
 
 local dialect = require("db-query.sql.dialect")

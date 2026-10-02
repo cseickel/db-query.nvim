@@ -1,5 +1,5 @@
 --[[
-Catalog objects written out as the text hover, completion, and signature help
+Writes catalog objects out as the text hover, completion, and signature help
 show.
 ]]
 
@@ -27,8 +27,8 @@ function M.aligned(rows)
   end, rows)
 end
 
---- Returns the arguments a call of `fn` passes: never a table argument, and an
---- out argument only to a procedure.
+--- Returns the arguments a call of `fn` passes. A call never passes a table
+--- argument, and passes an out argument only to a procedure.
 ---@param fn dbquery.Function
 ---@return dbquery.Argument[]
 function M.passed(fn)
@@ -67,7 +67,7 @@ function M.argument(arg)
 end
 
 --- Returns what `fn` returns, one line when it names a type, and one line per
---- column when it returns table or out arguments:
+--- column when it returns table or out arguments, as below.
 ---
 ---     TABLE (
 ---       ticker    text,

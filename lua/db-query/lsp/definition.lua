@@ -1,10 +1,6 @@
 --[[
-Goto definition and references for the name under the cursor.
-
-Definition opens the DDL of the table, view, or function the name refers to,
-or of a column's table. References opens the DDL of each relation and routine
-that depends on it. The DDL is read from the database into files in this
-nvim's cache, and each file's buffer runs against the same connection.
+Finds the definition and references of the name under the cursor, as DDL files
+read from the database.
 ]]
 
 local client = require("db-query.client")
@@ -92,7 +88,7 @@ local function writeDefinition(path, text, opened)
 end
 
 --- Reads the DDL of `named` into its file and calls `done` with the file's
---- location: the first line naming `mentioned`, or the first line.
+--- location, at the first line naming `mentioned`, or else at the first line.
 ---@param source dbquery.DefinitionSource
 ---@param named dbquery.Target
 ---@param mentioned string|nil

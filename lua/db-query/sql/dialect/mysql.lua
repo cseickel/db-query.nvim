@@ -1,6 +1,5 @@
 --[[
-MySQL sql: backslash escapes in `'` and `"` strings, backtick identifiers, `#`
-comments, `@variables`, and the insert, replace, and join forms mysql adds.
+Defines mysql sql as the mysql client reads it.
 ]]
 
 local dialect = require("db-query.sql.dialect")
@@ -17,9 +16,9 @@ end
 local INDEX_HINT = set("use force ignore")
 local INDEX_WORD = set("index key")
 
---- The client's own commands: `\g` and `\G`, and `delimiter`, which the client
---- reads only at the start of a line and in any letter case. Each of them sends
---- the statement typed before it.
+--- Reads the client's own commands, `\g`, `\G`, and `delimiter`. The client
+--- reads `delimiter` only at the start of a line, in any letter case. Each
+--- command sends the statement typed before it.
 ---@type dbquery.Commands
 local COMMANDS = {
   at = function(text, index, lineStart)

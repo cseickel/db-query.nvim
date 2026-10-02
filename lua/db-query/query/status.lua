@@ -1,17 +1,6 @@
 --[[
-How a query's run status is shown: marked in the sql buffer while it runs and
-after it ends, and colored in the log's status line.
-
-Each status has a color, and a finished one an icon and a summary. A query's
-mark is a sign beside its first line, a bar down the gutter beside the rest,
-and an elbow turning under the query to a line of text:
-
-    sign │ select month, sum(amount)
-    │    │ from trades
-    ╰──────▏ 2,520 rows in 0.98s ▕─────────
-
-The elbow line runs to where the query's last line ended when the run started,
-or past it when the text is longer.
+Draws a query's run status beside the query in the sql buffer and on its
+status line in the log.
 ]]
 
 local config = require("db-query.config")
@@ -78,8 +67,8 @@ end
 ---@field width integer Cells past the gutter the elbow line reaches at least, from `followSpan`.
 
 --- Places an extmark over rows `span` of `buf`, clamped to the buffer, that
---- follows those rows through edits. Returns its id and the width of the last
---- row's text, which the elbow under it reaches at least.
+--- follows those rows through edits. Returns its id and the display width of
+--- the last row's text.
 ---@param buf integer
 ---@param namespace integer
 ---@param span [integer, integer] First and last row (0-based).
@@ -127,7 +116,14 @@ function M.drawSign(buf, namespace, mark)
 end
 
 --- Draws the bar beside `mark`'s rows after the first, and the elbow under its
---- last row turning to its text.
+--- last row that turns to its text. With the sign from `drawSign`, a finished
+--- query looks like this.
+---
+---     ✓ select month, sum(amount)
+---     │ from trades
+---     ╰────▏ 2,520 rows in 0.98s ▕
+---
+--- The elbow line continues with `─` until it reaches `mark.width`.
 ---@param buf integer
 ---@param namespace integer
 ---@param mark dbquery.Mark
@@ -174,8 +170,8 @@ function M.drawElbow(buf, namespace, mark)
   })
 end
 
---- Returns how the finished `process` ended, such as `2,520 rows in 0.98s`,
---- with the rows it wrote when the client says.
+--- Returns how the finished `process` ended, such as `2,520 rows in 0.98s`
+--- when the client reports a row count, or `Failed after 0.98s`.
 ---@param process dbquery.Process
 ---@return string
 function M.summary(process)

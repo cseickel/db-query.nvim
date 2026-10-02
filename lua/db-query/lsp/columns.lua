@@ -1,6 +1,6 @@
 --[[
-The columns each relation in a statement's scope offers, and the names that
-refer to those relations.
+Finds the columns each relation in a statement's scope offers, and the names
+that refer to those relations.
 ]]
 
 local describe = require("db-query.lsp.describe")
@@ -8,8 +8,8 @@ local names = require("db-query.lsp.names")
 
 local M = {}
 
---- Returns the name a scope relation is referred to by: its alias, or the last
---- part of its name.
+--- Returns the name a scope relation is referred to by, which is its alias or
+--- else the last part of its name.
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.ScopeRelation
 ---@return string|nil
@@ -60,9 +60,9 @@ local function derivedColumn(name, columnType)
 end
 
 --- Returns the columns a function in from returns, from the first overload
---- whose declaration says what they are: its table and out arguments, the
---- table, view, or composite type it returns a set of, or the one column of a
---- scalar result, named for the relation.
+--- whose declaration says what they are. Those are its table and out
+--- arguments, the table, view, or composite type it returns a set of, or the
+--- one column of a scalar result, named for the relation.
 ---@param catalog dbquery.Catalog
 ---@param dialect dbquery.Dialect
 ---@param relation dbquery.ScopeRelation

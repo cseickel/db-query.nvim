@@ -1,17 +1,5 @@
 --[[
-Which connection a sql buffer runs against.
-
-A buffer takes its connection from its modeline when it has one, and from the
-`g:db` the last pick left behind when it does not. `:DBConnect` and a query in
-a buffer without a connection open the picker.
-
-A connection from the modeline or the picker is tested with `select 1` before
-it is stored. One that answers goes in `b:db` and `b:db_name`. One that does
-not leaves `b:db` empty and `b:db_name` reading "<name> CONNECTION ERROR". A
-sqlite or duckdb file passes without a test, because opening it would create a
-missing file or fail on another process's lock. A query asked for while a test
-runs is refused, because `b:db` still holds the connection the test may
-replace.
+Chooses and tests the connection each sql buffer runs against.
 ]]
 
 local catalog = require("db-query.catalog")
@@ -55,6 +43,8 @@ local function test(buf, connection, done)
   if not dbClient then
     return done(false)
   end
+  -- Opening a sqlite or duckdb file would create it when it is missing, or
+  -- fail on another process's lock.
   if dbClient.embedded then
     return done(true)
   end
@@ -102,9 +92,10 @@ local function unreachable(buf, name)
   vim.b[buf].db_name = name .. " CONNECTION ERROR"
 end
 
---- Tests `connection` and gives it to `buf` when it answers. `done` gets the
---- outcome, and is skipped when `buf` was closed or given another connection
---- while the test ran.
+--- Tests `connection` and, when it answers, puts it in `buf`'s `b:db` and
+--- `b:db_name`. When it doesn't answer, `b:db` is emptied and `b:db_name`
+--- reads "<name> CONNECTION ERROR". `done` gets the outcome, and is skipped
+--- when `buf` was closed or given another connection while the test ran.
 ---@param buf integer
 ---@param connection dbquery.Connection
 ---@param done fun(answered: boolean)|nil
@@ -189,9 +180,9 @@ function M.follow(buf)
   return true
 end
 
---- Gives a newly opened sql buffer its connection: the modeline's, or else the
---- `g:db` the last pick set, which is untested because only a connection that
---- answered is ever put there.
+--- Gives a newly opened sql buffer the connection its modeline names, or else
+--- the `g:db` the last pick set. The `g:db` connection isn't tested, because
+--- only a connection that answered is ever put there.
 ---@param buf integer
 function M.opened(buf)
   if M.follow(buf) then

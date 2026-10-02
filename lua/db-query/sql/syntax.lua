@@ -1,6 +1,6 @@
 --[[
-The shape of one statement: its tokens nested by parentheses, and the clause
-each token belongs to.
+Nests one statement's tokens by parentheses and finds the clause each token
+belongs to.
 ]]
 
 local lex = require("db-query.sql.lex")
@@ -252,9 +252,9 @@ function M.groups(dialect, statement)
   return root, cursorGroup, cursorIndex
 end
 
---- Returns true when `items[index]`, the word `with`, opens a with clause:
---- `with [recursive] name [(columns)] as`. A from clause ends in `with
---- ordinality`, where `with` opens nothing.
+--- Returns true when `items[index]`, the word `with`, opens a with clause,
+--- written `with [recursive] name [(columns)] as`. A from clause may end in
+--- `with ordinality`, where `with` opens nothing.
 ---@param items dbquery.Token[]
 ---@param index integer
 ---@return boolean
@@ -292,9 +292,9 @@ local function opensStatement(items, index, rule)
   return items[index].lower ~= "with" or opensWith(items, index)
 end
 
---- Returns the clause of each item of `group`, and its query block: one per
---- arm of a union, intersect, or except, and one per statement written with no
---- `;` before it.
+--- Returns the clause of each item of `group`, and its query block. Each arm of
+--- a union, intersect, or except gets its own block, and so does each
+--- statement written with no `;` before it.
 ---@param group dbquery.Group
 ---@return dbquery.Clause[] clauses
 ---@return integer[] blocks

@@ -1,7 +1,6 @@
 --[[
-What a parenthesized group is to the statement around it: a subquery, a
-function call, an insert's column list or values row, a column list of a named
-table, or the inside of a filter, over, or within group clause.
+Tells what a parenthesized group is to the statement around it, such as a
+subquery, a function call, or an insert's column list.
 ]]
 
 local lex = require("db-query.sql.lex")

@@ -1,13 +1,13 @@
 --[[
-The DDL of a mysql or mariadb relation or routine, from `show create`.
+Reads the DDL of a mysql or mariadb relation or routine with `show create`.
 ]]
 
 local mysql = require("db-query.sql.dialect.mysql")
 local query = require("db-query.client.query")
 
---- Where the statement sits among the tab-separated fields `show create`
---- prints, which a view's or routine's body may itself hold tabs in: the
---- fields before it and the fields after it.
+--- Counts the tab-separated fields `show create` prints before and after the
+--- statement. A view's or routine's body may hold tabs itself, so the
+--- statement is found by counting from both ends.
 ---@type table<string, { before: integer, after: integer }>
 local FIELDS = {
   table = { before = 1, after = 0 },

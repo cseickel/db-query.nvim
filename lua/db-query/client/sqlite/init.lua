@@ -1,5 +1,5 @@
 --[[
-Running statements through sqlite3.
+Builds the sqlite3 command lines that run a statement.
 ]]
 
 local url = require("db-query.client.url")

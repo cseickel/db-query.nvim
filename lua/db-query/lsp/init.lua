@@ -1,12 +1,6 @@
 --[[
-A language server that runs inside nvim, giving any completion engine the
-columns, tables, and functions of a sql buffer's database, with hover,
-signature help, and the definition and references of a table or function.
-
-nvim calls the server's `request` in the requester's own call stack, which
-during completion is under textlock, and records the request as pending only
-after `request` returns. So `request` reads the buffer at once and answers
-from a later pass of the main loop, never inside the call.
+Runs a language server inside nvim that offers completion, hover, signature
+help, definitions, and references for a sql buffer's database.
 ]]
 
 local complete = require("db-query.lsp.complete")
@@ -158,6 +152,10 @@ local function server(dispatchers)
         end
         callback(err, nil)
       end
+      -- nvim calls `request` in the requester's own call stack, which during
+      -- completion is under textlock, and records the request as pending only
+      -- after `request` returns. So the answer comes from a later pass of the
+      -- main loop.
       vim.schedule(function()
         mainloop.run(function()
           if pending[id] then

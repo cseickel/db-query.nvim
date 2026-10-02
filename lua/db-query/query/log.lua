@@ -1,6 +1,6 @@
 --[[
-How a sql buffer's log reads. Every run of the buffer appends to one markdown
-file: the sql it ran, what the client printed, and how it ended.
+Appends each run of a sql buffer to the buffer's markdown log, with the sql it
+ran, what the client printed, and how it ended.
 ]]
 
 local files = require("db-query.query.files")

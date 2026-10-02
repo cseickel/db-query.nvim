@@ -1,9 +1,5 @@
 --[[
-Running statements through the mysql and mariadb clients.
-
-The mysql and mariadb schemes differ only in the binary they run. MariaDB
-installs `mysql` as a symlink to `mariadb`, and MySQL 8 rejects flags MariaDB
-accepts, such as `--ssl-verify-server-cert`.
+Builds the mysql and mariadb command lines that run a statement.
 ]]
 
 local sql = require("db-query.sql")
@@ -60,6 +56,10 @@ local function login(connection)
   }
 end
 
+--- Returns the client that runs `binary`. The mysql and mariadb schemes run
+--- different binaries, because MariaDB installs `mysql` as a symlink to
+--- `mariadb`, and MySQL 8 rejects flags MariaDB accepts, such as
+--- `--ssl-verify-server-cert`.
 ---@param binary "mysql"|"mariadb"
 ---@return dbquery.Client
 local function client(binary)

@@ -1,5 +1,5 @@
 --[[
-Configuration values and defaults.
+Merges the user's configuration over the defaults.
 ]]
 
 local M = {}
@@ -46,7 +46,6 @@ function M.set(opts)
   M.values = vim.tbl_extend("force", M.values, given)
   M.values.catalog = catalog
   M.values.icons = icons
-  -- Default: auto-cleanup only when no custom output_dir is set.
   if given.output_cleanup == nil then
     M.values.output_cleanup = M.values.output_dir == nil
   end

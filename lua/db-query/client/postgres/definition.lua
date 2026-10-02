@@ -1,10 +1,5 @@
 --[[
-The DDL of a postgres relation or function.
-
-Postgres keeps no `create` statement, so a relation's is built from its
-columns and from the text the server writes for each of its constraints,
-indexes, triggers, and view query, followed by its comments. A function's is
-`pg_get_functiondef` for each overload. Aggregates have none.
+Reads the DDL of a postgres relation or function.
 ]]
 
 local query = require("db-query.client.query")
@@ -82,6 +77,8 @@ local function withClause(settings)
   return " WITH (" .. table.concat(settings, ", ") .. ")"
 end
 
+--- Reads `pg_get_functiondef` for each overload, with its comment. Postgres
+--- keeps no definition of an aggregate.
 ---@param request dbquery.CatalogRequest
 ---@param functions dbquery.Function[]
 ---@param done fun(ddl: string|nil, err: string|nil)
@@ -110,6 +107,9 @@ local function functionDefinition(request, functions, done)
   end)
 end
 
+--- Builds the relation's create statement from its columns and from the text
+--- the server writes for its constraints, indexes, triggers, and view query,
+--- then adds its comments. Postgres keeps no create statement to read.
 ---@param request dbquery.CatalogRequest
 ---@param relation dbquery.Relation
 ---@param done fun(ddl: string|nil, err: string|nil)

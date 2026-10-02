@@ -1,5 +1,6 @@
 --[[
-The body of a `do` block or function, and the variables in scope inside it.
+Finds the body of the `do` block or function holding the cursor, and the
+variables in scope inside it.
 ]]
 
 local lex = require("db-query.sql.lex")

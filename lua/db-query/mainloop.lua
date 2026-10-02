@@ -1,11 +1,5 @@
 --[[
 Runs code where nvim allows it to change the editor.
-
-nvim refuses editor changes in a libuv callback (E5560) and under textlock,
-while it evaluates a statusline, an `<expr>` mapping, or a completion function
-(E565). Code entered from outside the plugin, such as a process exiting, a
-timer, a `vim.ui` choice, or a public function, goes through this module, and
-the code behind it calls vim directly.
 ]]
 
 local M = {}
@@ -18,8 +12,10 @@ local RETRY_MS = 10
 ---@type integer|nil
 local probeBuf = nil
 
---- Returns true when nvim refuses editor changes here. No api reports
---- textlock, so an edit of an empty hidden buffer tests for it.
+--- Returns true when nvim refuses editor changes here. nvim refuses them in a
+--- libuv callback (E5560) and under textlock (E565), which holds while nvim
+--- evaluates a statusline, an `<expr>` mapping, or a completion function. No
+--- api reports textlock, so an edit of an empty hidden buffer tests for it.
 ---@return boolean
 local function refused()
   if vim.in_fast_event() then
