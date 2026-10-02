@@ -7,24 +7,31 @@ local names = require("db-query.lsp.names")
 
 local M = {}
 
---- Returns one line per row, with each cell but the last padded so the cells
---- of every row start in the same column. Trailing spaces are removed.
+--- Returns the rows as lines, with each cell but the last padded so the cells
+--- of every row start in the same column. A last cell holding several lines
+--- gives one line each, and its later lines start in the column its first
+--- line starts in. Trailing spaces are removed.
 ---@param rows string[][]
 ---@return string[]
 function M.aligned(rows)
   local widths = {}
   for _, row in ipairs(rows) do
-    for index, cell in ipairs(row) do
-      widths[index] = math.max(widths[index] or 0, vim.fn.strdisplaywidth(cell))
+    for index = 1, #row - 1 do
+      widths[index] = math.max(widths[index] or 0, vim.fn.strdisplaywidth(row[index]))
     end
   end
-  return vim.tbl_map(function(row)
-    local cells = {}
-    for index, cell in ipairs(row) do
-      cells[index] = index < #row and (cell .. string.rep(" ", widths[index] - vim.fn.strdisplaywidth(cell))) or cell
+  local lines = {}
+  for _, row in ipairs(rows) do
+    local lead = ""
+    for index = 1, #row - 1 do
+      lead = lead .. row[index] .. string.rep(" ", widths[index] - vim.fn.strdisplaywidth(row[index]) + 1)
     end
-    return (table.concat(cells, " "):gsub("%s+$", ""))
-  end, rows)
+    local indent = string.rep(" ", vim.fn.strdisplaywidth(lead))
+    for index, cellLine in ipairs(vim.split(row[#row], "\n", { plain = true })) do
+      lines[#lines + 1] = ((index == 1 and lead or indent) .. cellLine):gsub("%s+$", "")
+    end
+  end
+  return lines
 end
 
 --- Returns the arguments a call of `fn` passes. A call never passes a table

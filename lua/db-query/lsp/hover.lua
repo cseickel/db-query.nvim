@@ -58,15 +58,19 @@ end
 ---@param relation dbquery.Relation
 ---@return string[]
 local function describeRelation(relation)
-  local lines = { "```sql", relation.kind .. " " .. table.concat(names.qualifiedParts(relation), ".") }
+  local lines = {}
+  if relation.comment and relation.comment ~= "" then
+    lines = { relation.comment, "" }
+  end
+  vim.list_extend(lines, { "```sql", relation.kind .. " " .. table.concat(names.qualifiedParts(relation), ".") })
   local columnLines = describe.aligned(vim.tbl_map(function(column)
-    return { column.name, column.type or "", constraints(column) or "" }
+    local comment = column.comment and column.comment ~= "" and ("-- " .. column.comment:gsub("\r?\n", "\n-- ")) or ""
+    return { column.name, column.type or "", constraints(column) or "", comment }
   end, relation.columns))
   for _, line in ipairs(columnLines) do
     lines[#lines + 1] = "  " .. line
   end
   lines[#lines + 1] = "```"
-  appendComment(lines, relation.comment)
   return lines
 end
 

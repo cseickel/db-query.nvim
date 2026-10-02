@@ -309,7 +309,7 @@ Postgres records what a view, a sql-standard function body, a foreign key, and a
 
 Both answer from the catalog, so an object made since the catalog was read is not found until `:DBRefreshCatalog` reads it again.
 
-Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it.
+Signature help shows the grammar forms, such as `extract(field from source)`, and every overload of the function under the cursor from the catalog. `(` and `,` trigger it. Hover on a column, table, or function name shows its type, columns, or overloads, and the comment on it. A table's hover also shows each column's comment beside the column.
 
 Completion will only suggest basic keywords until the catalog (tables, columns, function, etc) has been loaded for the database you are connected to. Depending on the size of your schema and speed of the database, this could be done in 1 second or 5 minutes. It does run in the background. It will cache a prior catalog from past sessions and use that while it refreshes, so you probably won't notice the delay after the first connection.
 
