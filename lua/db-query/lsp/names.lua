@@ -119,13 +119,22 @@ local function matching(catalog, dialect, list, parts)
   return {}
 end
 
+--- Returns the catalog relation the name `parts` refers to.
+---@param catalog dbquery.Catalog
+---@param dialect dbquery.Dialect
+---@param parts dbquery.NamePart[]
+---@return dbquery.Relation|nil
+function M.relationFromParts(catalog, dialect, parts)
+  return matching(catalog, dialect, catalog.relations, parts)[1]
+end
+
 --- Returns the catalog relation a dotted name written in sql refers to.
 ---@param catalog dbquery.Catalog
 ---@param dialect dbquery.Dialect
 ---@param name string
 ---@return dbquery.Relation|nil
 function M.relation(catalog, dialect, name)
-  return matching(catalog, dialect, catalog.relations, M.parts(dialect, name))[1]
+  return M.relationFromParts(catalog, dialect, M.parts(dialect, name))
 end
 
 --- Returns the catalog type a dotted name written in sql refers to.

@@ -59,36 +59,42 @@ function M.open(path, url)
   return buf
 end
 
+--- Returns the lines of `text` with its `|` removed, and the LSP position the
+--- `|` stood at.
+---@param text string
+---@return string[] lines
+---@return lsp.Position position
+local function unmark(text)
+  local marker = assert(text:find("|", 1, true), "a case needs a | marker: " .. text)
+  local clean = text:sub(1, marker - 1) .. text:sub(marker + 1)
+  local before = clean:sub(1, marker - 1)
+  local row = select(2, before:gsub("\n", ""))
+  local lastNewline = before:match(".*()\n")
+  local col = lastNewline and (#before - lastNewline) or #before
+  return vim.split(clean, "\n"), { line = row, character = col }
+end
+
 --- Puts `text` in `buf` with the cursor at `|`, and returns the LSP position
 --- of the cursor.
 ---@param buf integer
 ---@param text string
 ---@return lsp.Position
 local function place(buf, text)
-  local marker = assert(text:find("|", 1, true), "a case needs a | marker: " .. text)
-  local clean = text:sub(1, marker - 1) .. text:sub(marker + 1)
+  local lines, position = unmark(text)
   focus(buf)
-  vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(clean, "\n"))
-  local before = clean:sub(1, marker - 1)
-  local row = select(2, before:gsub("\n", ""))
-  local lastNewline = before:match(".*()\n")
-  local col = lastNewline and (#before - lastNewline) or #before
-  vim.api.nvim_win_set_cursor(0, { row + 1, col })
-  return { line = row, character = col }
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+  vim.api.nvim_win_set_cursor(0, { position.line + 1, position.character })
+  return position
 end
 
---- Sends `method` for the cursor at `|` in `text`, and returns the result, or
---- a table naming the error.
+--- Sends `method` about `buf` with `params`, and returns the result, or a
+--- table naming the error.
 ---@param buf integer
 ---@param method string
----@param text string
----@param extra table|nil Merged into the request's params.
+---@param params table The request's params, less `textDocument`.
 ---@return any
-local function request(buf, method, text, extra)
-  local params = vim.tbl_extend("force", {
-    textDocument = { uri = vim.uri_from_bufnr(buf) },
-    position = place(buf, text),
-  }, extra or {})
+local function send(buf, method, params)
+  params = vim.tbl_extend("force", { textDocument = { uri = vim.uri_from_bufnr(buf) } }, params)
   local responses, err = vim.lsp.buf_request_sync(buf, method, params, 15000)
   if not responses then
     return { harness_error = tostring(err) }
@@ -100,6 +106,17 @@ local function request(buf, method, text, extra)
     return response.result
   end
   return { harness_error = "no response" }
+end
+
+--- Sends `method` for the cursor at `|` in `text`, and returns the result, or
+--- a table naming the error.
+---@param buf integer
+---@param method string
+---@param text string
+---@param extra table|nil Merged into the request's params.
+---@return any
+local function request(buf, method, text, extra)
+  return send(buf, method, vim.tbl_extend("force", { position = place(buf, text) }, extra or {}))
 end
 
 --- Returns the completion items at `|` in `text`, one per line in sort order.
@@ -140,16 +157,45 @@ function M.complete(buf, text, trigger, functions)
   return table.concat(lines, "\n")
 end
 
+--- Returns the text of a hover result.
+---@param result any
+---@return string
+local function hoverText(result)
+  if type(result) == "table" and result.contents then
+    return result.contents.value or oneLine(result.contents)
+  end
+  return oneLine(result)
+end
+
 --- Returns the hover text at `|` in `text`.
 ---@param buf integer
 ---@param text string
 ---@return string
 function M.hover(buf, text)
-  local result = request(buf, "textDocument/hover", text)
-  if type(result) == "table" and result.contents then
-    return result.contents.value or oneLine(result.contents)
-  end
-  return oneLine(result)
+  return hoverText(request(buf, "textDocument/hover", text))
+end
+
+--- Returns the hover text at `|` in `text`, asked about a hidden buffer named
+--- `name` while `buf` stays current, the way a file tree asks about one of its
+--- nodes.
+---@param buf integer
+---@param name string
+---@param text string
+---@return string
+function M.hoverHidden(buf, name, text)
+  focus(buf)
+  local hidden = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_name(hidden, name)
+  vim.b[hidden].db = vim.b[buf].db
+  vim.bo[hidden].filetype = "sql"
+  local lines, position = unmark(text)
+  vim.api.nvim_buf_set_lines(hidden, 0, -1, false, lines)
+  vim.wait(5000, function()
+    return #vim.lsp.get_clients({ bufnr = hidden, name = "db-query" }) > 0
+  end, 20)
+  local hovered = hoverText(send(hidden, "textDocument/hover", { position = position }))
+  vim.api.nvim_buf_delete(hidden, { force = true })
+  return hovered
 end
 
 --- Returns the signature help at `|` in `text`.

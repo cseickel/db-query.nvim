@@ -1,6 +1,6 @@
 --[[
-Finds the catalog object the word under the cursor names, which is a column, a
-relation, or a function's overloads.
+Finds the catalog object a name refers to, which is a column, a relation, or a
+function's overloads.
 ]]
 
 local columns = require("db-query.lsp.columns")
@@ -93,6 +93,30 @@ function M.at(opened, context)
     end
   end
   return catalogName(opened, word, isCall)
+end
+
+---@class dbquery.CatalogName
+---@field relation string[] A table's or view's name as the catalog spells it, from the database or schema down, such as `{ "public", "orders" }`. A name of one part is looked for in the search path, then anywhere when a single schema has it.
+---@field column string|nil A column of that relation, as the catalog spells it.
+
+--- Returns the relation or column `name` refers to, or nil when the catalog
+--- holds none by that name.
+---@param catalog dbquery.Catalog
+---@param dialect dbquery.Dialect
+---@param name dbquery.CatalogName
+---@return dbquery.Target|nil
+function M.named(catalog, dialect, name)
+  local parts = vim.tbl_map(function(part)
+    return { text = part, quoted = true }
+  end, name.relation)
+  local relation = names.relationFromParts(catalog, dialect, parts)
+  if not relation or not name.column then
+    return relation and { kind = "relation", relation = relation } or nil
+  end
+  local column = vim.iter(relation.columns):find(function(candidate)
+    return candidate.name == name.column
+  end)
+  return column and { kind = "column", column = column, relation = relation } or nil
 end
 
 return M

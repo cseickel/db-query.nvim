@@ -816,6 +816,45 @@ table duckdb.sales.regions
   label VARCHAR
   rank  INTEGER default 0
 ```
+##### hover/hover_hidden_buffer
+```sql
+table duckdb.main.orders
+  id          INTEGER       not null
+  customer_id INTEGER       not null
+  total       DECIMAL(10,2) not null
+  note        VARCHAR
+  placed      DATE
+```
+##### describe/describe_table
+```sql
+table duckdb.main.orders
+  id          INTEGER       not null
+  customer_id INTEGER       not null
+  total       DECIMAL(10,2) not null
+  note        VARCHAR
+  placed      DATE
+```
+##### describe/describe_column
+```sql
+duckdb.main.orders.total DECIMAL(10,2) not null
+```
+##### describe/describe_view
+```sql
+view duckdb.main.big_orders
+  id    INTEGER
+  total DECIMAL(10,2)
+  name  VARCHAR
+```
+##### describe/describe_qualified
+```sql
+duckdb.main.customers.email VARCHAR
+```
+##### describe/describe_missing_table
+nil, not found
+##### describe/describe_other_case
+nil, not found
+##### describe/describe_missing_column
+nil, not found
 ##### signature/sig_coalesce
 select coalesce(1, |)
 {

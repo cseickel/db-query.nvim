@@ -393,6 +393,35 @@ require("db-query").setup({
 
 Call `done(catalog)` once with a table of the shape `dbquery.Catalog` describes in `lua/db-query/catalog/shape.lua`, or `done(nil, err)` with why there is none. A catalog of another shape is refused with the field that is wrong. `catalog.timeout` does not apply to your function, so the timeouts you pass to `query` are the only ones, and a function that never calls `done` keeps the read running until `:DBRefreshCatalog` or `:DBRefreshCatalog cancel` ends it.
 
+## Describe
+
+`describe` returns the text hover shows for a table, view, or column, as lines of markdown, so a plugin with no sql buffer, such as a database tree, can show it in a float:
+
+```lua
+local lines = require("db-query").describe({
+  url = vim.b.db,
+  relation = { "public", "orders" },
+  column = "total",
+})
+if lines then
+  vim.lsp.util.open_floating_preview(lines, "markdown")
+end
+```
+
+`url` is a connection url as `b:db` holds it. `relation` is the table's or view's name as the catalog spells it, one part per element, from the database or schema down. `column` is a column of that relation, and leaving it out describes the relation. Each part has to match the catalog's spelling exactly, so `{ "Orders" }` finds nothing when the table is `orders`. A name of one part is looked for in the search path, and then anywhere when a single schema has a relation by that name.
+
+When there is nothing to show, it returns nil and the reason:
+
+| Reason | When |
+|---|---|
+| `"no connection url"` | `url` is nil or empty |
+| `"no client known for <scheme>"` | db-query has no client for the url's scheme |
+| `"reading"` | the first read of the database's catalog is running, and the first call for a database starts it |
+| `"no catalog"` | that read failed, and `:DBRefreshCatalog` reads it again |
+| `"not found"` | the catalog holds nothing by that name |
+
+Call it from nvim's main loop.
+
 ## Contributing
 
 [ARCHITECTURE.md](ARCHITECTURE.md) describes how it works. New data adapters are welcome, as are bug fixes. I make no guarantee about new features being accepted, so file an issue first so we can discuss it.

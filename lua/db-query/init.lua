@@ -217,6 +217,52 @@ function M.statusline(buf)
   return Progress.format(vim.trim("reading catalog " .. (vim.b[buf].db_name or "")), seconds)
 end
 
+---@class dbquery.DescribeOptions : dbquery.CatalogName
+---@field url string A connection url, as `b:db` holds it.
+
+--- Returns the lines of markdown that hover shows for a table, view, or
+--- column, or nil and why there are none:
+---
+--- - `"no connection url"`
+--- - `"no client known for <scheme>"`
+--- - `"reading"`, while the first read of the database's catalog runs. The
+---   first call for a database starts that read.
+--- - `"no catalog"`, when that read failed. `:DBRefreshCatalog` reads it again.
+--- - `"not found"`, when the catalog holds nothing by that name.
+---
+--- Call it only from nvim's main loop.
+---
+---     local lines = require("db-query").describe({ url = url, relation = { "public", "orders" } })
+---     if lines then
+---       vim.lsp.util.open_floating_preview(lines, "markdown")
+---     end
+---
+---@param opts dbquery.DescribeOptions
+---@return string[]|nil lines
+---@return string|nil err
+function M.describe(opts)
+  local resolved = dadbod.resolve(opts.url)
+  if not resolved then
+    return nil, "no connection url"
+  end
+  local dbClient = client.of(resolved)
+  if not dbClient then
+    return nil, "no client known for " .. require("db-query.client.url").scheme(resolved)
+  end
+  local dbCatalog = catalog.get(resolved)
+  if not dbCatalog then
+    local reading = catalog.reading(function()
+      return resolved
+    end)
+    return nil, reading and "reading" or "no catalog"
+  end
+  local named = require("db-query.lsp.target").named(dbCatalog, dbClient.dialect, opts)
+  if not named then
+    return nil, "not found"
+  end
+  return require("db-query.lsp.hover").markdown(dbClient.dialect, named)
+end
+
 --- Deprecated name of `statusline`.
 ---@deprecated Use `statusline`.
 ---@param buf integer|nil

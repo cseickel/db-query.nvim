@@ -174,6 +174,19 @@ M.hovers = {
   { "hover_cte_col", "with r as (select id as rid from orders) select ri|d from r" },
 }
 
+--- Each case is `{ name, options }`, where `options` is what `describe` is
+--- given, less the url.
+---@type [string, dbquery.CatalogName][]
+M.describes = {
+  { "describe_table", { relation = { "orders" } } },
+  { "describe_column", { relation = { "orders" }, column = "total" } },
+  { "describe_view", { relation = { "big_orders" } } },
+  { "describe_qualified", { relation = { "main", "customers" }, column = "email" } },
+  { "describe_missing_table", { relation = { "nosuch" } } },
+  { "describe_other_case", { relation = { "ORDERS" } } },
+  { "describe_missing_column", { relation = { "orders" }, column = "nosuch" } },
+}
+
 ---@type snapshot.Case[]
 M.signatures = {
   { "sig_coalesce", "select coalesce(1, |)" },

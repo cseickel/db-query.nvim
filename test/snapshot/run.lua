@@ -111,6 +111,11 @@ local function check(engine, record)
   for _, case in ipairs(vim.list_extend(vim.deepcopy(cases.hovers), engine.hovers)) do
     record("hover/" .. case[1], case[2] .. "\n" .. lsp.hover(buf, case[2]))
   end
+  record("hover/hover_hidden_buffer", lsp.hoverHidden(buf, TMP .. "/tree-node.sql", "select * from ord|ers"))
+  for _, case in ipairs(cases.describes) do
+    local described, err = dbquery.describe(vim.tbl_extend("force", case[2], { url = vim.b[buf].db }))
+    record("describe/" .. case[1], described and table.concat(described, "\n") or ("nil, " .. tostring(err)))
+  end
   for _, case in ipairs(vim.list_extend(vim.deepcopy(cases.signatures), engine.signatures)) do
     record("signature/" .. case[1], case[2] .. "\n" .. lsp.signature(buf, case[2]))
   end

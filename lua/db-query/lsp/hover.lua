@@ -1,6 +1,5 @@
 --[[
-Describes the column, table, or function under the cursor, as the catalog
-records it.
+Describes a column, table, or function as the catalog records it, in markdown.
 ]]
 
 local describe = require("db-query.lsp.describe")
@@ -95,6 +94,19 @@ local function describeFunctions(dialect, functions)
   return lines
 end
 
+--- Returns the lines of markdown that describe `named`.
+---@param dialect dbquery.Dialect
+---@param named dbquery.Target
+---@return string[]
+function M.markdown(dialect, named)
+  if named.kind == "column" then
+    return describeColumn(named.column, named.relation)
+  elseif named.kind == "relation" then
+    return describeRelation(named.relation)
+  end
+  return describeFunctions(dialect, named.functions)
+end
+
 --- Returns, as markdown, the column, table, or function overloads the catalog
 --- holds under the word in `context`, or nil when the catalog holds none.
 ---@param opened dbquery.Opened
@@ -105,14 +117,7 @@ function M.hover(opened, context)
   if not named then
     return nil
   end
-  local lines
-  if named.kind == "column" then
-    lines = describeColumn(named.column, named.relation)
-  elseif named.kind == "relation" then
-    lines = describeRelation(named.relation)
-  else
-    lines = describeFunctions(opened.document.dialect, named.functions)
-  end
+  local lines = M.markdown(opened.document.dialect, named)
   return { contents = { kind = "markdown", value = table.concat(lines, "\n") } }
 end
 

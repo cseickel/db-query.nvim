@@ -19,16 +19,29 @@ local M = {}
 ---@field document dbquery.Document
 ---@field catalog dbquery.Catalog|nil Nil until the connection's catalog has been read.
 
---- Returns the current buffer's lines and connection when `uri` names it, and
---- nil otherwise. It only reads, so it runs under textlock, where completion
---- requests arrive. An unnamed buffer's uri is `file://` whichever buffer it
---- is, so a request about one is taken to be about the current buffer, which
---- is the buffer every completion, hover, and signature request is made from.
+--- Returns the buffer `uri` names. An unnamed buffer's uri is `file://`
+--- whichever buffer it is, so a request about one is taken to be about the
+--- current buffer, which is the buffer the editor's own requests are made from.
+---@param uri string
+---@return integer|nil
+local function bufferAt(uri)
+  local current = vim.api.nvim_get_current_buf()
+  if vim.uri_from_bufnr(current) == uri then
+    return current
+  end
+  return vim.iter(vim.api.nvim_list_bufs()):find(function(buf)
+    return vim.api.nvim_buf_get_name(buf) ~= "" and vim.uri_from_bufnr(buf) == uri
+  end)
+end
+
+--- Returns the lines and connection of the buffer `uri` names, or nil when no
+--- buffer has that uri. It only reads, so it runs under textlock, where
+--- completion requests arrive.
 ---@param uri string
 ---@return dbquery.Captured|nil
 function M.capture(uri)
-  local buf = vim.api.nvim_get_current_buf()
-  if vim.uri_from_bufnr(buf) ~= uri then
+  local buf = bufferAt(uri)
+  if not buf then
     return nil
   end
   local db = vim.b[buf].db

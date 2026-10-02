@@ -572,6 +572,45 @@ nil
 ##### hover/hover_cte_col
 with r as (select id as rid from orders) select ri|d from r
 nil
+##### hover/hover_hidden_buffer
+```sql
+table main.orders
+  id          INTEGER
+  customer_id INTEGER       not null
+  total       numeric(10,2) not null
+  note        varchar(200)
+  placed      date
+```
+##### describe/describe_table
+```sql
+table main.orders
+  id          INTEGER
+  customer_id INTEGER       not null
+  total       numeric(10,2) not null
+  note        varchar(200)
+  placed      date
+```
+##### describe/describe_column
+```sql
+main.orders.total numeric(10,2) not null
+```
+##### describe/describe_view
+```sql
+view main.big_orders
+  id    INTEGER
+  total numeric(10,2)
+  name  TEXT
+```
+##### describe/describe_qualified
+```sql
+main.customers.email TEXT
+```
+##### describe/describe_missing_table
+nil, not found
+##### describe/describe_other_case
+nil, not found
+##### describe/describe_missing_column
+nil, not found
 ##### signature/sig_coalesce
 select coalesce(1, |)
 {
