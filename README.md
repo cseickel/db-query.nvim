@@ -56,6 +56,8 @@ This needs [vim-dadbod](https://github.com/tpope/vim-dadbod) to expand variables
 
 A `mysql://` or `mariadb://` URL can end in client options, which are passed to the client as they are in vim-dadbod. `mariadb://app@db.internal/warehouse?ssl-verify-server-cert=0` runs `mariadb --ssl-verify-server-cert=0`. Postgres URLs take options the same way, read by `psql` itself.
 
+A `duckdb:` or `sqlite:` URL names a file, as in `duckdb:/home/me/scratch.duckdb`. `duckdb::memory:` and `sqlite::memory:`, or the scheme with no path, open an in-memory database instead.
+
 A connection is a table with a name and a vim-dadbod URL, and the one you pick is stored in `b:db`. vim-dadbod and the language server read `b:db`, so completion uses the database you picked. Anything else that sets `b:db` works without the chooser. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) opens its scratch buffers that way.
 
 ## Naming the connection in the file
@@ -421,6 +423,20 @@ When there is nothing to show, it returns nil and the reason:
 | `"not found"` | the catalog holds nothing by that name |
 
 Call it from nvim's main loop.
+
+## Read
+
+`read` runs one statement read-only on a connection url and passes back what the client printed, so a plugin with no sql buffer can query a database. [neo-tree-database.nvim](https://github.com/cseickel/neo-tree-database.nvim) runs every query of its tree this way:
+
+```lua
+require("db-query").read({ url = vim.b.db, statement = "select 1" }, function(output, err)
+  if not output then
+    vim.notify(err, vim.log.levels.ERROR)
+  end
+end)
+```
+
+`url` is a connection url as `b:db` holds it. The callback is called once, on a later tick of the main loop. On success, `output` is what the client printed, one row per line with no header and no alignment. On failure, `output` is nil and `err` says why, such as `"no connection url"`, `"no client known for <scheme>"`, or the client's own error. The client is killed after `catalog.timeout` milliseconds, 5 minutes by default, and `err` then reads `"no answer in 300 seconds"`.
 
 ## Contributing
 

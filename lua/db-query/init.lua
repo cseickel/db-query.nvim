@@ -263,6 +263,38 @@ function M.describe(opts)
   return require("db-query.lsp.hover").markdown(dbClient.dialect, named)
 end
 
+---@class dbquery.ReadOptions
+---@field url string A connection url, as `b:db` holds it.
+---@field statement string
+
+--- Runs `opts.statement` read-only on the database `opts.url` names, and calls
+--- `done` once, on a later tick of the main loop, with what it printed,
+--- unaligned and without a header, or with why it failed. The client is killed
+--- after the `catalog.timeout` setting.
+---
+---     require("db-query").read({ url = url, statement = "select 1" }, function(output, err) end)
+---
+---@param opts dbquery.ReadOptions
+---@param done fun(output: string|nil, err: string|nil)
+function M.read(opts, done)
+  done = vim.schedule_wrap(done)
+  local resolved = dadbod.resolve(opts.url)
+  if not resolved then
+    return done(nil, "no connection url")
+  end
+  local dbClient = client.of(resolved)
+  if not dbClient then
+    return done(nil, "no client known for " .. require("db-query.client.url").scheme(resolved))
+  end
+  client.read({
+    client = dbClient,
+    connection = resolved,
+    statement = opts.statement,
+    timeout = config.values.catalog.timeout,
+    readonly = true,
+  }, done)
+end
+
 --- Deprecated name of `statusline`.
 ---@deprecated Use `statusline`.
 ---@param buf integer|nil

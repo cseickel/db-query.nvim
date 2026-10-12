@@ -19,13 +19,14 @@ function M.decoded(encoded)
   end))
 end
 
---- Returns the file path from a `scheme:path` url, or empty for in-memory.
+--- Returns the file path from a `scheme:path` url, or empty for in-memory,
+--- which the url writes as no path or as `:memory:`.
 ---@param url string
 ---@return string
 function M.filePath(url)
   local path = url:gsub("^%a[%w+.-]*:", ""):gsub("^//", "")
-  if path == "" then
-    return path
+  if path == "" or path == ":memory:" then
+    return ""
   end
   return vim.fn.fnamemodify(M.decoded(path), ":p")
 end
