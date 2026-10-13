@@ -6,7 +6,7 @@ local M = {}
 
 local FORMATS = { "text", "csv" }
 local FLAGS = { "-f", "-o" }
-local VIEWS = { "log", "result", "toggle" }
+local OUTPUT_ACTIONS = { "log", "result", "toggle", "close", "refresh" }
 
 ---@param lead string
 ---@param words string[]
@@ -99,20 +99,20 @@ function M.setup(api)
   })
 
   vim.api.nvim_create_user_command("DBOutput", function(command)
-    local view = command.args ~= "" and command.args or "toggle"
-    if not vim.tbl_contains(VIEWS, view) then
+    local action = command.args ~= "" and command.args or "toggle"
+    if not vim.tbl_contains(OUTPUT_ACTIONS, action) then
       return vim.notify(
-        "db-query: DBOutput wants " .. table.concat(VIEWS, ", "),
+        "db-query: DBOutput wants " .. table.concat(OUTPUT_ACTIONS, ", "),
         vim.log.levels.ERROR
       )
     end
-    api.output(view)
+    api.output(action)
   end, {
     nargs = "?",
     complete = function(lead)
-      return matching(lead, VIEWS)
+      return matching(lead, OUTPUT_ACTIONS)
     end,
-    desc = "Show the log or the last query's result (default: toggle)",
+    desc = "Show the log or the last query's result (default: toggle), close the output, or refresh it",
   })
 
   vim.api.nvim_create_user_command("DBOutputDir", function(command)

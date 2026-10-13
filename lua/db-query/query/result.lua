@@ -122,10 +122,12 @@ end
 --- Once `process` finishes, clears them again over the lines the query now
 --- covers, so each query keeps only its last run. Then marks the query with a
 --- diagnostic of how it ended and that outcome's icon beside its first line,
---- and draws the elbow under it until the buffer's text next changes.
+--- and draws the elbow under it until the buffer's text next changes. Returns
+--- the extmark that follows the query's lines, for `span`.
 ---@param buf integer
 ---@param span [integer, integer] First and last line of the query (0-based).
 ---@param process dbquery.Process
+---@return integer extmark
 function M.track(buf, span, process)
   local tracked = runsOf(buf)
   local extmark, width = runStatus.followSpan(buf, SPANS, span)
@@ -164,6 +166,21 @@ function M.track(buf, span, process)
     latest[buf] = extmark
     publish(buf)
   end)
+  return extmark
+end
+
+--- Returns the first and last line (0-based) the query `track` returned
+--- `extmark` for covers now, or nil once its text was deleted or a later run
+--- over its lines replaced it.
+---@param buf integer
+---@param extmark integer
+---@return [integer, integer]|nil
+function M.span(buf, extmark)
+  local first, last = runStatus.spanRows(buf, SPANS, extmark)
+  if first and last then
+    return { first, last }
+  end
+  return nil
 end
 
 return M

@@ -141,16 +141,21 @@ function M.owns(path)
   return sessionDirectory == nil and config.values.output_cleanup and vim.startswith(path, M.directory() .. "/")
 end
 
+---@class dbquery.ResultsPathOpts
+---@field bufName string Full path of the sql buffer.
+---@field extension string File extension: csv, tsv, or txt.
+---@field chosen string|nil
+---@field overwrites string|nil A file that may be written over without asking.
+
 --- Returns a results file path, ready for writing, or nil on error or a
 --- declined overwrite. With `chosen`, it is that path, asking before writing
---- over a file there, with its extension replaced by `extension` when it has
---- one a results file can have. Without `chosen`, it is the next unused
---- `name-N.extension` in the output directory.
----@param bufName string Full path of the sql buffer.
----@param extension string File extension: csv, tsv, or txt.
----@param chosen string|nil
+--- over a file there other than `overwrites`, with its extension replaced by
+--- `extension` when it has one a results file can have. Without `chosen`, it
+--- is the next unused `name-N.extension` in the output directory.
+---@param opts dbquery.ResultsPathOpts
 ---@return string|nil
-function M.path(bufName, extension, chosen)
+function M.path(opts)
+  local bufName, extension, chosen = opts.bufName, opts.extension, opts.chosen
   if chosen then
     local fullPath = M.destination(bufName, chosen)
     if vim.startswith(fullPath, ROOT .. "/") then
@@ -161,7 +166,8 @@ function M.path(bufName, extension, chosen)
     end
     local stem = EXTENSIONS[vim.fn.fnamemodify(fullPath, ":e")] and vim.fn.fnamemodify(fullPath, ":r") or fullPath
     local path = stem .. "." .. extension
-    if vim.uv.fs_stat(path) and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
+    local asks = path ~= opts.overwrites and vim.uv.fs_stat(path) ~= nil
+    if asks and vim.fn.confirm(path .. " exists.", "&Overwrite\n&Cancel", 2) ~= 1 then
       return nil
     end
     return ready(path, "w") and path or nil

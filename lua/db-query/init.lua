@@ -179,16 +179,16 @@ function M.outputDir(path)
 end
 
 --- Shows the log or the last query's result in the output window, reopening
---- that window if it was closed. Works from the sql buffer and from the output
---- window alike.
----@param view dbquery.OutputView
-function M.output(view)
+--- that window if it was closed, closes the output windows, or runs the last
+--- query again. Works from the sql buffer and from the output window alike.
+---@param action dbquery.OutputAction
+function M.output(action)
   mainloop.capture(vim.api.nvim_get_current_buf, function(buf)
     local source = Source.owning(buf)
     if not source then
       return vim.notify("db-query: no query output for this buffer", vim.log.levels.WARN)
     end
-    source:output(view)
+    source:output(action)
   end)
 end
 

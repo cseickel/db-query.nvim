@@ -117,6 +117,9 @@ function Pane:show(run, path, opts)
     })
   end
   owners[buf] = sqlBuf
+  if self.source.progress then
+    self.source.progress:bind(buf)
+  end
 
   -- Reloads a file shown before with `:edit!`, because `checktime` does nothing
   -- in a buffer with a `buftype`, such as csv-table's.
@@ -138,6 +141,32 @@ function Pane:show(run, path, opts)
   vim.b[buf].db_query_log = path == run.log.path
 
   self.path = path
+end
+
+--- Returns the loaded buffers this sql buffer's output was shown in.
+---@return integer[]
+function Pane:outputs()
+  local outputs = {}
+  for buf, sqlBuf in pairs(owners) do
+    if sqlBuf == self.source.buf and vim.api.nvim_buf_is_loaded(buf) then
+      table.insert(outputs, buf)
+    end
+  end
+  return outputs
+end
+
+--- Closes every window in the current tabpage that shows this sql buffer's
+--- output.
+function Pane:close()
+  local tab = vim.api.nvim_get_current_tabpage()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    -- An autocmd run by closing one window may have closed the next.
+    local valid = vim.api.nvim_win_is_valid(win)
+    if valid and isSplit(win) and owners[vim.api.nvim_win_get_buf(win)] == self.source.buf then
+      -- nvim refuses to close the last window, which leaves it open.
+      pcall(vim.api.nvim_win_close, win, false)
+    end
+  end
 end
 
 --- Stops reloading the log, leaving the window as it is.

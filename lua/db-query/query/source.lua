@@ -12,13 +12,14 @@ local result = require("db-query.query.result")
 local Run = require("db-query.query.run")
 local sql = require("db-query.sql")
 
----@alias dbquery.OutputView "log"|"result"|"toggle"
+---@alias dbquery.OutputAction "log"|"result"|"toggle"|"close"|"refresh"
 
 ---@class dbquery.Source
 ---@field buf integer
 ---@field pane dbquery.Pane
 ---@field log dbquery.Log|nil The log every query of this buffer appends to, opened by the first one.
 ---@field run dbquery.Run|nil The last query, whose files the pane shows.
+---@field runMark integer|nil The extmark that follows the last query's lines through edits.
 ---@field process dbquery.Process|nil The last process started, a query's or a connection test's.
 ---@field progress dbquery.Progress|nil
 ---@field files string[] Result files this buffer's queries have written.
@@ -90,7 +91,8 @@ local function stopProcess(self)
   end
 end
 
---- Cancels the process running before `process` and shows `process` at `place`.
+--- Cancels the process running before `process` and shows `process` at `place`,
+--- with the cancel key bound there and in the buffer's output.
 ---@param self dbquery.Source
 ---@param process dbquery.Process
 ---@param place dbquery.Place
@@ -98,21 +100,34 @@ local function replace(self, process, place)
   stopProcess(self)
   self.process = process
   self.progress = Progress.attach(process, place)
+  for _, buf in ipairs(self.pane:outputs()) do
+    self.progress:bind(buf)
+  end
 end
 
 --- Puts the log or the last query's result in the pane, reopening the window
---- if it was closed. "toggle" asks for whichever is not on screen.
----@param view dbquery.OutputView
-function Source:output(view)
+--- if it was closed. "toggle" asks for whichever is not on screen. "close"
+--- closes the pane's windows in the current tabpage. "refresh" runs the last
+--- query again as it was run, marking the lines it covers now.
+---@param action dbquery.OutputAction
+function Source:output(action)
+  if action == "close" then
+    return self.pane:close()
+  end
+
   local run = self.run
   if not run then
     return vim.notify("db-query: nothing has run in this buffer yet", vim.log.levels.WARN)
   end
 
-  if view == "toggle" then
-    view = self.pane.path == run.log.path and "result" or "log"
+  if action == "refresh" then
+    local span = self.runMark and result.span(self.buf, self.runMark) or run.ctx.span
+    return self:execute(vim.tbl_extend("force", run.ctx, { span = span, overwrites = run.path }))
   end
-  if view == "log" then
+  if action == "toggle" then
+    action = self.pane.path == run.log.path and "result" or "log"
+  end
+  if action == "log" then
     return self.pane:show(run, run.log.path, { tail = true })
   end
 
@@ -169,7 +184,7 @@ function Source:execute(ctx)
   end
 
   replace(self, run.process, { buf = self.buf, span = ctx.span, label = "running query" })
-  result.track(self.buf, ctx.span, run.process)
+  self.runMark = result.track(self.buf, ctx.span, run.process)
   self.pane:display(run)
 
   -- A script that failed or was cancelled may still have run its definitions.

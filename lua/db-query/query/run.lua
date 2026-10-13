@@ -64,6 +64,7 @@ end
 ---@field format dbquery.Format
 ---@field span [integer, integer] First and last line the sql came from, starting at its first line of code.
 ---@field outputPath string|nil User-specified output path.
+---@field overwrites string|nil Results file written over without asking, because the run this one repeats wrote it.
 
 --- Starts the client process. Returns nil when the user declines to write over
 --- the results file, or when the process cannot start.
@@ -77,7 +78,12 @@ function Run.start(ctx, log)
 
   local path = nil
   if extension then
-    path = files.path(ctx.bufName, extension, ctx.outputPath)
+    path = files.path({
+      bufName = ctx.bufName,
+      extension = extension,
+      chosen = ctx.outputPath,
+      overwrites = ctx.overwrites,
+    })
     if not path then
       return nil
     end

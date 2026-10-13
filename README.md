@@ -143,6 +143,8 @@ require("db-query").setup({
 | `:DBOutput`                | Switch the output window between log and rows  |
 | `:DBOutput log`            | Show the log                                   |
 | `:DBOutput result`         | Show the last query's rows                     |
+| `:DBOutput close`          | Close the output windows                       |
+| `:DBOutput refresh`        | Run the last query again                       |
 | `:DBConnect`               | Pick the database for this buffer              |
 | `:DBRefreshCatalog`        | Read this buffer's database catalog again      |
 | `:DBRefreshCatalog cancel` | Stop the read of that catalog                  |
@@ -158,7 +160,11 @@ Every query appends what the client prints to the buffer's log. A query that ret
 
 `-o` names the results file for one query, in place of the one the plugin would have named. `-o report` writes `report.txt` or `report.csv` in the working directory, depending on the format, `-o ~/exports/` writes into that directory under the buffer's own name, and an existing file is confirmed before the query starts. The extension is always set by the format, so `-o report.csv` on a text query writes `report.txt`. A query that returns no rows has no results file, so `-o` on one warns that nothing will be written there. `-o` with no path prompts for one, prefilled with the last path this buffer wrote. It applies to that one query, and the next query without it goes back to the output directory.
 
-`:DBOutput` opens the output window if it was closed and swaps between the log and the last query's rows. It works from the sql buffer and from the output window. `:DBOutput result` after a query that failed, or that returned no rows, says so and leaves the window alone.
+`:DBOutput` opens the output window if it was closed and swaps between the log and the last query's rows. `:DBOutput result` after a query that failed, or that returned no rows, says so and leaves the window alone. `:DBOutput close` closes every window in the current tabpage that shows this buffer's log or rows.
+
+`:DBOutput refresh` runs the last query again exactly as it was run, with the same sql text, connection, format, and `-o` path, even after you edited the buffer or picked another connection. The status marks go on the lines that query covers now, so a query that moved down the buffer keeps its marks. If the query's lines were deleted, the marks go on the line numbers it had when it last ran. Without `-o` the rows go to a new numbered file. With `-o` the file the last run wrote is written over without asking, and any other file at that path is confirmed first.
+
+Every form of `:DBOutput` works from the sql buffer and from the output window.
 
 ## Where output goes
 
@@ -172,7 +178,7 @@ Set `output_dir` in `setup` to write results somewhere else. That turns `output_
 
 ## Keys
 
-The only key the plugin binds by default is `cancel`, and only while a query or a connection test is running. Here are some example bindings:
+The only key the plugin binds by default is `cancel`, and only while a query or a connection test is running. It is bound in the sql buffer and in the buffers showing its log and rows, so you can cancel from the output window. Here are some example bindings:
 
 ```lua
 vim.keymap.set("n", "<M-x>", function()
@@ -194,7 +200,7 @@ vim.keymap.set("n", "<M-o>", function()
 end, { desc = "switch between the log and the rows" })
 ```
 
-`execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the results file or `true` to be asked for one. `output` takes `"log"`, `"result"`, or `"toggle"`, the same as `:DBOutput`.
+`execute` takes `visual`, `range`, `statement`, `format`, and `output`, which is a path for the results file or `true` to be asked for one. `output` takes `"log"`, `"result"`, `"toggle"`, `"close"`, or `"refresh"`, the same as `:DBOutput`.
 
 ## Query progress and results
 

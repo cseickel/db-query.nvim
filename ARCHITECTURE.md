@@ -23,7 +23,7 @@ All modules are in `lua/db-query/`.
        │                            │                                           └──► query.md     the log
        ├─ selection.capture         ├──► Progress.attach    spinner and cancel key in query.sql
        └─ dadbod.resolve            ├──► result.track       forgets earlier marks over the same lines
-                                    └──► Pane:display       opens query.md, rereads it every 500ms
+                                    └──► Pane:display       opens query.md, binds the cancel key there, rereads it every 500ms
 
   psql exits, and Process calls its subscribers in the order they subscribed:
 

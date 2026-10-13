@@ -20,6 +20,7 @@ local runStatus = require("db-query.query.status")
 ---@field process dbquery.Process
 ---@field width integer The elbow's width, measured when the progress is attached.
 ---@field stopTimer fun()|nil Nil after stop().
+---@field bound table<integer, true> Buffers the cancel key is bound in.
 local Progress = {}
 Progress.__index = Progress
 
@@ -80,9 +81,22 @@ function Progress:statusline()
   return Progress.format(self.label, self.process:elapsed())
 end
 
---- Removes the mark and the keybinding. A second call does nothing. Without
+--- Binds the cancel key in `buf` until the progress stops. Does nothing once it
+--- has stopped.
+---@param buf integer
+function Progress:bind(buf)
+  if not self.stopTimer or self.bound[buf] then
+    return
+  end
+  self.bound[buf] = true
+  vim.keymap.set(MODES, self.key, function()
+    self.process:cancel()
+  end, { buffer = buf, desc = "cancel " .. self.label })
+end
+
+--- Removes the mark and the keybindings. A second call does nothing. Without
 --- that check, a replaced progress stopped again when its own process finished
---- would delete its successor's keymap and marks.
+--- would delete its successor's keymaps and marks.
 function Progress:stop()
   if not self.stopTimer then
     return
@@ -90,8 +104,12 @@ function Progress:stop()
   self.stopTimer()
   self.stopTimer = nil
 
+  for buf in pairs(self.bound) do
+    if vim.api.nvim_buf_is_loaded(buf) then
+      pcall(vim.keymap.del, MODES, self.key, { buffer = buf })
+    end
+  end
   if vim.api.nvim_buf_is_loaded(self.buf) then
-    pcall(vim.keymap.del, MODES, self.key, { buffer = self.buf })
     vim.api.nvim_buf_clear_namespace(self.buf, SPANS, 0, -1)
     vim.api.nvim_buf_clear_namespace(self.buf, DRAWN, 0, -1)
   end
@@ -99,7 +117,7 @@ function Progress:stop()
 end
 
 --- Creates the progress of `process` at `place`, drawing its mark and binding
---- the cancel key. Stops when the process finishes.
+--- the cancel key in `place.buf`. Stops when the process finishes.
 ---@param process dbquery.Process
 ---@param place dbquery.Place
 ---@return dbquery.Progress
@@ -109,14 +127,11 @@ function Progress.attach(process, place)
     label = place.label,
     key = config.values.cancel,
     process = process,
+    bound = {},
   }, Progress)
 
   local _, width = runStatus.followSpan(self.buf, SPANS, place.span, SPAN)
   self.width = width
-
-  vim.keymap.set(MODES, self.key, function()
-    self.process:cancel()
-  end, { buffer = self.buf, desc = "cancel " .. place.label })
 
   self:draw()
   self.stopTimer = mainloop.every(FRAME_TIME, function()
@@ -125,6 +140,7 @@ function Progress.attach(process, place)
     end
     vim.api.nvim__redraw({ statusline = true, winbar = true })
   end)
+  self:bind(self.buf)
   process:onFinish(function()
     self:stop()
   end)
