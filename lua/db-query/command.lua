@@ -27,9 +27,7 @@ local function complete(lead, line)
   return matching(lead, line:match("%-f%s+%S*$") and FORMATS or FLAGS)
 end
 
---- Runs `selection` with the format and output that `args` give. Shows an
---- error and runs nothing for a flag other than `-f` and `-o`, and for `-f`
---- given anything but text or csv.
+--- Executes a query that is in a buffer, which is identified by `selection`.
 ---@param api dbquery.Api
 ---@param selection dbquery.Selection
 ---@param args string[]
@@ -57,7 +55,7 @@ local function run(api, selection, args)
   api.execute(opts)
 end
 
---- Registers all user commands, each calling the function of `api` it names.
+--- Registers all user commands.
 ---@param api dbquery.Api
 function M.setup(api)
   vim.api.nvim_create_user_command("DBQuery", function(command)
